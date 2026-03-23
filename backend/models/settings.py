@@ -79,3 +79,12 @@ DEFAULT_SETTINGS = {
     # JN sync interval
     "jn_sync_interval_minutes": {"value": "15", "description": "JobNimbus polling interval in minutes"},
 }
+
+
+def seed_defaults(db):
+    """Seed default settings into the database."""
+    for key, data in DEFAULT_SETTINGS.items():
+        existing = db.query(SystemSettings).filter(SystemSettings.key == key).first()
+        if not existing:
+            db.add(SystemSettings(key=key, value=data["value"], description=data.get("description", "")))
+    db.commit()
