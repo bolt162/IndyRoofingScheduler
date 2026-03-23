@@ -1,0 +1,26 @@
+# Backend
+fastapi
+uvicorn[standard]
+sqlalchemy
+alembic
+python-dotenv
+httpx
+pydantic
+pydantic-settings
+
+# AI
+anthropic
+
+# Maps & Geo
+folium
+geopy
+
+# Weather
+openmeteo-requests
+
+# Frontend
+streamlit
+streamlit-folium
+
+# Utilities
+apscheduler
