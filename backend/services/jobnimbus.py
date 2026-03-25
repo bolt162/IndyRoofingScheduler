@@ -67,13 +67,13 @@ def _classify_duration_tier(material_type: str | None, square_footage: float | N
     if mat == "siding":
         return "tier_2", False, False
 
-    # Residential shingles by square footage
+    # Residential shingles by square footage (in sq ft, converted from squares)
     if square_footage is not None:
-        if square_footage <= 30:
+        if square_footage <= 3000:      # ≤30 squares
             return "tier_1", True, False
-        elif square_footage <= 60:
+        elif square_footage <= 6000:    # 31-60 squares
             return "tier_2", False, False
-        else:
+        else:                           # 61+ squares
             return "tier_3", False, False
 
     return "tier_2", False, False
@@ -105,10 +105,12 @@ def map_jn_job_to_model(jn_data: dict) -> dict:
         material_type = "siding"
 
     # Square footage from "Roof Total Square" custom field
-    square_footage = jn_data.get("Roof Total Square")
-    if square_footage:
+    # JN stores this in "squares" (1 square = 100 sq ft), so multiply by 100
+    raw_squares = jn_data.get("Roof Total Square")
+    square_footage = None
+    if raw_squares:
         try:
-            square_footage = float(square_footage)
+            square_footage = float(raw_squares) * 100  # Convert squares to sq ft
         except (ValueError, TypeError):
             square_footage = None
 

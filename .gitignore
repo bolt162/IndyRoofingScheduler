@@ -27,5 +27,10 @@ build/
 *.swo
 .DS_Store
 
-# Streamlit
+# React frontend
+frontend-react/node_modules/
+frontend-react/dist/
+frontend-react/.env
+
+# Streamlit (removed)
 .streamlit/secrets.toml

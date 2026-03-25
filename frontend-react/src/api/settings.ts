@@ -1,0 +1,80 @@
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import api from './client';
+import type { SettingsMap, PM, Crew } from '@/types';
+
+// Settings
+export function useSettings() {
+  return useQuery<SettingsMap>({
+    queryKey: ['settings'],
+    queryFn: async () => {
+      const { data } = await api.get('/settings/');
+      return data;
+    },
+  });
+}
+
+export function useUpdateSetting() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ key, value }: { key: string; value: string }) => {
+      const { data } = await api.put(`/settings/${key}`, { value });
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['settings'] });
+    },
+  });
+}
+
+// PMs
+export function usePMs() {
+  return useQuery<PM[]>({
+    queryKey: ['pms'],
+    queryFn: async () => {
+      const { data } = await api.get('/settings/pms');
+      return data;
+    },
+  });
+}
+
+export function useAddPM() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ name, baseline, maxCap }: { name: string; baseline?: number; maxCap?: number }) => {
+      const params = new URLSearchParams({ name });
+      if (baseline) params.set('baseline', String(baseline));
+      if (maxCap) params.set('max_cap', String(maxCap));
+      const { data } = await api.post(`/settings/pms?${params.toString()}`);
+      return data as PM;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pms'] });
+    },
+  });
+}
+
+// Crews
+export function useCrews() {
+  return useQuery<Crew[]>({
+    queryKey: ['crews'],
+    queryFn: async () => {
+      const { data } = await api.get('/settings/crews');
+      return data;
+    },
+  });
+}
+
+export function useAddCrew() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ name, specialties }: { name: string; specialties?: string[] }) => {
+      const params = new URLSearchParams({ name });
+      if (specialties) specialties.forEach((s) => params.append('specialties', s));
+      const { data } = await api.post(`/settings/crews?${params.toString()}`);
+      return data as Crew;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['crews'] });
+    },
+  });
+}
