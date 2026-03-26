@@ -31,7 +31,7 @@ export function DayColumn({ date, jobs, pms, pmJobCounts, isToday }: DayColumnPr
     <Card
       ref={setNodeRef}
       className={cn(
-        'flex flex-col min-w-[180px] transition-colors',
+        'flex flex-col overflow-hidden transition-colors',
         isOver && 'ring-2 ring-primary bg-primary/5',
         isToday && 'border-primary'
       )}

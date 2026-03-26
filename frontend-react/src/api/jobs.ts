@@ -71,6 +71,36 @@ export function useSetMustBuild() {
   });
 }
 
+// Background sync status — polls to check if initial sync is still running
+export function useSyncStatus() {
+  return useQuery<{ running: boolean; last_result: any; error: string | null }>({
+    queryKey: ['syncStatus'],
+    queryFn: async () => {
+      const { data } = await api.get('/sync-status');
+      return data;
+    },
+    refetchInterval: (query) => {
+      // Poll every 2s while running, stop when done
+      return query.state.data?.running ? 2000 : false;
+    },
+  });
+}
+
+// Sync jobs from JobNimbus
+export function useSyncJN() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post('/jobs/sync');
+      return data as { created: number; updated: number; errors: any[]; total_from_jn: number };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['jobs'] });
+      qc.invalidateQueries({ queryKey: ['bucketCounts'] });
+    },
+  });
+}
+
 // Mark not built
 export function useMarkNotBuilt() {
   const qc = useQueryClient();

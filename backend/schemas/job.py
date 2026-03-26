@@ -43,6 +43,7 @@ class JobResponse(JobBase):
     score: float = 0.0
     score_explanation: str | None = None
     jn_status: str | None = None
+    jn_notes_raw: str | None = None
     ai_note_scan_result: str | None = None
     weather_status: str | None = None
     weather_detail: str | None = None

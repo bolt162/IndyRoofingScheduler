@@ -101,6 +101,7 @@ export interface Job {
   score: number;
   score_explanation: string | null;
   jn_status: string | null;
+  jn_notes_raw: string | null;
   ai_note_scan_result: string | null;
   weather_status: WeatherStatus | null;
   weather_detail: string | null;
@@ -179,12 +180,58 @@ export interface ScoringResult {
   score: number;
   explanation: string;
   cluster_id: string | null;
+  suggested_pm_id?: number | null;
+  customer_name?: string;
+  address?: string;
+  material_type?: string;
+  payment_type?: string;
+  must_build?: boolean;
+  duration_days?: number;
+  duration_confirmed?: boolean;
+}
+
+export interface WeatherBlockedJob {
+  job_id: number;
+  customer_name: string;
+  address: string;
+  material_type: MaterialType | null;
+  weather_status: 'do_not_build';
+  weather_detail: string;
+}
+
+export interface ClusterInfo {
+  cluster_id: string;
+  tier: 'tight' | 'close' | 'standard' | 'standalone';
+  suggested_pm_capacity: number;
+  assigned_pm_id: number | null;
+  assigned_pm_name: string | null;
+  job_ids: number[];
+  total_score: number;
+  is_standalone: boolean;
+  has_must_build: boolean;
+}
+
+export interface PMPlanEntry {
+  pm_id: number;
+  pm_name: string;
+  baseline_capacity: number;
+  max_capacity: number;
+  assigned_jobs: number;
+  clusters: string[];
+  utilization: number;
+  over_baseline: boolean;
+  over_max: boolean;
+  jobs: ScoringResult[];
 }
 
 export interface ScoringResponse {
   recommendations: ScoringResult[];
-  clusters: Record<string, unknown>[];
+  clusters: ClusterInfo[];
+  pm_plan?: PMPlanEntry[];
+  unassigned_jobs?: ScoringResult[];
   ai_explanation: string;
+  weather_blocked?: WeatherBlockedJob[];
+  weather_blocked_count?: number;
 }
 
 export interface SystemSetting {

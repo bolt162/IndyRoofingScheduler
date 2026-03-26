@@ -4,8 +4,16 @@ from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.models.job import Job, JobBucket
 from backend.schemas.job import JobResponse, JobUpdate, NotBuiltRequest
+from backend.services.jobnimbus import sync_jobs_from_jn
 
 router = APIRouter()
+
+
+@router.post("/sync")
+def sync_from_jn(db: Session = Depends(get_db)):
+    """Trigger a manual JN sync."""
+    result = sync_jobs_from_jn(db)
+    return result
 
 
 @router.get("/", response_model=list[JobResponse])

@@ -78,6 +78,28 @@ DEFAULT_SETTINGS = {
 
     # JN sync interval
     "jn_sync_interval_minutes": {"value": "15", "description": "JobNimbus polling interval in minutes"},
+
+    # Note templates (editable via settings UI, version-tracked on each note)
+    "note_template_scheduling": {
+        "value": "[SCHEDULER SYSTEM -- {timestamp}] Job selected for scheduling on {date_scheduled}. Scoring factors: {days_in_queue} days in queue, {payment_type} payment type, {trade_desc} trade {primary_trade}, {material_type} material. Must-Build anchor: {must_build}. {pm_line}Duration: {duration}. Note generated automatically by Indy Roof Scheduling System.",
+        "description": "Template for scheduling decision notes",
+    },
+    "note_template_not_built": {
+        "value": "[SCHEDULER SYSTEM -- {timestamp}] Job returned to scheduling queue. Reason: {reason}. {detail_line}Rescheduled count: {rescheduled_count}. Note generated automatically by Indy Roof Scheduling System.",
+        "description": "Template for not-built notes",
+    },
+    "note_template_secondary_trade_alert": {
+        "value": "[SCHEDULER SYSTEM -- {timestamp}] Primary trade ({primary_trade}) completed. Secondary trades remaining: {remaining_trades}. Days since primary completion: {days_since_primary}. Note generated automatically by Indy Roof Scheduling System.",
+        "description": "Template for secondary trade alert notes",
+    },
+    "note_template_weather_rollback": {
+        "value": "[SCHEDULER SYSTEM -- {timestamp}] Scheduled build removed due to weather conditions. Forecast detail: {weather_detail}. Job returned to scheduling queue with elevated priority. Note generated automatically by Indy Roof Scheduling System.",
+        "description": "Template for weather rollback notes",
+    },
+    "note_template_standalone_rule": {
+        "value": "[SCHEDULER SYSTEM -- {timestamp}] Standalone Rule triggered. No viable cluster partners within 40 miles. Option selected: {option_desc}. Payment type: {payment_type}. Days in queue: {days_in_queue}. Note generated automatically by Indy Roof Scheduling System.",
+        "description": "Template for standalone rule notes",
+    },
 }
 
 

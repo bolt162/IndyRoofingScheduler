@@ -210,14 +210,15 @@ export function SettingsPage() {
             </CardHeader>
             <CardContent className="space-y-6">
               {[
-                { key: 'score_weight_days_in_queue', label: 'Days in Queue' },
-                { key: 'score_weight_payment_type', label: 'Payment Type' },
-                { key: 'score_weight_trade_type', label: 'Trade Type' },
-                { key: 'score_weight_proximity', label: 'Proximity Cluster' },
-                { key: 'score_weight_material_weather', label: 'Material-Weather' },
-                { key: 'score_weight_must_build', label: 'Must Build' },
-                { key: 'score_weight_rescheduled', label: 'Rescheduled Bump' },
-                { key: 'score_weight_permit_duration', label: 'Permit/Duration Confirmed' },
+                { key: 'weight_days_in_queue', label: 'Days in Queue' },
+                { key: 'weight_payment_type', label: 'Payment Type' },
+                { key: 'weight_trade_complexity', label: 'Trade Type' },
+                { key: 'weight_proximity', label: 'Proximity Cluster' },
+                { key: 'weight_material_weather', label: 'Material-Weather' },
+                { key: 'weight_must_build', label: 'Must Build' },
+                { key: 'weight_rescheduled', label: 'Rescheduled Bump' },
+                { key: 'weight_permit_confirmed', label: 'Permit Confirmed' },
+                { key: 'weight_duration_confirmed', label: 'Duration Confirmed' },
               ].map(({ key, label }) => {
                 const val = parseInt(getSetting(key)) || 10;
                 return (
@@ -393,6 +394,18 @@ export function SettingsPage() {
                     onBlur={(e) => handleUpdateSetting('bamwx_check_time', e.target.value)}
                     placeholder="20:00"
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label>JN Sync Interval (minutes)</Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    defaultValue={getSetting('jn_sync_interval_minutes')}
+                    onBlur={(e) => handleUpdateSetting('jn_sync_interval_minutes', e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    How often to auto-sync jobs from JobNimbus. Takes effect on next cycle.
+                  </p>
                 </div>
               </div>
 

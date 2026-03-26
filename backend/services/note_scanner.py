@@ -1,8 +1,9 @@
 """
 AI Note Scanner — uses Claude to extract scheduling-relevant signals from JN notes.
-Scans for: duration hints, permit confirmation, customer flags, scope details.
-Results are cached on the job record (ai_note_scan_result) and only re-scanned
-when jn_notes_raw changes.
+Scans for: duration hints, permit confirmation, material type, square footage,
+customer flags, scope details, crew requirements.
+Results are cached on the job record (ai_note_scan_result) and re-scanned
+when jn_notes_raw changes or when material_type is missing.
 """
 import json
 
@@ -11,6 +12,22 @@ from sqlalchemy.orm import Session
 
 from backend.config import settings
 from backend.models.job import Job, JobBucket
+
+
+# Material aliases for AI-extracted values (same as jobnimbus.py)
+_MATERIAL_NORMALIZE = {
+    "asphalt": "asphalt", "shingle": "asphalt", "shingles": "asphalt",
+    "oc": "asphalt", "owens corning": "asphalt",
+    "iko": "asphalt", "gaf": "asphalt",
+    "certainteed": "asphalt", "atlas": "asphalt",
+    "tamko": "asphalt", "malarkey": "asphalt",
+    "polymer modified": "polymer_modified", "modified bitumen": "polymer_modified",
+    "tpo": "tpo", "duro-last": "duro_last", "duro last": "duro_last",
+    "epdm": "epdm", "coating": "coating",
+    "wood shake": "wood_shake", "cedar shake": "wood_shake", "shake": "wood_shake",
+    "slate": "slate", "metal": "metal", "standing seam": "metal",
+    "siding": "siding",
+}
 
 
 def scan_job_notes(db: Session, job: Job) -> dict | None:
@@ -30,17 +47,20 @@ def scan_job_notes(db: Session, job: Job) -> dict | None:
 JOB INFO:
 - Customer: {job.customer_name}
 - Address: {job.address}
-- Material Type: {job.material_type or 'unknown'}
-- Square Footage: {job.square_footage or 'unknown'}
+- Material Type (from JN): {job.material_type or 'NOT SET — please infer from notes if possible'}
+- Square Footage (from JN): {job.square_footage or 'NOT SET — please estimate from notes if possible'}
+- Primary Trade: {job.primary_trade or 'unknown'}
 - Current Duration Tier: {job.duration_tier or 'unknown'}
 
 JOB NOTES/DESCRIPTION:
 {description}
 
 Extract and return a JSON object with these fields:
-- "duration_hint": estimated days if mentioned (integer or null)
+- "duration_hint": estimated days if mentioned or inferable (integer or null)
 - "duration_reason": why you estimated this duration (string or null)
 - "permit_signal": true/false/null — any mention of permits being ready or needed
+- "material_type_hint": inferred roofing material type if mentioned (one of: "asphalt", "polymer_modified", "tpo", "duro_last", "epdm", "coating", "wood_shake", "slate", "metal", "siding", "other") or null if not determinable. Common brand names: IKO, OC/Owens Corning, GAF, CertainTeed = asphalt shingles.
+- "square_footage_hint": estimated square footage if mentioned (number or null). Note: "squares" in roofing = multiply by 100 to get sq ft. E.g. "30 square" = 3000 sq ft.
 - "customer_flags": list of strings — any customer concerns (e.g. "called multiple times", "unhappy", "urgent request")
 - "scope_details": list of strings — specific scope items found (e.g. "re-deck", "ice and water entire roof", "box vents", "gutters")
 - "crew_notes": string or null — any notes about crew requirements (e.g. "needs specialty crew", "steep pitch")
@@ -69,16 +89,54 @@ Return ONLY valid JSON. No explanation text."""
         # Store result on job
         job.ai_note_scan_result = json.dumps(result)
 
-        # Auto-apply signals to job fields
+        # Auto-apply duration hint (spec §4.3: adopt note-derived duration, keep unconfirmed)
         if result.get("duration_hint") and not job.duration_confirmed:
             job.duration_days = result["duration_hint"]
             job.duration_source = f"AI scan: {result.get('duration_reason', 'extracted from notes')}"
 
-        if result.get("multi_day_signal") and not job.is_multi_day:
-            job.is_multi_day = True
+        # NOTE: multi_day_signal is kept in ai_note_scan_result for informational
+        # display only. We do NOT auto-set is_multi_day — per spec (Section 7.4),
+        # multi-day is only set manually via the Scope Change workflow when a crew
+        # discovers mid-build that the job needs more time.
 
+        # Auto-apply permit signal
         if result.get("permit_signal") is True and not job.permit_confirmed:
             job.permit_confirmed = True
+
+        # Auto-apply material type hint when JN field is empty
+        if result.get("material_type_hint") and not job.material_type:
+            hint = result["material_type_hint"].lower().strip()
+            # Normalize through alias map
+            normalized = _MATERIAL_NORMALIZE.get(hint, hint)
+            if normalized in {"asphalt", "polymer_modified", "tpo", "duro_last", "epdm",
+                              "coating", "wood_shake", "slate", "metal", "siding", "other"}:
+                job.material_type = normalized
+                # Re-classify duration tier now that we have material
+                from backend.services.jobnimbus import _classify_duration_tier
+                tier, dur_confirmed, crew_flag = _classify_duration_tier(
+                    job.material_type, job.square_footage
+                )
+                if not job.duration_confirmed:
+                    job.duration_tier = tier
+                    job.duration_confirmed = dur_confirmed
+                job.crew_requirement_flag = crew_flag
+
+        # Auto-apply square footage hint when JN field is empty
+        if result.get("square_footage_hint") and not job.square_footage:
+            try:
+                sq = float(result["square_footage_hint"])
+                if sq > 0:
+                    job.square_footage = sq
+                    # Re-classify duration tier with new square footage
+                    from backend.services.jobnimbus import _classify_duration_tier
+                    tier, dur_confirmed, crew_flag = _classify_duration_tier(
+                        job.material_type, job.square_footage
+                    )
+                    if not job.duration_confirmed:
+                        job.duration_tier = tier
+                        job.duration_confirmed = dur_confirmed
+            except (ValueError, TypeError):
+                pass
 
         db.commit()
         return result
@@ -88,11 +146,22 @@ Return ONLY valid JSON. No explanation text."""
 
 
 def scan_all_unscanned_jobs(db: Session) -> dict:
-    """Scan all jobs that haven't been scanned yet or have notes but no scan result."""
+    """
+    Scan jobs that need AI analysis:
+    - Jobs with notes but no scan result yet
+    - Jobs with empty material_type that have notes (re-scan to extract)
+    """
+    from sqlalchemy import or_
+
     jobs = db.query(Job).filter(
         Job.jn_notes_raw != None,
         Job.jn_notes_raw != "",
-        Job.ai_note_scan_result == None,
+        or_(
+            Job.ai_note_scan_result == None,   # Never scanned
+            Job.ai_note_scan_result == "",      # Empty scan result
+            Job.material_type == None,           # Material missing — try to extract
+            Job.material_type == "",             # Material empty — try to extract
+        ),
     ).all()
 
     scanned = 0

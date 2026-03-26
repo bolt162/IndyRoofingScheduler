@@ -132,83 +132,81 @@ export function WeeklyPlanPage() {
   };
 
   return (
-    <div className="flex h-full">
-      {/* Unassigned jobs sidebar */}
-      <div className="w-72 border-r flex flex-col">
-        <div className="p-4">
-          <h3 className="text-sm font-semibold mb-1">Unassigned Jobs</h3>
-          <p className="text-xs text-muted-foreground">
-            {unassignedJobs.length} jobs to schedule — drag into a day
-          </p>
-        </div>
-        <Separator />
-        <ScrollArea className="flex-1 p-3">
-          <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+    <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+      <div className="flex h-full">
+        {/* Unassigned jobs sidebar — header stays fixed, job list scrolls */}
+        <div className="w-72 border-r flex flex-col shrink-0 overflow-hidden">
+          <div className="p-4 shrink-0">
+            <h3 className="text-sm font-semibold mb-1">Unassigned Jobs</h3>
+            <p className="text-xs text-muted-foreground">
+              {unassignedJobs.length} jobs to schedule — drag into a day
+            </p>
+          </div>
+          <Separator className="shrink-0" />
+          <ScrollArea className="flex-1 min-h-0 p-3">
             <div className="space-y-2">
               {unassignedJobs.map((job) => (
                 <DraggableJobCard key={job.id} job={job} />
               ))}
             </div>
-          </DndContext>
-        </ScrollArea>
-      </div>
-
-      {/* Main area */}
-      <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b">
-          <div className="flex items-center gap-3">
-            <Button variant="outline" size="icon" onClick={prevWeek}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <div className="text-center">
-              <p className="text-sm font-semibold">
-                Week of {format(selectedWeekStart, 'MMM d, yyyy')}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {format(selectedWeekStart, 'MMM d')} – {format(addDays(selectedWeekStart, 6), 'MMM d')}
-              </p>
-            </div>
-            <Button variant="outline" size="icon" onClick={nextWeek}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-
-          <div className="flex items-center gap-2">
-            {/* PM toggles */}
-            <div className="flex gap-1">
-              {activePMs.map((pm) => (
-                <Button
-                  key={pm.id}
-                  variant={selectedPMIds.includes(pm.id) ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => togglePM(pm.id)}
-                  className="text-xs h-7"
-                >
-                  {pm.name}
-                </Button>
-              ))}
-            </div>
-
-            <Separator orientation="vertical" className="h-6" />
-
-            {weekDraftPlans.length > 0 && (
-              <Button
-                size="sm"
-                onClick={handleConfirmWeek}
-                disabled={confirmPlan.isPending}
-              >
-                <Check className="h-4 w-4 mr-1" />
-                Confirm Week ({weekDraftPlans.length})
-              </Button>
-            )}
-          </div>
+          </ScrollArea>
         </div>
 
-        {/* 7-day grid */}
-        <div className="flex-1 overflow-auto p-4">
-          <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-            <div className="grid grid-cols-7 gap-3 h-full min-h-[500px]">
+        {/* Main area */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b">
+            <div className="flex items-center gap-3">
+              <Button variant="outline" size="icon" onClick={prevWeek}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <div className="text-center">
+                <p className="text-sm font-semibold">
+                  Week of {format(selectedWeekStart, 'MMM d, yyyy')}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {format(selectedWeekStart, 'MMM d')} – {format(addDays(selectedWeekStart, 6), 'MMM d')}
+                </p>
+              </div>
+              <Button variant="outline" size="icon" onClick={nextWeek}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {/* PM toggles */}
+              <div className="flex gap-1">
+                {activePMs.map((pm) => (
+                  <Button
+                    key={pm.id}
+                    variant={selectedPMIds.includes(pm.id) ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => togglePM(pm.id)}
+                    className="text-xs h-7"
+                  >
+                    {pm.name}
+                  </Button>
+                ))}
+              </div>
+
+              <Separator orientation="vertical" className="h-6" />
+
+              {weekDraftPlans.length > 0 && (
+                <Button
+                  size="sm"
+                  onClick={handleConfirmWeek}
+                  disabled={confirmPlan.isPending}
+                >
+                  <Check className="h-4 w-4 mr-1" />
+                  Confirm Week ({weekDraftPlans.length})
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* 7-day grid */}
+          <div className="flex-1 overflow-auto p-4">
+            <div className="grid gap-3 h-full min-h-[500px]" style={{ gridTemplateColumns: 'repeat(7, minmax(160px, 1fr))' }}>
               {weekDays.map((day) => {
                 const key = format(day, 'yyyy-MM-dd');
                 return (
@@ -223,9 +221,9 @@ export function WeeklyPlanPage() {
                 );
               })}
             </div>
-          </DndContext>
+          </div>
         </div>
       </div>
-    </div>
+    </DndContext>
   );
 }

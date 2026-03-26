@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { startOfWeek, addDays } from 'date-fns';
-import type { JobBucket } from '@/types';
+import type { JobBucket, ScoringResponse } from '@/types';
 
 interface UIState {
   // Week selector
@@ -26,9 +26,16 @@ interface UIState {
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
   toggleSidebar: () => void;
+
+  // Scoring results — persists across navigation, cleared on page refresh
+  latestScoringResult: ScoringResponse | null;
+  setLatestScoringResult: (result: ScoringResponse | null) => void;
+
+  // Helper: look up recommended PM for a job from latest scoring result
+  getPMForJob: (jobId: number) => { pmId: number; pmName: string } | null;
 }
 
-export const useUIStore = create<UIState>((set) => ({
+export const useUIStore = create<UIState>((set, get) => ({
   // Default to current week's Monday
   selectedWeekStart: startOfWeek(new Date(), { weekStartsOn: 1 }),
   setSelectedWeekStart: (date) => set({ selectedWeekStart: date }),
@@ -53,4 +60,21 @@ export const useUIStore = create<UIState>((set) => ({
   sidebarOpen: true,
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
+
+  // Scoring results
+  latestScoringResult: null,
+  setLatestScoringResult: (result) => set({ latestScoringResult: result }),
+
+  getPMForJob: (jobId: number) => {
+    const result = get().latestScoringResult;
+    if (!result?.pm_plan) return null;
+    for (const pm of result.pm_plan) {
+      for (const job of pm.jobs) {
+        if (job.job_id === jobId) {
+          return { pmId: pm.pm_id, pmName: pm.pm_name };
+        }
+      }
+    }
+    return null;
+  },
 }));

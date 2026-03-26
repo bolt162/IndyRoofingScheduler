@@ -9,7 +9,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from backend.config import settings
-from backend.models.job import Job, JobBucket, LOW_SLOPE_MATERIALS, SPECIALTY_MATERIALS, MaterialType
+from backend.models.job import Job, JobBucket, LOW_SLOPE_MATERIALS, SPECIALTY_MATERIALS, MaterialType, TradeType
 
 
 HEADERS = {
@@ -34,6 +34,13 @@ def fetch_jobs_at_status(status_label: str = "Schedule Job") -> list[dict]:
     return [j for j in results if j.get("status_name") == status_label]
 
 
+def fetch_jobs_at_tracked_statuses() -> list[dict]:
+    """Fetch all active jobs whose JN status maps to a scheduler bucket."""
+    data = _jn_get("jobs", params={"must": "active", "count": 5000})
+    results = data.get("results", []) if isinstance(data, dict) else data
+    return [j for j in results if j.get("status_name") in TRACKED_JN_STATUSES]
+
+
 def fetch_job_by_id(jn_job_id: str) -> dict:
     """Fetch a single job from JN by its ID."""
     return _jn_get(f"jobs/{jn_job_id}")
@@ -47,8 +54,95 @@ def fetch_contacts_for_job(jn_job_id: str) -> list[dict]:
 
 def fetch_notes_for_job(jn_job_id: str) -> list[dict]:
     """Fetch all activity/notes for a JN job."""
-    data = _jn_get(f"activities", params={"job_id": jn_job_id})
+    # JN API uses parent_jnid to filter activities by parent job
+    data = _jn_get("activities", params={"parent_jnid": jn_job_id, "count": 100})
     return data.get("results", data) if isinstance(data, dict) else data
+
+
+TRADE_ALIASES = {
+    "roofing": "roofing", "roof": "roofing",
+    "siding": "siding", "side": "siding",
+    "gutters": "gutters", "gutter": "gutters",
+    "windows": "windows", "window": "windows",
+    "paint": "paint", "painting": "paint",
+    "interior": "interior",
+}
+VALID_TRADES = {t.value for t in TradeType}
+
+
+def _normalize_trade(raw: str) -> str:
+    """Normalize a raw JN trade string to a valid TradeType enum value."""
+    raw = raw.lower().strip()
+    if raw in VALID_TRADES:
+        return raw
+    return TRADE_ALIASES.get(raw, "other" if raw else "roofing")
+
+
+MATERIAL_ALIASES = {
+    # Manufacturer brands (all produce asphalt shingles)
+    "oc": "asphalt", "owens corning": "asphalt",
+    "iko": "asphalt", "gaf": "asphalt",
+    "certainteed": "asphalt", "atlas": "asphalt",
+    "tamko": "asphalt", "malarkey": "asphalt",
+    # Direct enum matches
+    "asphalt": "asphalt", "shingle": "asphalt", "shingles": "asphalt",
+    "polymer_modified": "polymer_modified", "polymer modified": "polymer_modified",
+    "modified bitumen": "polymer_modified",
+    "tpo": "tpo",
+    "duro_last": "duro_last", "duro-last": "duro_last", "durolast": "duro_last",
+    "epdm": "epdm",
+    "coating": "coating",
+    "wood_shake": "wood_shake", "wood shake": "wood_shake",
+    "cedar shake": "wood_shake", "shake": "wood_shake",
+    "slate": "slate",
+    "metal": "metal", "standing seam": "metal", "metal roof": "metal",
+    "siding": "siding",
+}
+VALID_MATERIALS = {m.value for m in MaterialType}
+
+# JN status_name → scheduler bucket mapping
+# Only statuses listed here are fetched during sync — everything else is ignored
+JN_STATUS_TO_BUCKET = {
+    # Pending Confirmation — awaiting manual duration/crew confirmation
+    "Permit Required": "pending_confirmation",
+    "Not Ready for Scheduling": "pending_confirmation",
+    # Coming Soon — approved, materials ordered, not yet schedulable
+    "Order/Schedule": "coming_soon",
+    "Procurement": "coming_soon",
+    "Pending Start Date": "coming_soon",
+    "Pending Materials": "coming_soon",
+    "Permit & Order": "coming_soon",
+    # To Schedule — enters scoring engine
+    "Schedule Job": "to_schedule",
+    "Schedule Production": "to_schedule",
+    # Scheduled — plan confirmed, actively being built
+    "Job In Progress": "scheduled",
+    "In Production": "scheduled",
+    # Primary Complete — primary trade done, secondaries open
+    "Other Trades": "primary_complete",
+    # Review for Completion
+    "COC / Punch List": "review_for_completion",
+    # Completed
+    "Job Complete (Job Review)": "completed",
+    "Completed": "completed",
+}
+TRACKED_JN_STATUSES = set(JN_STATUS_TO_BUCKET.keys())
+
+
+def _normalize_material(raw: str) -> str:
+    """Normalize a raw JN material string to a valid MaterialType enum value."""
+    raw = raw.lower().strip()
+    if not raw:
+        return ""
+    if raw in VALID_MATERIALS:
+        return raw
+    if raw in MATERIAL_ALIASES:
+        return MATERIAL_ALIASES[raw]
+    # Fuzzy: check if any alias key is contained in the raw value
+    for alias, normalized in MATERIAL_ALIASES.items():
+        if alias in raw:
+            return normalized
+    return "other"
 
 
 def _classify_duration_tier(material_type: str | None, square_footage: float | None) -> tuple[str, bool, bool]:
@@ -97,10 +191,10 @@ def map_jn_job_to_model(jn_data: dict) -> dict:
     latitude = geo.get("lat")
     longitude = geo.get("lon")  # JN uses "lon" not "lng"
 
-    # Material type from "Roof Material Type" custom field (e.g. "IKO", "OC")
-    # or fall back to "Trade #1" for siding detection
-    material_type = (jn_data.get("Roof Material Type") or "").lower()
+    # Material type from "Roof Material Type" custom field, normalized to MaterialType enum
+    raw_material = (jn_data.get("Roof Material Type") or "").lower()
     trade_1 = (jn_data.get("Trade #1") or jn_data.get("cf_string_11") or "").lower()
+    material_type = _normalize_material(raw_material)
     if not material_type and trade_1 == "siding":
         material_type = "siding"
 
@@ -129,13 +223,32 @@ def map_jn_job_to_model(jn_data: dict) -> dict:
                 pass
 
     # Job type from record_type_name (e.g. "Insurance", "Retail")
-    job_type = (jn_data.get("record_type_name") or "").lower()
+    raw_job_type = (jn_data.get("record_type_name") or "").lower()
+    job_type = "insurance" if raw_job_type == "insurance" else "retail"
 
-    # Payment type derived from job_type
-    payment_type = "insurance" if job_type == "insurance" else "cash"
+    # Payment type from JN custom field, fallback to job_type derivation
+    raw_payment = (jn_data.get("Payment Type") or jn_data.get("cf_payment_type") or "").lower()
+    if raw_payment in ("cash", "finance", "insurance"):
+        payment_type = raw_payment
+    elif "financ" in raw_payment:
+        payment_type = "finance"
+    elif "insur" in raw_payment:
+        payment_type = "insurance"
+    else:
+        payment_type = "insurance" if job_type == "insurance" else "cash"
 
-    # Primary trade from "Trade #1" custom field
-    primary_trade = trade_1 or "roofing"
+    # Primary trade from "Trade #1" custom field, normalized to TradeType enum
+    primary_trade = _normalize_trade(trade_1)
+
+    # Secondary trades from "Trade #2" and "Trade #3" custom fields
+    raw_trade_2 = (jn_data.get("Trade #2") or jn_data.get("cf_string_12") or "").lower()
+    raw_trade_3 = (jn_data.get("Trade #3") or jn_data.get("cf_string_13") or "").lower()
+    secondary_trades = []
+    for raw in [raw_trade_2, raw_trade_3]:
+        if raw:
+            normalized = _normalize_trade(raw)
+            if normalized != primary_trade and normalized not in secondary_trades:
+                secondary_trades.append(normalized)
 
     # Customer name from "name" field (format: "customer name - J-XXXXX")
     raw_name = jn_data.get("name") or ""
@@ -148,6 +261,18 @@ def map_jn_job_to_model(jn_data: dict) -> dict:
     # Description (useful for AI note scanning)
     description = jn_data.get("description") or ""
 
+    # Bucket assignment: derive from JN status, with auto-transitions
+    jn_status = jn_data.get("status_name") or ""
+    bucket = JN_STATUS_TO_BUCKET.get(jn_status, JobBucket.TO_SCHEDULE.value)
+
+    # Low-slope hard gate: override to pending_confirmation (spec §4.2)
+    if tier == "low_slope" and not dur_confirmed:
+        bucket = "pending_confirmation"
+
+    # Auto-transition: Primary Complete with open secondaries → Waiting on Trades (spec §8.2)
+    if bucket == "primary_complete" and secondary_trades:
+        bucket = "waiting_on_trades"
+
     return {
         "jn_job_id": str(jn_data.get("jnid") or ""),
         "customer_name": customer_name,
@@ -157,7 +282,7 @@ def map_jn_job_to_model(jn_data: dict) -> dict:
         "job_type": job_type,
         "payment_type": payment_type,
         "primary_trade": primary_trade,
-        "secondary_trades": [],
+        "secondary_trades": secondary_trades,
         "material_type": material_type,
         "square_footage": square_footage,
         "date_entered": date_entered,
@@ -166,8 +291,8 @@ def map_jn_job_to_model(jn_data: dict) -> dict:
         "duration_confirmed": dur_confirmed,
         "duration_tier": tier,
         "crew_requirement_flag": crew_flag,
-        "jn_status": jn_data.get("status_name") or "",
-        "bucket": JobBucket.TO_SCHEDULE.value,
+        "jn_status": jn_status,
+        "bucket": bucket,
         "jn_notes_raw": description,
     }
 
@@ -177,7 +302,7 @@ def sync_jobs_from_jn(db: Session) -> dict:
     Sync jobs from JN into our database. READ-ONLY — only creates/updates local records.
     Returns sync summary.
     """
-    jn_jobs = fetch_jobs_at_status("Schedule Job")
+    jn_jobs = fetch_jobs_at_tracked_statuses()
     created = 0
     updated = 0
     errors = []
@@ -187,28 +312,40 @@ def sync_jobs_from_jn(db: Session) -> dict:
             mapped = map_jn_job_to_model(jn_data)
             jn_id = mapped["jn_job_id"]
 
+            # Build jn_notes_raw: job description + any JN activities/notes
+            notes_parts = []
+            description = jn_data.get("description") or ""
+            if description.strip():
+                notes_parts.append(f"[Job Description] {description}")
+            try:
+                activities = fetch_notes_for_job(jn_id)
+                for n in activities:
+                    if isinstance(n, dict):
+                        note_text = n.get("note") or n.get("description") or ""
+                        if note_text.strip():
+                            notes_parts.append(f"[Note] {note_text}")
+            except Exception:
+                pass
+            jn_notes_raw = "\n---\n".join(notes_parts)
+
             existing = db.query(Job).filter(Job.jn_job_id == jn_id).first()
             if existing:
                 # Update fields that may have changed
                 for field in ["customer_name", "address", "latitude", "longitude",
                               "payment_type", "material_type", "square_footage",
-                              "sales_rep", "jn_status"]:
-                    if mapped.get(field):
+                              "sales_rep", "jn_status", "bucket", "duration_tier",
+                              "duration_confirmed", "crew_requirement_flag"]:
+                    if mapped.get(field) is not None:
                         setattr(existing, field, mapped[field])
+                # Always update notes — they may have changed in JN
+                if jn_notes_raw:
+                    existing.jn_notes_raw = jn_notes_raw
+                    # Clear scan result so it gets re-scanned with new notes
+                    existing.ai_note_scan_result = None
                 existing.last_synced_at = datetime.utcnow()
                 updated += 1
             else:
-                # Fetch notes for new jobs
-                try:
-                    notes = fetch_notes_for_job(jn_id)
-                    notes_text = "\n---\n".join(
-                        f"[{n.get('date_created', 'unknown date')}] {n.get('note', n.get('description', ''))}"
-                        for n in notes if isinstance(n, dict)
-                    )
-                    mapped["jn_notes_raw"] = notes_text
-                except Exception:
-                    mapped["jn_notes_raw"] = ""
-
+                mapped["jn_notes_raw"] = jn_notes_raw
                 job = Job(**mapped)
                 job.last_synced_at = datetime.utcnow()
                 db.add(job)
@@ -218,10 +355,25 @@ def sync_jobs_from_jn(db: Session) -> dict:
             errors.append({"jn_id": jn_data.get("jnid", "unknown"), "error": str(e)})
 
     db.commit()
+
+    # Per spec §4.3: "When a job enters the system, the AI scans all JN notes
+    # for duration signals." Run note scanning automatically after sync.
+    ai_scanned = 0
+    ai_failed = 0
+    try:
+        from backend.services.note_scanner import scan_all_unscanned_jobs
+        scan_result = scan_all_unscanned_jobs(db)
+        ai_scanned = scan_result.get("scanned", 0)
+        ai_failed = scan_result.get("failed", 0)
+    except Exception:
+        pass
+
     return {
         "synced_at": datetime.utcnow().isoformat(),
         "created": created,
         "updated": updated,
+        "ai_scanned": ai_scanned,
+        "ai_failed": ai_failed,
         "errors": errors,
         "total_from_jn": len(jn_jobs),
     }
