@@ -102,15 +102,29 @@ export function WeeklyPlanPage() {
     const dayStr = over.data.current?.date as string | undefined;
     if (!job || !dayStr) return;
 
+    // Require exactly one PM selected to assign jobs
+    if (selectedPMIds.length === 0) {
+      toast.error('Select a PM from the header before scheduling jobs');
+      return;
+    }
+    if (selectedPMIds.length > 1) {
+      toast.error('Select exactly one PM to assign this job to');
+      return;
+    }
+
+    const assignedPmId = selectedPMIds[0];
+    const pmName = activePMs.find((p) => p.id === assignedPmId)?.name ?? '';
+
     try {
       await updateJob.mutateAsync({
         id: job.id,
         update: {
           bucket: 'scheduled',
           date_scheduled: dayStr,
+          assigned_pm_id: assignedPmId,
         },
       });
-      toast.success(`Scheduled ${job.customer_name} for ${dayStr}`);
+      toast.success(`Scheduled ${job.customer_name} for ${dayStr} → ${pmName}`);
     } catch {
       toast.error('Failed to schedule job');
     }
@@ -174,8 +188,9 @@ export function WeeklyPlanPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              {/* PM toggles */}
-              <div className="flex gap-1">
+              {/* PM toggles — select one to assign jobs */}
+              <div className="flex items-center gap-1">
+                <span className="text-[10px] text-muted-foreground mr-1">Assign to:</span>
                 {activePMs.map((pm) => (
                   <Button
                     key={pm.id}
@@ -187,6 +202,9 @@ export function WeeklyPlanPage() {
                     {pm.name}
                   </Button>
                 ))}
+                {selectedPMIds.length === 0 && (
+                  <span className="text-[10px] text-amber-600 ml-1">← select a PM</span>
+                )}
               </div>
 
               <Separator orientation="vertical" className="h-6" />

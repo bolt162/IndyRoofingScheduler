@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from './client';
-import type { Job, JobUpdate, NotBuiltRequest, BucketCounts, JobBucket } from '@/types';
+import type { Job, JobCreate, JobUpdate, NotBuiltRequest, BucketCounts, JobBucket } from '@/types';
 
 // List jobs, optionally filtered by bucket
 export function useJobs(bucket?: JobBucket) {
@@ -101,6 +101,21 @@ export function useSyncJN() {
   });
 }
 
+// Create a new job manually
+export function useCreateJob() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: JobCreate) => {
+      const { data: resp } = await api.post('/jobs/', data);
+      return resp as Job;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['jobs'] });
+      qc.invalidateQueries({ queryKey: ['bucketCounts'] });
+    },
+  });
+}
+
 // Mark not built
 export function useMarkNotBuilt() {
   const qc = useQueryClient();
@@ -112,6 +127,20 @@ export function useMarkNotBuilt() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['jobs'] });
       qc.invalidateQueries({ queryKey: ['bucketCounts'] });
+    },
+  });
+}
+
+// Set standalone option (Saturday Build or Sales Rep Managed)
+export function useSetStandaloneOption() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, option }: { id: number; option: 'saturday_build' | 'sales_rep_managed' }) => {
+      const { data } = await api.post(`/jobs/${id}/standalone-option`, { option });
+      return data as Job;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['jobs'] });
     },
   });
 }

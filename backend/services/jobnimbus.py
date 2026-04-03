@@ -337,11 +337,9 @@ def sync_jobs_from_jn(db: Session) -> dict:
                               "duration_confirmed", "crew_requirement_flag"]:
                     if mapped.get(field) is not None:
                         setattr(existing, field, mapped[field])
-                # Always update notes — they may have changed in JN
-                if jn_notes_raw:
+                # Update notes only if they actually changed (avoids unnecessary re-scans)
+                if jn_notes_raw and jn_notes_raw != (existing.jn_notes_raw or ""):
                     existing.jn_notes_raw = jn_notes_raw
-                    # Clear scan result so it gets re-scanned with new notes
-                    existing.ai_note_scan_result = None
                 existing.last_synced_at = datetime.utcnow()
                 updated += 1
             else:
@@ -356,24 +354,10 @@ def sync_jobs_from_jn(db: Session) -> dict:
 
     db.commit()
 
-    # Per spec §4.3: "When a job enters the system, the AI scans all JN notes
-    # for duration signals." Run note scanning automatically after sync.
-    ai_scanned = 0
-    ai_failed = 0
-    try:
-        from backend.services.note_scanner import scan_all_unscanned_jobs
-        scan_result = scan_all_unscanned_jobs(db)
-        ai_scanned = scan_result.get("scanned", 0)
-        ai_failed = scan_result.get("failed", 0)
-    except Exception:
-        pass
-
     return {
         "synced_at": datetime.utcnow().isoformat(),
         "created": created,
         "updated": updated,
-        "ai_scanned": ai_scanned,
-        "ai_failed": ai_failed,
         "errors": errors,
         "total_from_jn": len(jn_jobs),
     }

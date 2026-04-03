@@ -11,11 +11,13 @@ import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { JobList } from '@/components/jobs/JobList';
 import { JobCard } from '@/components/jobs/JobCard';
-import { useJobs, useBucketCounts, useSyncJN, useSyncStatus } from '@/api/jobs';
-import { Download } from 'lucide-react';
+import { useState } from 'react';
+import { useJobs, useBucketCounts, useSyncJN, useCreateJob, useUpdateJob } from '@/api/jobs';
+import { Download, Plus } from 'lucide-react';
 import { useRunScoring } from '@/api/scoring';
 import { useCheckAllWeather } from '@/api/weather';
 import { useUIStore } from '@/stores/ui-store';
+import { JobFormDialog } from '@/components/jobs/JobFormDialog';
 import type { JobBucket } from '@/types';
 
 const bucketCards = [
@@ -37,16 +39,15 @@ export function DashboardPage() {
   const runScoring = useRunScoring();
   const checkWeather = useCheckAllWeather();
   const syncJN = useSyncJN();
-  const { data: syncStatus } = useSyncStatus();
-  const isBgSyncing = syncStatus?.running ?? false;
+  const createJob = useCreateJob();
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
 
   const mustBuildJobs = jobs?.filter((j) => j.must_build) ?? [];
 
   const handleSyncJN = async () => {
     try {
       const result = await syncJN.mutateAsync();
-      const aiPart = result.ai_scanned ? `, AI scanned ${result.ai_scanned} notes` : '';
-      toast.success(`Synced: ${result.created} new, ${result.updated} updated from JN${aiPart}`);
+      toast.success(`Synced: ${result.created} new, ${result.updated} updated from JN`);
     } catch {
       toast.error('JN sync failed');
     }
@@ -86,26 +87,28 @@ export function DashboardPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {isBgSyncing && (
-            <span className="flex items-center gap-1.5 text-xs text-blue-600 mr-2">
-              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-              Syncing + AI scanning...
-            </span>
-          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowCreateDialog(true)}
+          >
+            <Plus className="h-4 w-4 mr-1.5" />
+            Create Job
+          </Button>
           <Button
             variant="outline"
             size="sm"
             onClick={handleSyncJN}
-            disabled={syncJN.isPending || isBgSyncing}
+            disabled={syncJN.isPending}
           >
-            <Download className={`h-4 w-4 mr-1.5 ${(syncJN.isPending || isBgSyncing) ? 'animate-pulse' : ''}`} />
-            {syncJN.isPending ? 'Syncing...' : isBgSyncing ? 'Auto-syncing...' : 'Sync JN'}
+            <Download className={`h-4 w-4 mr-1.5 ${syncJN.isPending ? 'animate-pulse' : ''}`} />
+            {syncJN.isPending ? 'Syncing...' : 'Sync JN'}
           </Button>
           <Button
             variant="outline"
             size="sm"
             onClick={handleCheckWeather}
-            disabled={checkWeather.isPending || isBgSyncing}
+            disabled={checkWeather.isPending}
           >
             <RefreshCw className={`h-4 w-4 mr-1.5 ${checkWeather.isPending ? 'animate-spin' : ''}`} />
             Check Weather
@@ -113,7 +116,7 @@ export function DashboardPage() {
           <Button
             size="sm"
             onClick={handleRunScoring}
-            disabled={runScoring.isPending || isBgSyncing}
+            disabled={runScoring.isPending}
           >
             <Zap className="h-4 w-4 mr-1.5" />
             {runScoring.isPending ? 'Scoring...' : 'Run Scoring'}
@@ -272,67 +275,91 @@ export function DashboardPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="pt-0">
-                  {/* Cluster summaries for this PM */}
+                  {/* Jobs grouped by cluster */}
                   {(() => {
                     const pmClusterIds = [...new Set(pm.jobs.map((j) => j.cluster_id).filter(Boolean))];
-                    const pmClusters = pmClusterIds
-                      .map((cid) => scoringResult.clusters?.find((c) => c.cluster_id === cid))
-                      .filter(Boolean);
-                    return pmClusters.length > 0 && (
-                      <div className="space-y-1 mb-2">
-                        {pmClusters.map((cluster) => {
-                          const clusterJobs = pm.jobs.filter((j) => j.cluster_id === cluster!.cluster_id);
-                          const distObjs = (cluster as any)?.distances as Array<{ from: number; to: number; miles: number }> | undefined;
-                          const maxDist = distObjs?.length ? Math.max(...distObjs.map(d => d.miles)) : null;
+                    const standaloneJobs = pm.jobs.filter((j) => {
+                      const cl = scoringResult.clusters?.find((c) => c.cluster_id === j.cluster_id);
+                      return !cl || cl.is_standalone;
+                    });
+                    const clusteredGroups = pmClusterIds
+                      .map((cid) => {
+                        const cluster = scoringResult.clusters?.find((c) => c.cluster_id === cid);
+                        if (!cluster || cluster.is_standalone) return null;
+                        const jobs = pm.jobs.filter((j) => j.cluster_id === cid);
+                        return { cluster, jobs };
+                      })
+                      .filter(Boolean) as Array<{ cluster: any; jobs: typeof pm.jobs }>;
+
+                    return (
+                      <div className="space-y-2">
+                        {clusteredGroups.map(({ cluster, jobs }) => {
+                          const distObjs = cluster.distances as Array<{ from: number; to: number; miles: number }> | undefined;
+                          const maxDist = distObjs?.length ? Math.max(...distObjs.map((d: any) => d.miles)) : null;
                           return (
-                            <div
-                              key={cluster!.cluster_id}
-                              className={`text-[10px] px-2 py-1 rounded ${
-                                cluster!.tier === 'tight'
+                            <div key={cluster.cluster_id}>
+                              <div className={`text-[10px] px-2 py-1 rounded mb-1 ${
+                                cluster.tier === 'tight'
                                   ? 'bg-green-50 text-green-700'
-                                  : cluster!.tier === 'close'
+                                  : cluster.tier === 'close'
                                     ? 'bg-blue-50 text-blue-700'
-                                    : cluster!.tier === 'standalone'
-                                      ? 'bg-amber-50 text-amber-700'
-                                      : 'bg-gray-50 text-gray-700'
-                              }`}
-                            >
-                              <MapPin className="h-3 w-3 inline mr-1" />
-                              {clusterJobs.length} jobs · {cluster!.tier} cluster
-                              {maxDist !== null && ` · within ${maxDist.toFixed(1)} mi`}
+                                    : 'bg-gray-50 text-gray-700'
+                              }`}>
+                                <MapPin className="h-3 w-3 inline mr-1" />
+                                {jobs.length} jobs · {cluster.tier} cluster
+                                {maxDist !== null && ` · within ${maxDist.toFixed(1)} mi`}
+                              </div>
+                              {jobs.map((j) => (
+                                <div
+                                  key={j.job_id}
+                                  className="flex items-center justify-between text-xs bg-white rounded px-3 py-1.5 border ml-3"
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="font-mono text-[10px] text-muted-foreground w-8">
+                                      {j.score?.toFixed(0)}
+                                    </span>
+                                    <span className="font-medium truncate">{j.customer_name}</span>
+                                  </div>
+                                  {j.must_build && (
+                                    <Badge variant="outline" className="text-[9px] bg-red-100 text-red-800">Must-Build</Badge>
+                                  )}
+                                </div>
+                              ))}
                             </div>
                           );
                         })}
+
+                        {standaloneJobs.length > 0 && (
+                          <div>
+                            <div className="text-[10px] px-2 py-1 rounded mb-1 bg-amber-50 text-amber-700">
+                              <MapPin className="h-3 w-3 inline mr-1" />
+                              {standaloneJobs.length} standalone job{standaloneJobs.length > 1 ? 's' : ''}
+                            </div>
+                            {standaloneJobs.map((j) => (
+                              <div
+                                key={j.job_id}
+                                className="flex items-center justify-between text-xs bg-white rounded px-3 py-1.5 border ml-3 border-amber-200"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="font-mono text-[10px] text-muted-foreground w-8">
+                                    {j.score?.toFixed(0)}
+                                  </span>
+                                  <span className="font-medium truncate">{j.customer_name}</span>
+                                </div>
+                                {j.must_build && (
+                                  <Badge variant="outline" className="text-[9px] bg-red-100 text-red-800">Must-Build</Badge>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {pm.assigned_jobs === 0 && (
+                          <p className="text-xs text-muted-foreground italic py-2">No jobs assigned</p>
+                        )}
                       </div>
                     );
                   })()}
-                  <div className="space-y-1.5">
-                    {pm.jobs.map((j) => (
-                      <div
-                        key={j.job_id}
-                        className="flex items-center justify-between text-xs bg-white rounded px-3 py-2 border"
-                      >
-                        <div className="flex items-center gap-2 min-w-0">
-                          <span className="font-mono text-[10px] text-muted-foreground w-8">
-                            {j.score?.toFixed(0)}
-                          </span>
-                          <span className="font-medium truncate">
-                            {j.customer_name}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {j.must_build && (
-                            <Badge variant="outline" className="text-[9px] bg-red-100 text-red-800">
-                              Must-Build
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                    {pm.assigned_jobs === 0 && (
-                      <p className="text-xs text-muted-foreground italic py-2">No jobs assigned</p>
-                    )}
-                  </div>
                 </CardContent>
               </Card>
             ))}
@@ -395,6 +422,23 @@ export function DashboardPage() {
           <JobList jobs={jobs ?? []} />
         )}
       </div>
+
+      {/* Create Job Dialog */}
+      <JobFormDialog
+        open={showCreateDialog}
+        onOpenChange={setShowCreateDialog}
+        mode="create"
+        onSubmit={async (data) => {
+          try {
+            await createJob.mutateAsync(data as any);
+            toast.success('Job created successfully');
+            setShowCreateDialog(false);
+          } catch {
+            toast.error('Failed to create job');
+          }
+        }}
+        isPending={createJob.isPending}
+      />
     </div>
   );
 }

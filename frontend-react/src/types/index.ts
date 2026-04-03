@@ -107,8 +107,23 @@ export interface Job {
   weather_detail: string | null;
   primary_complete_date: string | null;
   secondary_trades_status: Record<string, string> | null;
+  latest_system_note: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface JobCreate {
+  customer_name: string;
+  address: string;
+  job_type?: string;
+  payment_type: string;
+  primary_trade?: string;
+  secondary_trades?: string[];
+  material_type: string;
+  square_footage?: number | null;
+  sales_rep?: string | null;
+  duration_days?: number;
+  notes?: string | null;
 }
 
 export interface JobUpdate {
@@ -123,6 +138,19 @@ export interface JobUpdate {
   duration_days?: number;
   duration_confirmed?: boolean;
   standalone_option?: StandaloneOption;
+  // Editable job details
+  customer_name?: string;
+  address?: string;
+  job_type?: string;
+  payment_type?: string;
+  primary_trade?: string;
+  secondary_trades?: string[];
+  material_type?: string;
+  square_footage?: number | null;
+  sales_rep?: string | null;
+  notes?: string | null;
+  permit_confirmed?: boolean;
+  crew_requirement_flag?: boolean;
 }
 
 export interface NotBuiltRequest {

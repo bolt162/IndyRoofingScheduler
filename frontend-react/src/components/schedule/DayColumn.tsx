@@ -62,8 +62,8 @@ export function DayColumn({ date, jobs, pms, pmJobCounts, isToday }: DayColumnPr
           </div>
         )}
 
-        {/* Job cards */}
-        <ScrollArea className="flex-1 min-h-[100px]">
+        {/* Job cards — scrollable within the day column */}
+        <ScrollArea className="flex-1 min-h-[80px] max-h-[calc(100vh-320px)]">
           <div className="space-y-2">
             {jobs.length === 0 ? (
               <p className="text-xs text-muted-foreground text-center py-4">
