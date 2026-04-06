@@ -59,21 +59,10 @@ app.include_router(weather.router, prefix="/api/weather", tags=["weather"])
 # In dev, Vite's dev server handles this via proxy
 _FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend-react" / "dist"
 if _FRONTEND_DIR.is_dir():
-    # Serve static assets (JS, CSS, images)
-    app.mount("/assets", StaticFiles(directory=str(_FRONTEND_DIR / "assets")), name="assets")
-
-    # Catch-all: serve index.html for all non-API routes (SPA client-side routing)
-    @app.get("/{path:path}")
-    async def serve_spa(request: Request, path: str):
-        # Don't intercept API routes or health check
-        if path.startswith("api/") or path == "health":
-            return
-        # Try to serve the exact file (e.g., favicon.svg)
-        file_path = _FRONTEND_DIR / path
-        if file_path.is_file():
-            return FileResponse(str(file_path))
-        # Otherwise serve index.html (SPA routing)
-        return FileResponse(str(_FRONTEND_DIR / "index.html"))
+    # Mount the entire dist directory as static files at root
+    # This MUST come after all API routers so /api/* routes take priority
+    # StaticFiles with html=True serves index.html for directory requests (SPA fallback)
+    app.mount("/", StaticFiles(directory=str(_FRONTEND_DIR), html=True), name="spa")
 
 
 def _seed_default_settings():
