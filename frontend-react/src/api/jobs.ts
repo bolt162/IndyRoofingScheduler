@@ -92,7 +92,7 @@ export function useSyncJN() {
   return useMutation({
     mutationFn: async () => {
       const { data } = await api.post('/jobs/sync');
-      return data as { created: number; updated: number; errors: any[]; total_from_jn: number };
+      return data as { created: number; updated: number; scanned?: number; errors: any[]; total_from_jn: number };
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['jobs'] });
