@@ -6,7 +6,7 @@ dockerfilePath = "./Dockerfile"
 VITE_GOOGLE_MAPS_API_KEY = "${{VITE_GOOGLE_MAPS_API_KEY}}"
 
 [deploy]
-healthcheckPath = "/health"
+healthcheckPath = "/api/health"
 healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3

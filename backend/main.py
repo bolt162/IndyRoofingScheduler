@@ -171,6 +171,6 @@ def _start_scheduler():
         return None
 
 
-@app.get("/health")
+@app.get("/api/health")
 def health():
     return {"status": "ok", "service": "indy-roof-scheduler"}
