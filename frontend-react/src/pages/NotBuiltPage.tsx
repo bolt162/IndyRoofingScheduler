@@ -116,15 +116,15 @@ export function NotBuiltPage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {scheduledJobs.map((job) => (
-                <div key={job.id} className="relative">
+                <div key={job.id} className="flex flex-col gap-1.5">
                   <JobCard job={job} compact />
                   <Button
                     variant="destructive"
                     size="sm"
-                    className="absolute top-2 right-2 h-7 text-xs"
+                    className="w-full h-7 text-xs"
                     onClick={() => openDialog(job)}
                   >
-                    Not Built
+                    Mark Not Built
                   </Button>
                 </div>
               ))}

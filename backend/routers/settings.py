@@ -53,13 +53,48 @@ def list_crews(db: Session = Depends(get_db)):
     return db.query(Crew).all()
 
 
+class CrewCreate(BaseModel):
+    name: str
+    specialties: list[str] = []
+
+
 @router.post("/crews")
-def add_crew(name: str, specialties: list[str] | None = None, db: Session = Depends(get_db)):
-    crew = Crew(name=name, specialties=specialties or [])
+def add_crew(data: CrewCreate, db: Session = Depends(get_db)):
+    crew = Crew(name=data.name, specialties=data.specialties or [])
     db.add(crew)
     db.commit()
     db.refresh(crew)
     return crew
+
+
+class CrewUpdate(BaseModel):
+    name: str | None = None
+    specialties: list[str] | None = None
+    is_active: bool | None = None
+
+
+@router.patch("/crews/{crew_id}")
+def update_crew(crew_id: int, update: CrewUpdate, db: Session = Depends(get_db)):
+    crew = db.query(Crew).filter(Crew.id == crew_id).first()
+    if not crew:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Crew not found")
+    for field, value in update.model_dump(exclude_unset=True).items():
+        setattr(crew, field, value)
+    db.commit()
+    db.refresh(crew)
+    return crew
+
+
+@router.delete("/crews/{crew_id}")
+def delete_crew(crew_id: int, db: Session = Depends(get_db)):
+    crew = db.query(Crew).filter(Crew.id == crew_id).first()
+    if not crew:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Crew not found")
+    db.delete(crew)
+    db.commit()
+    return {"status": "ok", "deleted": crew_id}
 
 
 @router.post("/reset-db")

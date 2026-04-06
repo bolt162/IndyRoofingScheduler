@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import {
-  Users, Truck, Sliders, Ruler, Cloud, Brain, Calendar, Clock,
+  Users, Truck, Sliders, Ruler, Cloud, Brain, Calendar, Clock, Pencil, Trash2, Pause, Play,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,7 +13,7 @@ import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useSettings, useUpdateSetting, usePMs, useAddPM, useCrews, useAddCrew, useResetDB } from '@/api/settings';
+import { useSettings, useUpdateSetting, usePMs, useAddPM, useCrews, useAddCrew, useUpdateCrew, useDeleteCrew, useResetDB } from '@/api/settings';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
@@ -25,8 +25,15 @@ export function SettingsPage() {
   const addPM = useAddPM();
   const { data: crews } = useCrews();
   const addCrew = useAddCrew();
+  const updateCrew = useUpdateCrew();
+  const deleteCrew = useDeleteCrew();
   const resetDB = useResetDB();
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+
+  // Crew edit state
+  const [editingCrewId, setEditingCrewId] = useState<number | null>(null);
+  const [editCrewName, setEditCrewName] = useState('');
+  const [editCrewSpecialties, setEditCrewSpecialties] = useState('');
 
   // New PM form
   const [newPMName, setNewPMName] = useState('');
@@ -163,17 +170,125 @@ export function SettingsPage() {
               <CardTitle className="text-base">Crew Roster</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
+              {crews?.length === 0 && (
+                <p className="text-sm text-muted-foreground">No crews added yet.</p>
+              )}
               {crews?.map((crew) => (
-                <div key={crew.id} className="flex items-center gap-4 p-3 bg-muted rounded-md">
-                  <span className="font-medium text-sm flex-1">{crew.name}</span>
-                  <div className="flex gap-1">
-                    {crew.specialties?.map((s) => (
-                      <Badge key={s} variant="outline" className="text-[10px]">{s}</Badge>
-                    ))}
-                  </div>
-                  <Badge variant={crew.is_active ? 'default' : 'secondary'}>
-                    {crew.is_active ? 'Active' : 'Inactive'}
-                  </Badge>
+                <div key={crew.id} className="p-3 bg-muted rounded-md space-y-2">
+                  {editingCrewId === crew.id ? (
+                    /* Edit mode */
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <Label className="text-xs">Name</Label>
+                          <Input
+                            value={editCrewName}
+                            onChange={(e) => setEditCrewName(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Specialties (comma-separated)</Label>
+                          <Input
+                            value={editCrewSpecialties}
+                            onChange={(e) => setEditCrewSpecialties(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs"
+                          disabled={updateCrew.isPending}
+                          onClick={() => {
+                            updateCrew.mutate({
+                              id: crew.id,
+                              update: {
+                                name: editCrewName || undefined,
+                                specialties: editCrewSpecialties
+                                  ? editCrewSpecialties.split(',').map(s => s.trim()).filter(Boolean)
+                                  : undefined,
+                              },
+                            }, { onSuccess: () => setEditingCrewId(null) });
+                          }}
+                        >
+                          Save
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 text-xs"
+                          onClick={() => setEditingCrewId(null)}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    /* Display mode */
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm">{crew.name}</span>
+                          <Badge variant={crew.is_active ? 'default' : 'secondary'} className="text-[10px]">
+                            {crew.is_active ? 'Active' : 'Inactive'}
+                          </Badge>
+                        </div>
+                        {crew.specialties && crew.specialties.length > 0 ? (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {crew.specialties.map((s) => (
+                              <Badge key={s} variant="outline" className="text-[10px] bg-blue-50 text-blue-700">
+                                {s}
+                              </Badge>
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-muted-foreground mt-1">No specialties assigned</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          onClick={() => {
+                            updateCrew.mutate({
+                              id: crew.id,
+                              update: { is_active: !crew.is_active },
+                            });
+                          }}
+                        >
+                          {crew.is_active ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+                          {crew.is_active ? 'Deactivate' : 'Activate'}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          onClick={() => {
+                            setEditingCrewId(crew.id);
+                            setEditCrewName(crew.name);
+                            setEditCrewSpecialties(crew.specialties?.join(', ') || '');
+                          }}
+                        >
+                          <Pencil className="h-3 w-3" />
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs gap-1 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                          onClick={() => {
+                            if (confirm(`Delete crew "${crew.name}"?`)) {
+                              deleteCrew.mutate(crew.id);
+                            }
+                          }}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          Delete
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               ))}
 
@@ -195,7 +310,7 @@ export function SettingsPage() {
                     <Input
                       value={newCrewSpecialties}
                       onChange={(e) => setNewCrewSpecialties(e.target.value)}
-                      placeholder="roofing, siding, gutters"
+                      placeholder="roofing, slate, tpo"
                     />
                   </div>
                 </div>

@@ -68,10 +68,36 @@ export function useAddCrew() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ name, specialties }: { name: string; specialties?: string[] }) => {
-      const params = new URLSearchParams({ name });
-      if (specialties) specialties.forEach((s) => params.append('specialties', s));
-      const { data } = await api.post(`/settings/crews?${params.toString()}`);
+      const { data } = await api.post('/settings/crews', { name, specialties: specialties || [] });
       return data as Crew;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['crews'] });
+    },
+  });
+}
+
+// Update crew
+export function useUpdateCrew() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, update }: { id: number; update: { name?: string; specialties?: string[]; is_active?: boolean } }) => {
+      const { data } = await api.patch(`/settings/crews/${id}`, update);
+      return data as Crew;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['crews'] });
+    },
+  });
+}
+
+// Delete crew
+export function useDeleteCrew() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const { data } = await api.delete(`/settings/crews/${id}`);
+      return data;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['crews'] });
