@@ -55,14 +55,40 @@ app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
 app.include_router(weather.router, prefix="/api/weather", tags=["weather"])
 
 
+# Health check — must be defined before any catch-all
+@app.get("/api/health")
+def health():
+    return {"status": "ok", "service": "indy-roof-scheduler"}
+
+
 # Serve React frontend static files in production
 # In dev, Vite's dev server handles this via proxy
 _FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend-react" / "dist"
 if _FRONTEND_DIR.is_dir():
-    # Mount the entire dist directory as static files at root
-    # This MUST come after all API routers so /api/* routes take priority
-    # StaticFiles with html=True serves index.html for directory requests (SPA fallback)
-    app.mount("/", StaticFiles(directory=str(_FRONTEND_DIR), html=True), name="spa")
+    from starlette.responses import HTMLResponse
+
+    # Serve /assets/* directly (JS, CSS, fonts, images)
+    _ASSETS_DIR = _FRONTEND_DIR / "assets"
+    if _ASSETS_DIR.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(_ASSETS_DIR)), name="assets")
+
+    # Read index.html once at startup
+    _INDEX_HTML = (_FRONTEND_DIR / "index.html").read_text()
+
+    # Serve static files (favicon, icons, etc.) and SPA fallback
+    @app.middleware("http")
+    async def spa_middleware(request: Request, call_next):
+        # Let /api/* routes pass through to FastAPI routers
+        if request.url.path.startswith("/api"):
+            return await call_next(request)
+
+        # Try to serve exact static file from dist/
+        file_path = _FRONTEND_DIR / request.url.path.lstrip("/")
+        if file_path.is_file() and ".." not in request.url.path:
+            return FileResponse(str(file_path))
+
+        # SPA fallback: serve index.html for all other routes
+        return HTMLResponse(_INDEX_HTML)
 
 
 def _seed_default_settings():
@@ -169,8 +195,3 @@ def _start_scheduler():
     except Exception as e:
         logger.error(f"Failed to start scheduler: {e}")
         return None
-
-
-@app.get("/api/health")
-def health():
-    return {"status": "ok", "service": "indy-roof-scheduler"}
