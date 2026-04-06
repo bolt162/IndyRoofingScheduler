@@ -49,7 +49,8 @@ export function DashboardPage() {
   const handleSyncJN = async () => {
     try {
       const result = await syncJN.mutateAsync();
-      toast.success(`Synced: ${result.created} new, ${result.updated} updated from JN`);
+      const scanMsg = result.scanned ? `, ${result.scanned} AI-scanned` : '';
+      toast.success(`Synced: ${result.created} new, ${result.updated} updated from JN${scanMsg}`);
     } catch {
       toast.error('JN sync failed');
     }

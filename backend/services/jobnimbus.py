@@ -354,10 +354,22 @@ def sync_jobs_from_jn(db: Session) -> dict:
 
     db.commit()
 
+    # Scan AI notes for NEW jobs only (never-scanned jobs where ai_note_scan_result is NULL)
+    # This runs after sync so only newly created jobs get scanned — existing jobs are skipped
+    scanned = 0
+    if created > 0:
+        try:
+            from backend.services.note_scanner import scan_all_unscanned_jobs
+            scan_result = scan_all_unscanned_jobs(db)
+            scanned = scan_result.get("scanned", 0)
+        except Exception:
+            pass  # Don't fail the sync if scanning fails
+
     return {
         "synced_at": datetime.utcnow().isoformat(),
         "created": created,
         "updated": updated,
+        "scanned": scanned,
         "errors": errors,
         "total_from_jn": len(jn_jobs),
     }

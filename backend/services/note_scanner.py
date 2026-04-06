@@ -147,21 +147,14 @@ Return ONLY valid JSON. No explanation text."""
 
 def scan_all_unscanned_jobs(db: Session) -> dict:
     """
-    Scan jobs that need AI analysis:
-    - Jobs with notes but no scan result yet
-    - Jobs with empty material_type that have notes (re-scan to extract)
+    Scan jobs that have never been scanned (ai_note_scan_result is NULL/empty).
+    Jobs that were scanned before are ALWAYS skipped — even if material wasn't extracted.
+    This prevents re-scanning the same jobs on every sync and burning API tokens.
     """
-    from sqlalchemy import or_
-
     jobs = db.query(Job).filter(
         Job.jn_notes_raw != None,
         Job.jn_notes_raw != "",
-        or_(
-            Job.ai_note_scan_result == None,   # Never scanned
-            Job.ai_note_scan_result == "",      # Empty scan result
-            Job.material_type == None,           # Material missing — try to extract
-            Job.material_type == "",             # Material empty — try to extract
-        ),
+        (Job.ai_note_scan_result == None) | (Job.ai_note_scan_result == ""),
     ).all()
 
     scanned = 0
