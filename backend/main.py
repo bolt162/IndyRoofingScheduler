@@ -17,6 +17,13 @@ logger = logging.getLogger("scheduler")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: create tables, seed settings, start weather scheduler."""
+    # Import all models so they register with Base before create_all
+    from backend.models.job import Job  # noqa
+    from backend.models.pm import PM, Crew  # noqa
+    from backend.models.note_log import NoteLog  # noqa
+    from backend.models.schedule import SchedulePlan  # noqa
+    from backend.models.settings import SystemSettings  # noqa
+
     Base.metadata.create_all(bind=engine)
     _seed_default_settings()
 
