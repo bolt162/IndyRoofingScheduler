@@ -114,7 +114,7 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
                 </button>
               <TooltipProvider>
                 <Tooltip>
-                  <TooltipTrigger asChild>
+                  <TooltipTrigger render={<span />}>
                     <Badge variant="outline" className="font-mono text-xs tabular-nums cursor-help">
                       {job.score.toFixed(1)}
                     </Badge>

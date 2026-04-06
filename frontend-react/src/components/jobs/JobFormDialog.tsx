@@ -183,7 +183,7 @@ export function JobFormDialog({ open, onOpenChange, mode, job, onSubmit, isPendi
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Job Type</Label>
-              <Select value={form.job_type} onValueChange={v => setForm(f => ({ ...f, job_type: v }))}>
+              <Select value={form.job_type} onValueChange={v => v && setForm(f => ({ ...f, job_type: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="retail">Retail</SelectItem>
@@ -193,7 +193,7 @@ export function JobFormDialog({ open, onOpenChange, mode, job, onSubmit, isPendi
             </div>
             <div className="space-y-1.5">
               <Label>Payment Type *</Label>
-              <Select value={form.payment_type} onValueChange={v => setForm(f => ({ ...f, payment_type: v }))}>
+              <Select value={form.payment_type} onValueChange={v => v && setForm(f => ({ ...f, payment_type: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="cash">Cash</SelectItem>
@@ -207,7 +207,7 @@ export function JobFormDialog({ open, onOpenChange, mode, job, onSubmit, isPendi
           {/* Primary Trade */}
           <div className="space-y-1.5">
             <Label>Primary Trade *</Label>
-            <Select value={form.primary_trade} onValueChange={v => setForm(f => ({ ...f, primary_trade: v }))}>
+            <Select value={form.primary_trade} onValueChange={v => v && setForm(f => ({ ...f, primary_trade: v }))}>
               <SelectTrigger><SelectValue /></SelectTrigger>
               <SelectContent>
                 {TRADE_OPTIONS.map(t => (
@@ -239,7 +239,7 @@ export function JobFormDialog({ open, onOpenChange, mode, job, onSubmit, isPendi
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Material Type *</Label>
-              <Select value={form.material_type} onValueChange={v => setForm(f => ({ ...f, material_type: v }))}>
+              <Select value={form.material_type} onValueChange={v => v && setForm(f => ({ ...f, material_type: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {MATERIAL_OPTIONS.map(m => (
