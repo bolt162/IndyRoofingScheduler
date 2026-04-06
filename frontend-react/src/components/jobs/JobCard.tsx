@@ -169,7 +169,7 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
                 Resched ×{job.rescheduled_count}
               </Badge>
             )}
-            <WeatherBadge status={job.weather_status} detail={job.weather_detail} />
+            <WeatherBadge status={job.weather_status} detail={job.weather_detail} jobId={job.id} customerName={job.customer_name} />
           </div>
 
           {/* Row 3: Details grid */}

@@ -16,6 +16,7 @@ import { useJobs, useBucketCounts, useSyncJN, useCreateJob, useUpdateJob } from 
 import { Download, Plus } from 'lucide-react';
 import { useRunScoring } from '@/api/scoring';
 import { useCheckAllWeather } from '@/api/weather';
+import { usePMs } from '@/api/settings';
 import { useUIStore } from '@/stores/ui-store';
 import { JobFormDialog } from '@/components/jobs/JobFormDialog';
 import type { JobBucket } from '@/types';
@@ -40,6 +41,7 @@ export function DashboardPage() {
   const checkWeather = useCheckAllWeather();
   const syncJN = useSyncJN();
   const createJob = useCreateJob();
+  const { data: pms } = usePMs();
   const [showCreateDialog, setShowCreateDialog] = useState(false);
 
   const mustBuildJobs = jobs?.filter((j) => j.must_build) ?? [];
@@ -54,6 +56,11 @@ export function DashboardPage() {
   };
 
   const handleRunScoring = async () => {
+    // Check if PMs exist before scoring
+    if (!pms || pms.filter(p => p.is_active).length === 0) {
+      toast.error('No PMs configured. Please add Project Managers in Settings → PM Roster before running scoring.');
+      return;
+    }
     try {
       const result = await runScoring.mutateAsync({});
       setLatestScoringResult(result);
@@ -67,10 +74,24 @@ export function DashboardPage() {
     }
   };
 
+  const [weatherAlerts, setWeatherAlerts] = useState<{
+    rolled_back: { job_id: number; customer_name: string; detail: string }[];
+    scheduler_decision: { job_id: number; customer_name: string; detail: string }[];
+  } | null>(null);
+
   const handleCheckWeather = async () => {
     try {
-      await checkWeather.mutateAsync();
-      toast.success('Weather check complete');
+      const result = await checkWeather.mutateAsync();
+      const rb = result.rolled_back || [];
+      const sd = result.scheduler_decision || [];
+      setWeatherAlerts(rb.length > 0 || sd.length > 0 ? { rolled_back: rb, scheduler_decision: sd } : null);
+      if (rb.length > 0) {
+        toast.warning(`${rb.length} job(s) auto-removed due to weather`);
+      } else if (sd.length > 0) {
+        toast.info(`${sd.length} job(s) need scheduler weather decision`);
+      } else {
+        toast.success(`Weather check complete — ${result.total_checked} jobs checked, all clear`);
+      }
     } catch {
       toast.error('Weather check failed');
     }
@@ -123,6 +144,39 @@ export function DashboardPage() {
           </Button>
         </div>
       </div>
+
+      {/* Weather alert banners */}
+      {weatherAlerts && weatherAlerts.rolled_back.length > 0 && (
+        <Card className="border-red-300 bg-red-50">
+          <CardContent className="p-4">
+            <p className="text-sm font-semibold text-red-800 mb-1">
+              {weatherAlerts.rolled_back.length} job(s) auto-removed due to weather
+            </p>
+            <ul className="text-xs text-red-700 space-y-0.5">
+              {weatherAlerts.rolled_back.map(j => (
+                <li key={j.job_id}>{j.customer_name} — {j.detail}</li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+      {weatherAlerts && weatherAlerts.scheduler_decision.length > 0 && (
+        <Card className="border-yellow-300 bg-yellow-50">
+          <CardContent className="p-4">
+            <p className="text-sm font-semibold text-yellow-800 mb-1">
+              {weatherAlerts.scheduler_decision.length} job(s) need weather decision
+            </p>
+            <p className="text-xs text-yellow-700">
+              Click the yellow weather badge on each job card to include or exclude.
+            </p>
+            <ul className="text-xs text-yellow-700 space-y-0.5 mt-1">
+              {weatherAlerts.scheduler_decision.map(j => (
+                <li key={j.job_id}>{j.customer_name} — {j.detail}</li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Bucket summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">

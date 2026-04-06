@@ -1,0 +1,43 @@
+# Git
+.git
+.gitignore
+
+# Environment & secrets
+.env
+*.env.local
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+venv/
+.venv/
+env/
+
+# Node (frontend builds inside Docker)
+frontend-react/node_modules
+frontend-react/dist
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode
+.idea
+*.swp
+.DS_Store
+
+# Claude
+.claude
+
+# Docker
+Dockerfile
+docker-compose.yml
+
+# Docs
+*.md
+!README.md
+problem.docx
+solution.docx

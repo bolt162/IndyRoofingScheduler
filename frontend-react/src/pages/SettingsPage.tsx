@@ -13,7 +13,10 @@ import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useSettings, useUpdateSetting, usePMs, useAddPM, useCrews, useAddCrew } from '@/api/settings';
+import { useSettings, useUpdateSetting, usePMs, useAddPM, useCrews, useAddCrew, useResetDB } from '@/api/settings';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
+} from '@/components/ui/dialog';
 
 export function SettingsPage() {
   const { data: settings } = useSettings();
@@ -22,6 +25,8 @@ export function SettingsPage() {
   const addPM = useAddPM();
   const { data: crews } = useCrews();
   const addCrew = useAddCrew();
+  const resetDB = useResetDB();
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
   // New PM form
   const [newPMName, setNewPMName] = useState('');
@@ -277,46 +282,96 @@ export function SettingsPage() {
 
         {/* Weather Thresholds Tab */}
         <TabsContent value="weather">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Material Weather Thresholds</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {[
-                'asphalt', 'polymer_modified', 'tpo', 'epdm', 'coating', 'siding',
-              ].map((material) => (
-                <div key={material} className="space-y-2 p-3 bg-muted rounded-md">
-                  <p className="text-sm font-medium capitalize">{material.replace('_', ' ')}</p>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div>
-                      <Label className="text-xs">Min Temp (°F)</Label>
-                      <Input
-                        type="number"
-                        defaultValue={getSetting(`weather_${material}_min_temp`)}
-                        onBlur={(e) => handleUpdateSetting(`weather_${material}_min_temp`, e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Max Wind (mph)</Label>
-                      <Input
-                        type="number"
-                        defaultValue={getSetting(`weather_${material}_max_wind`)}
-                        onBlur={(e) => handleUpdateSetting(`weather_${material}_max_wind`, e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Rain Window (hrs)</Label>
-                      <Input
-                        type="number"
-                        defaultValue={getSetting(`weather_${material}_rain_window`)}
-                        onBlur={(e) => handleUpdateSetting(`weather_${material}_rain_window`, e.target.value)}
-                      />
+          <div className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Material Weather Thresholds</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {[
+                  { key: 'asphalt', label: 'Asphalt Shingles' },
+                  { key: 'polymer', label: 'Polymer Modified' },
+                  { key: 'tpo', label: 'TPO / EPDM' },
+                  { key: 'coating', label: 'Coatings' },
+                  { key: 'wood_shake', label: 'Wood Shake' },
+                  { key: 'slate', label: 'Slate' },
+                  { key: 'metal', label: 'Metal' },
+                  { key: 'siding', label: 'Siding' },
+                ].map(({ key, label }) => (
+                  <div key={key} className="space-y-2 p-3 bg-muted rounded-md">
+                    <p className="text-sm font-medium">{label}</p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div>
+                        <Label className="text-xs">Min Temp (°F)</Label>
+                        <Input
+                          type="number"
+                          defaultValue={getSetting(`weather_${key}_min_temp`)}
+                          onBlur={(e) => handleUpdateSetting(`weather_${key}_min_temp`, e.target.value)}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Max Wind (mph)</Label>
+                        <Input
+                          type="number"
+                          defaultValue={getSetting(`weather_${key}_max_wind`)}
+                          onBlur={(e) => handleUpdateSetting(`weather_${key}_max_wind`, e.target.value)}
+                        />
+                      </div>
+                      {(key === 'tpo' || key === 'coating') && (
+                        <div>
+                          <Label className="text-xs">Rain Window (hrs)</Label>
+                          <Input
+                            type="number"
+                            defaultValue={getSetting(`weather_${key}_rain_window_hrs`)}
+                            onBlur={(e) => handleUpdateSetting(`weather_${key}_rain_window_hrs`, e.target.value)}
+                          />
+                        </div>
+                      )}
+                      {key === 'coating' && (
+                        <div>
+                          <Label className="text-xs">Max Humidity (%)</Label>
+                          <Input
+                            type="number"
+                            defaultValue={getSetting('weather_coating_max_humidity')}
+                            onBlur={(e) => handleUpdateSetting('weather_coating_max_humidity', e.target.value)}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Automated Weather Checks</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-xs">Morning Check Time (24hr)</Label>
+                    <Input
+                      defaultValue={getSetting('weather_morning_check_time')}
+                      onBlur={(e) => handleUpdateSetting('weather_morning_check_time', e.target.value)}
+                      placeholder="06:00"
+                    />
+                    <p className="text-[10px] text-muted-foreground mt-1">Checks all scheduled jobs for today + tomorrow</p>
+                  </div>
+                  <div>
+                    <Label className="text-xs">Night-Before Check Time (24hr)</Label>
+                    <Input
+                      defaultValue={getSetting('bamwx_check_time')}
+                      onBlur={(e) => handleUpdateSetting('bamwx_check_time', e.target.value)}
+                      placeholder="20:00"
+                    />
+                    <p className="text-[10px] text-muted-foreground mt-1">Final authority check on tomorrow's builds (uses Clarity Wx)</p>
+                  </div>
                 </div>
-              ))}
-            </CardContent>
-          </Card>
+                <p className="text-xs text-muted-foreground">5am spot check runs automatically every day on today's builds.</p>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         {/* AI Rules Tab */}
@@ -429,10 +484,60 @@ export function SettingsPage() {
                   }}
                 />
               </div>
+
+              <Separator />
+
+              {/* Reset Database */}
+              <div className="space-y-2">
+                <Label className="text-destructive">Danger Zone</Label>
+                <p className="text-xs text-muted-foreground">
+                  Reset the entire database. This will delete all jobs, PMs, crews, notes, and plans. Settings will be re-seeded to defaults.
+                </p>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => setResetConfirmOpen(true)}
+                >
+                  Reset Database
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Reset DB Confirmation Dialog */}
+      <Dialog open={resetConfirmOpen} onOpenChange={setResetConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-destructive">Reset Database</DialogTitle>
+            <DialogDescription>
+              This will permanently delete ALL data: jobs, PMs, crews, notes, schedule plans, and scoring results. Settings will be reset to defaults. This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setResetConfirmOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              disabled={resetDB.isPending}
+              onClick={async () => {
+                try {
+                  await resetDB.mutateAsync();
+                  toast.success('Database reset successfully');
+                  setResetConfirmOpen(false);
+                } catch {
+                  toast.error('Failed to reset database');
+                }
+              }}
+            >
+              {resetDB.isPending ? 'Resetting...' : 'Yes, Reset Everything'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

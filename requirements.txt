@@ -8,19 +8,11 @@ httpx
 pydantic
 pydantic-settings
 
+# Database (Postgres for Railway, SQLite for local)
+psycopg2-binary
+
 # AI
 anthropic
 
-# Maps & Geo
-folium
-geopy
-
-# Weather
-openmeteo-requests
-
-# Frontend
-streamlit
-streamlit-folium
-
-# Utilities
+# Scheduling
 apscheduler

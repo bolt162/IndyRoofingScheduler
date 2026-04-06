@@ -78,3 +78,18 @@ export function useAddCrew() {
     },
   });
 }
+
+// Reset entire database
+export function useResetDB() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { data } = await api.post('/settings/reset-db');
+      return data;
+    },
+    onSuccess: () => {
+      // Invalidate everything
+      qc.invalidateQueries();
+    },
+  });
+}

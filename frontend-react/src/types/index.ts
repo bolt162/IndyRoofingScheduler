@@ -227,6 +227,12 @@ export interface WeatherBlockedJob {
   weather_detail: string;
 }
 
+export interface ClusterDistance {
+  from: number;
+  to: number;
+  miles: number;
+}
+
 export interface ClusterInfo {
   cluster_id: string;
   tier: 'tight' | 'close' | 'standard' | 'standalone';
@@ -237,6 +243,7 @@ export interface ClusterInfo {
   total_score: number;
   is_standalone: boolean;
   has_must_build: boolean;
+  distances?: ClusterDistance[];
 }
 
 export interface PMPlanEntry {

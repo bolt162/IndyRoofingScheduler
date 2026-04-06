@@ -18,9 +18,9 @@ interface UIState {
   activeBucket: JobBucket | 'all';
   setActiveBucket: (bucket: JobBucket | 'all') => void;
 
-  // Map mode
-  mapMode: 'cluster' | 'pm';
-  setMapMode: (mode: 'cluster' | 'pm') => void;
+  // Map mode: status = bucket colors, pm = PM assignment colors, plan = Build Plan hierarchy
+  mapMode: 'status' | 'pm' | 'plan';
+  setMapMode: (mode: 'status' | 'pm' | 'plan') => void;
 
   // Sidebar
   sidebarOpen: boolean;
@@ -54,7 +54,7 @@ export const useUIStore = create<UIState>((set, get) => ({
   activeBucket: 'to_schedule',
   setActiveBucket: (bucket) => set({ activeBucket: bucket }),
 
-  mapMode: 'cluster',
+  mapMode: 'status',
   setMapMode: (mode) => set({ mapMode: mode }),
 
   sidebarOpen: true,

@@ -50,6 +50,25 @@ DEFAULT_SETTINGS = {
     # Weather thresholds - siding
     "weather_siding_max_wind": {"value": "15", "description": "Max wind (mph) for siding"},
 
+    # Weather thresholds - wood shake (spec §6.5 line 280)
+    "weather_wood_shake_min_temp": {"value": "40", "description": "Min temp (F) for wood shake"},
+    "weather_wood_shake_max_wind": {"value": "20", "description": "Max wind (mph) for wood shake"},
+
+    # Weather thresholds - slate
+    "weather_slate_min_temp": {"value": "40", "description": "Min temp (F) for slate"},
+    "weather_slate_max_wind": {"value": "20", "description": "Max wind (mph) for slate"},
+
+    # Weather thresholds - metal
+    "weather_metal_min_temp": {"value": "40", "description": "Min temp (F) for metal"},
+    "weather_metal_max_wind": {"value": "15", "description": "Max wind (mph) for metal — more sensitive"},
+
+    # Coatings - humidity threshold (spec §6.5 line 279)
+    "weather_coating_max_humidity": {"value": "85", "description": "Max humidity (%) for coatings"},
+    "weather_coating_max_wind": {"value": "15", "description": "Max wind (mph) for coatings"},
+
+    # Automated weather check times
+    "weather_morning_check_time": {"value": "06:00", "description": "Morning weather check time (24hr format)"},
+
     # Secondary trade aging
     "secondary_aging_yellow_days": {"value": "7", "description": "Days after primary complete for yellow flag"},
     "secondary_aging_red_days": {"value": "14", "description": "Days after primary complete for red flag"},
