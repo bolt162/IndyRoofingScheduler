@@ -101,49 +101,53 @@ export function DashboardPage() {
   };
 
   return (
-    <div className="flex flex-col gap-6 p-6">
+    <div className="flex flex-col gap-4 md:gap-6 p-3 md:p-6">
       {/* Header with actions */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-xl md:text-2xl font-bold tracking-tight">Dashboard</h1>
+          <p className="text-xs md:text-sm text-muted-foreground">
             Job scheduling overview and AI tools
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="grid grid-cols-2 md:flex md:items-center gap-2">
           <Button
             variant="outline"
             size="sm"
             onClick={() => setShowCreateDialog(true)}
+            className="justify-center"
           >
-            <Plus className="h-4 w-4 mr-1.5" />
-            Create Job
+            <Plus className="h-4 w-4 md:mr-1.5" />
+            <span className="ml-1.5 md:ml-0">Create Job</span>
           </Button>
           <Button
             variant="outline"
             size="sm"
             onClick={handleSyncJN}
             disabled={syncJN.isPending}
+            className="justify-center"
           >
-            <Download className={`h-4 w-4 mr-1.5 ${syncJN.isPending ? 'animate-pulse' : ''}`} />
-            {syncJN.isPending ? 'Syncing...' : 'Sync JN'}
+            <Download className={`h-4 w-4 md:mr-1.5 ${syncJN.isPending ? 'animate-pulse' : ''}`} />
+            <span className="ml-1.5 md:ml-0">{syncJN.isPending ? 'Syncing...' : 'Sync JN'}</span>
           </Button>
           <Button
             variant="outline"
             size="sm"
             onClick={handleCheckWeather}
             disabled={checkWeather.isPending}
+            className="justify-center"
           >
-            <RefreshCw className={`h-4 w-4 mr-1.5 ${checkWeather.isPending ? 'animate-spin' : ''}`} />
-            Check Weather
+            <RefreshCw className={`h-4 w-4 md:mr-1.5 ${checkWeather.isPending ? 'animate-spin' : ''}`} />
+            <span className="ml-1.5 md:ml-0">Check Weather</span>
           </Button>
           <Button
             size="sm"
             onClick={handleRunScoring}
             disabled={runScoring.isPending}
+            className="justify-center"
           >
-            <Zap className="h-4 w-4 mr-1.5" />
-            {runScoring.isPending ? 'Scoring...' : 'Run Scoring'}
+            <Zap className="h-4 w-4 md:mr-1.5" />
+            <span className="ml-1.5 md:ml-0">{runScoring.isPending ? 'Scoring...' : 'Run Scoring'}</span>
           </Button>
         </div>
       </div>
@@ -242,21 +246,21 @@ export function DashboardPage() {
       })()}
 
       {/* Bucket summary cards */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2 md:gap-3">
         {bucketCards.map(({ key, label, icon: Icon, color }) => (
           <Card
             key={key}
             className="cursor-pointer hover:shadow-md transition-shadow"
             onClick={() => setActiveBucket(key)}
           >
-            <CardContent className="p-4">
+            <CardContent className="p-3 md:p-4">
               <div className="flex items-center justify-between">
-                <Icon className={`h-5 w-5 ${color}`} />
-                <span className="text-2xl font-bold tabular-nums">
+                <Icon className={`h-4 w-4 md:h-5 md:w-5 ${color}`} />
+                <span className="text-xl md:text-2xl font-bold tabular-nums">
                   {countsLoading ? '—' : (counts?.[key] ?? 0)}
                 </span>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">{label}</p>
+              <p className="text-[10px] md:text-xs text-muted-foreground mt-1">{label}</p>
             </CardContent>
           </Card>
         ))}
@@ -556,21 +560,23 @@ export function DashboardPage() {
           value={activeBucket}
           onValueChange={(v) => setActiveBucket(v as JobBucket | 'all')}
         >
-          <TabsList className="mb-3">
-            <TabsTrigger value="all">
-              All
-              {counts && (
-                <Badge variant="secondary" className="ml-1.5 text-[10px]">
-                  {Object.values(counts).reduce((a, b) => a + b, 0)}
-                </Badge>
-              )}
-            </TabsTrigger>
-            <TabsTrigger value="to_schedule">To Schedule</TabsTrigger>
-            <TabsTrigger value="scheduled">Scheduled</TabsTrigger>
-            <TabsTrigger value="primary_complete">Primary Complete</TabsTrigger>
-            <TabsTrigger value="waiting_on_trades">Waiting Trades</TabsTrigger>
-            <TabsTrigger value="review_for_completion">Review</TabsTrigger>
-          </TabsList>
+          <div className="overflow-x-auto mb-3 -mx-1 px-1">
+            <TabsList className="w-max">
+              <TabsTrigger value="all">
+                All
+                {counts && (
+                  <Badge variant="secondary" className="ml-1.5 text-[10px]">
+                    {Object.values(counts).reduce((a, b) => a + b, 0)}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="to_schedule">To Schedule</TabsTrigger>
+              <TabsTrigger value="scheduled">Scheduled</TabsTrigger>
+              <TabsTrigger value="primary_complete">Primary Complete</TabsTrigger>
+              <TabsTrigger value="waiting_on_trades">Waiting Trades</TabsTrigger>
+              <TabsTrigger value="review_for_completion">Review</TabsTrigger>
+            </TabsList>
+          </div>
         </Tabs>
 
         {jobsLoading ? (

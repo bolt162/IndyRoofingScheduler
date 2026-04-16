@@ -24,32 +24,49 @@ const navItems = [
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  /** When rendered inside the mobile Sheet overlay — force-expanded view */
+  mobileCompact?: boolean;
+  /** Callback fired when a nav link is clicked — used to close the mobile sheet */
+  onNavigate?: () => void;
+}
+
+export function Sidebar({ mobileCompact = false, onNavigate }: SidebarProps) {
   const { sidebarOpen, toggleSidebar } = useUIStore();
   const { data: counts } = useBucketCounts();
+
+  // On mobile inside the Sheet we always render expanded (regardless of store state)
+  const expanded = mobileCompact ? true : sidebarOpen;
 
   return (
     <aside
       className={cn(
-        'relative flex flex-col border-r bg-sidebar text-sidebar-foreground transition-all duration-200',
-        sidebarOpen ? 'w-64' : 'w-16'
+        'relative flex flex-col border-r bg-sidebar text-sidebar-foreground transition-all duration-200 h-full',
+        mobileCompact
+          ? 'w-full'
+          : expanded
+            ? 'w-64'
+            : 'w-16',
       )}
     >
       {/* Header */}
-      <div className="flex h-14 items-center gap-2 border-b px-4">
-        {sidebarOpen && (
+      <div className="flex h-14 items-center gap-2 border-b px-4 shrink-0">
+        {expanded && (
           <h2 className="text-sm font-semibold tracking-tight truncate">
             Indy Roof Scheduler
           </h2>
         )}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="ml-auto h-7 w-7"
-          onClick={toggleSidebar}
-        >
-          {sidebarOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-        </Button>
+        {/* Collapse toggle — only shown on desktop (not inside mobile Sheet) */}
+        {!mobileCompact && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="ml-auto h-7 w-7"
+            onClick={toggleSidebar}
+          >
+            {expanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+          </Button>
+        )}
       </div>
 
       {/* Navigation */}
@@ -60,24 +77,25 @@ export function Sidebar() {
               key={to}
               to={to}
               end={to === '/'}
+              onClick={() => onNavigate?.()}
               className={({ isActive }) =>
                 cn(
                   'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                   'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
                   isActive
                     ? 'bg-sidebar-accent text-sidebar-primary'
-                    : 'text-sidebar-foreground/70'
+                    : 'text-sidebar-foreground/70',
                 )
               }
             >
               <Icon className="h-4 w-4 shrink-0" />
-              {sidebarOpen && <span className="truncate">{label}</span>}
+              {expanded && <span className="truncate">{label}</span>}
             </NavLink>
           ))}
         </nav>
 
         {/* Bucket counts */}
-        {sidebarOpen && counts && (
+        {expanded && counts && (
           <>
             <Separator className="my-3" />
             <div className="px-4 pb-2">

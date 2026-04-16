@@ -1,9 +1,10 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { addDays, format, isSameDay, isToday, parseISO } from 'date-fns';
 import {
   DndContext,
   type DragEndEvent,
   PointerSensor,
+  TouchSensor,
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
@@ -33,8 +34,13 @@ export function WeeklyPlanPage() {
   const confirmPlan = useConfirmPlan();
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    // Touch sensor with 200ms delay so tap scroll still works on mobile
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
   );
+
+  // Mobile: toggle unassigned jobs panel
+  const [unassignedOpenMobile, setUnassignedOpenMobile] = useState(false);
 
   // Build 7 days starting from Monday
   const weekDays = useMemo(
@@ -147,17 +153,33 @@ export function WeeklyPlanPage() {
 
   return (
     <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-      <div className="flex h-full">
-        {/* Unassigned jobs sidebar — header stays fixed, job list scrolls */}
-        <div className="w-72 border-r flex flex-col shrink-0 overflow-hidden">
-          <div className="p-4 shrink-0">
+      {/* Desktop: side-by-side layout | Mobile: stacked */}
+      <div className="flex flex-col md:flex-row h-full">
+        {/* Unassigned jobs sidebar — full sidebar on desktop, collapsible panel on mobile */}
+        <div className="md:w-72 md:border-r flex flex-col md:shrink-0 overflow-hidden border-b md:border-b-0">
+          {/* Desktop header (always visible) */}
+          <div className="hidden md:block p-4 shrink-0">
             <h3 className="text-sm font-semibold mb-1">Unassigned Jobs</h3>
             <p className="text-xs text-muted-foreground">
               {unassignedJobs.length} jobs to schedule — drag into a day
             </p>
           </div>
-          <Separator className="shrink-0" />
-          <ScrollArea className="flex-1 min-h-0 p-3">
+          {/* Mobile collapsible header */}
+          <button
+            type="button"
+            className="md:hidden w-full flex items-center justify-between p-3 bg-muted/50 text-left"
+            onClick={() => setUnassignedOpenMobile(o => !o)}
+          >
+            <div>
+              <p className="text-sm font-semibold">Unassigned Jobs</p>
+              <p className="text-[11px] text-muted-foreground">
+                {unassignedJobs.length} jobs · tap to {unassignedOpenMobile ? 'collapse' : 'expand'}
+              </p>
+            </div>
+            {unassignedOpenMobile ? <ChevronLeft className="h-4 w-4 rotate-90" /> : <ChevronRight className="h-4 w-4 rotate-90" />}
+          </button>
+          <Separator className="shrink-0 hidden md:block" />
+          <ScrollArea className={`flex-1 min-h-0 p-3 ${unassignedOpenMobile ? 'max-h-[40vh]' : 'hidden md:block'}`}>
             <div className="space-y-2">
               {unassignedJobs.map((job) => (
                 <DraggableJobCard key={job.id} job={job} />
@@ -169,16 +191,16 @@ export function WeeklyPlanPage() {
         {/* Main area */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Header */}
-          <div className="flex items-center justify-between p-4 border-b">
-            <div className="flex items-center gap-3">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 p-3 md:p-4 border-b">
+            <div className="flex items-center gap-2 md:gap-3">
               <Button variant="outline" size="icon" onClick={prevWeek}>
                 <ChevronLeft className="h-4 w-4" />
               </Button>
-              <div className="text-center">
+              <div className="text-center flex-1 lg:flex-none">
                 <p className="text-sm font-semibold">
                   Week of {format(selectedWeekStart, 'MMM d, yyyy')}
                 </p>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-[11px] text-muted-foreground">
                   {format(selectedWeekStart, 'MMM d')} – {format(addDays(selectedWeekStart, 6), 'MMM d')}
                 </p>
               </div>
@@ -187,9 +209,9 @@ export function WeeklyPlanPage() {
               </Button>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
               {/* PM toggles — select one to assign jobs */}
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 flex-wrap">
                 <span className="text-[10px] text-muted-foreground mr-1">Assign to:</span>
                 {activePMs.map((pm) => (
                   <Button
@@ -207,7 +229,7 @@ export function WeeklyPlanPage() {
                 )}
               </div>
 
-              <Separator orientation="vertical" className="h-6" />
+              <Separator orientation="vertical" className="h-6 hidden sm:block" />
 
               {weekDraftPlans.length > 0 && (
                 <Button
@@ -222,9 +244,12 @@ export function WeeklyPlanPage() {
             </div>
           </div>
 
-          {/* 7-day grid */}
-          <div className="flex-1 overflow-auto p-4">
-            <div className="grid gap-3 h-full min-h-[500px]" style={{ gridTemplateColumns: 'repeat(7, minmax(160px, 1fr))' }}>
+          {/* 7-day grid — horizontal scroll on mobile (each column 220px min) */}
+          <div className="flex-1 overflow-auto p-3 md:p-4">
+            <div
+              className="grid gap-2 md:gap-3 h-full min-h-[500px]"
+              style={{ gridTemplateColumns: 'repeat(7, minmax(220px, 1fr))' }}
+            >
               {weekDays.map((day) => {
                 const key = format(day, 'yyyy-MM-dd');
                 return (

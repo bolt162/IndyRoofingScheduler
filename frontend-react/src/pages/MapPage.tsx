@@ -142,6 +142,8 @@ export function MapPage() {
   // Plan mode: selected cluster or PM for highlighting
   const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null);
   const [selectedPlanPM, setSelectedPlanPM] = useState<number | null>(null);
+  // Mobile view: 'map' or 'list' (below md — user toggles between full-width panes)
+  const [mobileView, setMobileView] = useState<'map' | 'list'>('map');
 
   const { data: allJobs } = useJobs();
   const { data: pms } = usePMs();
@@ -298,9 +300,35 @@ export function MapPage() {
   }, [jobs]);
 
   return (
-    <div className="flex h-full">
-      {/* Sidebar */}
-      <div className="w-80 border-r flex flex-col overflow-hidden">
+    <div className="flex flex-col md:flex-row h-full">
+      {/* Mobile toggle bar — switches between list view and map view */}
+      <div className="md:hidden flex border-b">
+        <button
+          type="button"
+          className={`flex-1 py-2 text-xs font-medium border-b-2 transition-colors ${
+            mobileView === 'map'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground'
+          }`}
+          onClick={() => setMobileView('map')}
+        >
+          Map
+        </button>
+        <button
+          type="button"
+          className={`flex-1 py-2 text-xs font-medium border-b-2 transition-colors ${
+            mobileView === 'list'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground'
+          }`}
+          onClick={() => setMobileView('list')}
+        >
+          Jobs & Plan
+        </button>
+      </div>
+
+      {/* Sidebar — full-width on mobile (hidden when map selected), 320px on desktop */}
+      <div className={`${mobileView === 'list' ? 'flex' : 'hidden'} md:flex w-full md:w-80 md:border-r flex-col overflow-hidden`}>
         <div className="p-4 space-y-3 shrink-0">
           <h2 className="text-lg font-semibold">Map View</h2>
 
@@ -597,8 +625,8 @@ export function MapPage() {
         )}
       </div>
 
-      {/* Map */}
-      <div className="flex-1 relative">
+      {/* Map — full-width on mobile (hidden when list selected), flex on desktop */}
+      <div className={`${mobileView === 'map' ? 'flex' : 'hidden'} md:flex flex-1 relative min-h-[300px]`}>
         {GOOGLE_MAPS_API_KEY ? (
           <APIProvider apiKey={GOOGLE_MAPS_API_KEY}>
             <Map

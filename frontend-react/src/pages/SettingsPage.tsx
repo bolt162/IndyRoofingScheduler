@@ -149,14 +149,15 @@ export function SettingsPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-3 md:p-6 space-y-4 md:space-y-6">
       <div>
-        <h1 className="text-2xl font-bold tracking-tight">Settings</h1>
-        <p className="text-sm text-muted-foreground">Configure scheduling rules, teams, and thresholds</p>
+        <h1 className="text-xl md:text-2xl font-bold tracking-tight">Settings</h1>
+        <p className="text-xs md:text-sm text-muted-foreground">Configure scheduling rules, teams, and thresholds</p>
       </div>
 
       <Tabs defaultValue="pms">
-        <TabsList className="grid grid-cols-4 lg:grid-cols-7 w-full">
+        <div className="overflow-x-auto -mx-1 px-1">
+          <TabsList className="inline-flex w-max lg:grid lg:grid-cols-7 lg:w-full">
           <TabsTrigger value="pms"><Users className="h-3.5 w-3.5 mr-1" />PMs</TabsTrigger>
           <TabsTrigger value="crews"><Truck className="h-3.5 w-3.5 mr-1" />Crews</TabsTrigger>
           <TabsTrigger value="scoring"><Sliders className="h-3.5 w-3.5 mr-1" />Scoring</TabsTrigger>
@@ -164,7 +165,8 @@ export function SettingsPage() {
           <TabsTrigger value="weather"><Cloud className="h-3.5 w-3.5 mr-1" />Weather</TabsTrigger>
           <TabsTrigger value="ai"><Brain className="h-3.5 w-3.5 mr-1" />AI Rules</TabsTrigger>
           <TabsTrigger value="system"><Calendar className="h-3.5 w-3.5 mr-1" />System</TabsTrigger>
-        </TabsList>
+          </TabsList>
+        </div>
 
         {/* PMs Tab */}
         <TabsContent value="pms">
@@ -183,7 +185,7 @@ export function SettingsPage() {
                     {editingPMId === pm.id ? (
                       /* Edit mode */
                       <div className="space-y-2">
-                        <div className="grid grid-cols-4 gap-3">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                           <div className="col-span-2">
                             <Label className="text-xs">Name</Label>
                             <Input
@@ -248,7 +250,7 @@ export function SettingsPage() {
                       </div>
                     ) : (
                       /* Display mode */
-                      <div className="flex items-start justify-between gap-3">
+                      <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-sm">{pm.name}</span>
@@ -261,7 +263,7 @@ export function SettingsPage() {
                             <span>Max: <strong className="text-foreground">{pm.max_capacity}</strong> jobs/day</span>
                           </div>
                         </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
+                        <div className="flex flex-wrap items-center gap-1.5 md:shrink-0">
                           <Button
                             variant="outline"
                             size="sm"
@@ -322,7 +324,7 @@ export function SettingsPage() {
               {/* Add PM form */}
               <div className="space-y-3">
                 <p className="text-sm font-medium">Add New PM</p>
-                <div className="grid grid-cols-4 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="col-span-2">
                     <Label>Name</Label>
                     <Input
@@ -387,8 +389,8 @@ export function SettingsPage() {
                   {editingCrewId === crew.id ? (
                     /* Edit mode */
                     <div className="space-y-2">
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className="col-span-2">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        <div className="md:col-span-2">
                           <Label className="text-xs">Name</Label>
                           <Input
                             value={editCrewName}
@@ -465,7 +467,7 @@ export function SettingsPage() {
                     </div>
                   ) : (
                     /* Display mode */
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           {rankIcon}
@@ -501,7 +503,7 @@ export function SettingsPage() {
                           </p>
                         )}
                       </div>
-                      <div className="flex flex-col items-end gap-1.5 shrink-0">
+                      <div className="flex flex-row md:flex-col md:items-end gap-1.5 md:shrink-0 flex-wrap">
                         <div className="flex items-center gap-1">
                           <Button
                             variant="outline"
@@ -581,8 +583,8 @@ export function SettingsPage() {
 
               <div className="space-y-3">
                 <p className="text-sm font-medium">Add New Crew</p>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="col-span-2">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="md:col-span-2">
                     <Label>Name</Label>
                     <Input
                       value={newCrewName}
@@ -682,14 +684,13 @@ export function SettingsPage() {
                 { key: 'cluster_tier_4_miles', label: 'Tier 4 — Extended (miles)', desc: 'Max 1-2 jobs/PM' },
                 { key: 'cluster_tier_5_miles', label: 'Tier 5 — Standalone (miles)', desc: 'Standalone rule applies' },
               ].map(({ key, label, desc }) => (
-                <div key={key} className="grid grid-cols-3 gap-4 items-center">
-                  <div>
+                <div key={key} className="grid grid-cols-1 md:grid-cols-3 gap-2 md:gap-4 md:items-center">
+                  <div className="md:col-span-2">
                     <Label className="text-sm">{label}</Label>
                     <p className="text-xs text-muted-foreground">{desc}</p>
                   </div>
                   <Input
                     type="number"
-                    className="col-span-1"
                     defaultValue={getSetting(key)}
                     onBlur={(e) => handleUpdateSetting(key, e.target.value)}
                   />
@@ -766,7 +767,7 @@ export function SettingsPage() {
                 <CardTitle className="text-base">Automated Weather Checks</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label className="text-xs">Morning Check Time (24hr)</Label>
                     <Input
@@ -843,7 +844,7 @@ export function SettingsPage() {
               <CardTitle className="text-base">System Settings</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="grid grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
                 <div className="space-y-2">
                   <Label>PM Baseline Capacity</Label>
                   <Input
