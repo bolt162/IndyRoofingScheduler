@@ -70,8 +70,8 @@ DEFAULT_SETTINGS = {
     "weather_morning_check_time": {"value": "06:00", "description": "Morning weather check time (24hr format)"},
 
     # Secondary trade aging
-    "secondary_aging_yellow_days": {"value": "7", "description": "Days after primary complete for yellow flag"},
-    "secondary_aging_red_days": {"value": "14", "description": "Days after primary complete for red flag"},
+    "secondary_aging_yellow_days": {"value": "7", "description": "Days after primary complete — warning flag (secondary trades overdue)"},
+    "secondary_aging_red_days": {"value": "10", "description": "Days after primary complete — ESCALATED (higher urgency, $ floating)"},
 
     # AI rules
     "ai_custom_rules": {"value": "", "description": "Plain-English rules applied to every scoring run"},

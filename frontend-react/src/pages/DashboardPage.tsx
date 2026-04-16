@@ -36,6 +36,8 @@ export function DashboardPage() {
   const { data: jobs, isLoading: jobsLoading } = useJobs(
     activeBucket === 'all' ? undefined : activeBucket
   );
+  // Separate query for all jobs — used to compute secondary trade aging alerts
+  const { data: allJobsForAging } = useJobs();
 
   const runScoring = useRunScoring();
   const checkWeather = useCheckAllWeather();
@@ -178,6 +180,66 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Secondary trade escalation banners */}
+      {(() => {
+        if (!allJobsForAging) return null;
+        const escalated = allJobsForAging.filter(j => j.secondary_aging_level === 'escalated');
+        const warnings = allJobsForAging.filter(j => j.secondary_aging_level === 'warning');
+        return (
+          <>
+            {escalated.length > 0 && (
+              <Card className="border-red-400 bg-red-50">
+                <CardContent className="p-4">
+                  <p className="text-sm font-semibold text-red-800 mb-1">
+                    🚨 {escalated.length} job(s) ESCALATED — secondary trades 10+ days overdue
+                  </p>
+                  <p className="text-xs text-red-700 mb-2">
+                    Revenue is floating. Take immediate scheduling action.
+                  </p>
+                  <ul className="text-xs text-red-700 space-y-0.5">
+                    {escalated.map(j => (
+                      <li key={j.id}>
+                        <button
+                          className="underline hover:text-red-900"
+                          onClick={() => setActiveBucket(j.bucket)}
+                        >
+                          {j.customer_name}
+                        </button>
+                        {' — '}{j.days_since_primary_complete}d since primary ·
+                        {' '}open: {j.open_secondary_trades.join(', ') || '—'}
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            )}
+            {warnings.length > 0 && (
+              <Card className="border-yellow-400 bg-yellow-50">
+                <CardContent className="p-4">
+                  <p className="text-sm font-semibold text-yellow-800 mb-1">
+                    ⚠ {warnings.length} job(s) overdue — secondary trades 7-9 days past primary
+                  </p>
+                  <ul className="text-xs text-yellow-800 space-y-0.5">
+                    {warnings.map(j => (
+                      <li key={j.id}>
+                        <button
+                          className="underline hover:text-yellow-900"
+                          onClick={() => setActiveBucket(j.bucket)}
+                        >
+                          {j.customer_name}
+                        </button>
+                        {' — '}{j.days_since_primary_complete}d ·
+                        {' '}open: {j.open_secondary_trades.join(', ') || '—'}
+                      </li>
+                    ))}
+                  </ul>
+                </CardContent>
+              </Card>
+            )}
+          </>
+        );
+      })()}
 
       {/* Bucket summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -374,9 +436,29 @@ export function DashboardPage() {
                                       {j.score?.toFixed(0)}
                                     </span>
                                     <span className="font-medium truncate">{j.customer_name}</span>
+                                    {j.suggested_crew_name && (
+                                      <Badge
+                                        variant="outline"
+                                        className={
+                                          j.suggested_crew_rank === 1
+                                            ? 'text-[9px] bg-yellow-50 text-yellow-800 border-yellow-400 font-bold shrink-0'
+                                            : j.suggested_crew_rank && j.suggested_crew_rank <= 3
+                                            ? 'text-[9px] bg-indigo-50 text-indigo-700 border-indigo-300 shrink-0'
+                                            : 'text-[9px] shrink-0'
+                                        }
+                                        title={j.complexity_score != null ? `Complexity ${j.complexity_score.toFixed(0)}` : undefined}
+                                      >
+                                        👷 {j.suggested_crew_name}{j.suggested_crew_rank && j.suggested_crew_rank < 999 ? ` #${j.suggested_crew_rank}` : ''}
+                                      </Badge>
+                                    )}
+                                    {!j.suggested_crew_name && j.crew_warning && (
+                                      <Badge variant="outline" className="text-[9px] bg-red-50 text-red-700 border-red-300 shrink-0" title={j.crew_warning}>
+                                        ⚠ {j.crew_warning.length > 30 ? 'No crew' : j.crew_warning}
+                                      </Badge>
+                                    )}
                                   </div>
                                   {j.must_build && (
-                                    <Badge variant="outline" className="text-[9px] bg-red-100 text-red-800">Must-Build</Badge>
+                                    <Badge variant="outline" className="text-[9px] bg-red-100 text-red-800 shrink-0">Must-Build</Badge>
                                   )}
                                 </div>
                               ))}
@@ -400,9 +482,29 @@ export function DashboardPage() {
                                     {j.score?.toFixed(0)}
                                   </span>
                                   <span className="font-medium truncate">{j.customer_name}</span>
+                                  {j.suggested_crew_name && (
+                                    <Badge
+                                      variant="outline"
+                                      className={
+                                        j.suggested_crew_rank === 1
+                                          ? 'text-[9px] bg-yellow-50 text-yellow-800 border-yellow-400 font-bold shrink-0'
+                                          : j.suggested_crew_rank && j.suggested_crew_rank <= 3
+                                          ? 'text-[9px] bg-indigo-50 text-indigo-700 border-indigo-300 shrink-0'
+                                          : 'text-[9px] shrink-0'
+                                      }
+                                      title={j.complexity_score != null ? `Complexity ${j.complexity_score.toFixed(0)}` : undefined}
+                                    >
+                                      👷 {j.suggested_crew_name}{j.suggested_crew_rank && j.suggested_crew_rank < 999 ? ` #${j.suggested_crew_rank}` : ''}
+                                    </Badge>
+                                  )}
+                                  {!j.suggested_crew_name && j.crew_warning && (
+                                    <Badge variant="outline" className="text-[9px] bg-red-50 text-red-700 border-red-300 shrink-0" title={j.crew_warning}>
+                                      ⚠ {j.crew_warning.length > 30 ? 'No crew' : j.crew_warning}
+                                    </Badge>
+                                  )}
                                 </div>
                                 {j.must_build && (
-                                  <Badge variant="outline" className="text-[9px] bg-red-100 text-red-800">Must-Build</Badge>
+                                  <Badge variant="outline" className="text-[9px] bg-red-100 text-red-800 shrink-0">Must-Build</Badge>
                                 )}
                               </div>
                             ))}

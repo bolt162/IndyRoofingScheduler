@@ -33,6 +33,14 @@ interface UIState {
 
   // Helper: look up recommended PM for a job from latest scoring result
   getPMForJob: (jobId: number) => { pmId: number; pmName: string } | null;
+  // Helper: look up recommended crew for a job from latest scoring result
+  getCrewForJob: (jobId: number) => {
+    crewId: number;
+    crewName: string;
+    crewRank: number | null;
+    complexityScore: number | null;
+    warning: string | null;
+  } | null;
 }
 
 export const useUIStore = create<UIState>((set, get) => ({
@@ -72,6 +80,25 @@ export const useUIStore = create<UIState>((set, get) => ({
       for (const job of pm.jobs) {
         if (job.job_id === jobId) {
           return { pmId: pm.pm_id, pmName: pm.pm_name };
+        }
+      }
+    }
+    return null;
+  },
+
+  getCrewForJob: (jobId: number) => {
+    const result = get().latestScoringResult;
+    if (!result?.pm_plan) return null;
+    for (const pm of result.pm_plan) {
+      for (const job of pm.jobs) {
+        if (job.job_id === jobId && job.suggested_crew_id) {
+          return {
+            crewId: job.suggested_crew_id,
+            crewName: job.suggested_crew_name || '',
+            crewRank: job.suggested_crew_rank ?? null,
+            complexityScore: job.complexity_score ?? null,
+            warning: job.crew_warning ?? null,
+          };
         }
       }
     }

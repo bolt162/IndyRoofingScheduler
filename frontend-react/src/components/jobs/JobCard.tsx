@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { differenceInDays, parseISO, format } from 'date-fns';
 import {
   MapPin, Calendar, DollarSign, Layers, Users, Hash, Star, CheckCircle, Pencil,
+  Upload, CheckCheck, Trophy, Medal, Award, AlertCircle, Clock, Flag, PackageCheck,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -18,10 +19,12 @@ import {
 import { MustBuildBadge } from './MustBuildBadge';
 import { DurationFlag } from './DurationFlag';
 import { WeatherBadge } from './WeatherBadge';
-import { useSetMustBuild, useUpdateJob, useSetStandaloneOption } from '@/api/jobs';
+import { useSetMustBuild, useUpdateJob, useSetStandaloneOption, usePushNote, useMarkPrimaryComplete, useUpdateSecondaryTradeStatus } from '@/api/jobs';
+import { toast } from 'sonner';
 import { MATERIAL_LABELS } from '@/types';
 import { cn } from '@/lib/utils';
 import { JobFormDialog } from './JobFormDialog';
+import { useUIStore } from '@/stores/ui-store';
 import type { Job } from '@/types';
 
 const PAYMENT_COLORS: Record<string, string> = {
@@ -34,6 +37,35 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
   const daysInQueue = job.date_entered
     ? differenceInDays(new Date(), parseISO(job.date_entered))
     : null;
+
+  // Pull recommended crew from latest scoring result (if any)
+  const latestScoringResult = useUIStore((s) => s.latestScoringResult);
+  const crewRec = (() => {
+    if (!latestScoringResult?.pm_plan) return null;
+    for (const pm of latestScoringResult.pm_plan) {
+      for (const j of pm.jobs) {
+        if (j.job_id === job.id && j.suggested_crew_id) {
+          return {
+            crewId: j.suggested_crew_id,
+            crewName: j.suggested_crew_name || '',
+            crewRank: j.suggested_crew_rank ?? null,
+            complexityScore: j.complexity_score ?? null,
+            warning: j.crew_warning ?? null,
+          };
+        }
+        if (j.job_id === job.id && j.crew_warning) {
+          return {
+            crewId: 0,
+            crewName: '',
+            crewRank: null,
+            complexityScore: j.complexity_score ?? null,
+            warning: j.crew_warning,
+          };
+        }
+      }
+    }
+    return null;
+  })();
 
   // Expanded state — click card to toggle full details
   const [expanded, setExpanded] = useState(false);
@@ -51,6 +83,9 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
 
   // Standalone option
   const setStandaloneOption = useSetStandaloneOption();
+  const pushNote = usePushNote();
+  const markPrimaryComplete = useMarkPrimaryComplete();
+  const updateSecondaryTradeStatus = useUpdateSecondaryTradeStatus();
 
   // Edit dialog state
   const [editOpen, setEditOpen] = useState(false);
@@ -170,6 +205,66 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
               </Badge>
             )}
             <WeatherBadge status={job.weather_status} detail={job.weather_detail} jobId={job.id} customerName={job.customer_name} />
+            {crewRec && crewRec.crewId > 0 && (
+              <Badge
+                variant="outline"
+                className={
+                  crewRec.crewRank === 1
+                    ? 'gap-1 text-[10px] bg-yellow-50 text-yellow-800 border-yellow-400 font-bold'
+                    : crewRec.crewRank && crewRec.crewRank <= 3
+                    ? 'gap-1 text-[10px] bg-indigo-50 text-indigo-700 border-indigo-300'
+                    : 'gap-1 text-[10px] bg-gray-100 text-gray-700'
+                }
+                title={
+                  crewRec.complexityScore != null
+                    ? `Complexity: ${crewRec.complexityScore.toFixed(0)}`
+                    : undefined
+                }
+              >
+                {crewRec.crewRank === 1 ? <Trophy className="h-3 w-3" />
+                  : crewRec.crewRank === 2 ? <Medal className="h-3 w-3" />
+                  : crewRec.crewRank === 3 ? <Award className="h-3 w-3" />
+                  : <Users className="h-3 w-3" />}
+                Crew: {crewRec.crewName}
+                {crewRec.crewRank && crewRec.crewRank < 999 && ` · #${crewRec.crewRank}`}
+              </Badge>
+            )}
+            {crewRec && crewRec.warning && (
+              <Badge
+                variant="outline"
+                className="gap-1 text-[10px] bg-red-50 text-red-700 border-red-300"
+                title={crewRec.warning}
+              >
+                <AlertCircle className="h-3 w-3" />
+                {crewRec.warning.length > 40 ? 'Crew issue' : crewRec.warning}
+              </Badge>
+            )}
+            {/* Secondary trade aging chip */}
+            {job.secondary_aging_level && job.days_since_primary_complete != null && (
+              <Badge
+                variant="outline"
+                className={
+                  job.secondary_aging_level === 'escalated'
+                    ? 'gap-1 text-[10px] bg-red-50 text-red-800 border-red-400 font-bold'
+                    : job.secondary_aging_level === 'warning'
+                    ? 'gap-1 text-[10px] bg-yellow-50 text-yellow-800 border-yellow-400'
+                    : 'gap-1 text-[10px] bg-gray-100 text-gray-700'
+                }
+                title={
+                  job.open_secondary_trades.length > 0
+                    ? `Open trades: ${job.open_secondary_trades.join(', ')}`
+                    : 'All secondary trades complete'
+                }
+              >
+                <Clock className="h-3 w-3" />
+                {job.secondary_aging_level === 'escalated' ? '🚨 Escalated' :
+                 job.secondary_aging_level === 'warning' ? '⚠ Overdue' :
+                 'Secondaries'}
+                {' · '}{job.days_since_primary_complete}d
+                {job.open_secondary_trades.length > 0 &&
+                 ` · ${job.open_secondary_trades.join(', ')}`}
+              </Badge>
+            )}
           </div>
 
           {/* Row 3: Details grid */}
@@ -227,16 +322,59 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
 
           {/* Row 7: System note preview — most recent scheduler-generated note */}
           {!compact && job.latest_system_note && (
-            <p className={cn(
-              'text-[10px] text-blue-700 bg-blue-50 rounded px-2 py-1',
-              expanded ? 'whitespace-pre-wrap' : 'truncate',
-            )}>
-              {expanded
-                ? job.latest_system_note
-                : job.latest_system_note.length > 200
-                  ? job.latest_system_note.slice(0, 200) + '...'
-                  : job.latest_system_note}
-            </p>
+            <div className="space-y-1">
+              <p className={cn(
+                'text-[10px] text-blue-700 bg-blue-50 rounded px-2 py-1',
+                expanded ? 'whitespace-pre-wrap' : 'truncate',
+              )}>
+                {expanded
+                  ? job.latest_system_note
+                  : job.latest_system_note.length > 200
+                    ? job.latest_system_note.slice(0, 200) + '...'
+                    : job.latest_system_note}
+              </p>
+              <div
+                className="flex items-center justify-end gap-1.5"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {job.latest_system_note_pushed ? (
+                  <Badge
+                    variant="outline"
+                    className="text-[9px] gap-1 bg-green-50 text-green-700 border-green-300"
+                  >
+                    <CheckCheck className="h-3 w-3" />
+                    Pushed to JN
+                    {job.latest_system_note_pushed_at && (
+                      <span className="text-muted-foreground ml-0.5">
+                        {formatDistanceFromNow(job.latest_system_note_pushed_at)}
+                      </span>
+                    )}
+                  </Badge>
+                ) : job.latest_system_note_id && job.jn_job_id ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 text-[10px] gap-1 text-blue-700 hover:bg-blue-50"
+                    disabled={pushNote.isPending}
+                    onClick={() => {
+                      pushNote.mutate(job.latest_system_note_id!, {
+                        onSuccess: () => toast.success(`Note pushed to JobNimbus`),
+                        onError: (err: any) => toast.error(
+                          err?.response?.data?.detail || 'Failed to push note to JN'
+                        ),
+                      });
+                    }}
+                  >
+                    <Upload className="h-3 w-3" />
+                    {pushNote.isPending ? 'Pushing...' : 'Push to JN'}
+                  </Button>
+                ) : job.latest_system_note_id && !job.jn_job_id ? (
+                  <span className="text-[9px] text-muted-foreground italic">
+                    Local only (no JN link)
+                  </span>
+                ) : null}
+              </div>
+            </div>
           )}
 
           {/* Row 8: Standalone option buttons (spec §5.5) */}
@@ -294,6 +432,64 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
                   Confirm Duration
                 </Button>
               )}
+            </div>
+          )}
+
+          {/* Row 10: Mark Primary Complete — for scheduled jobs */}
+          {!compact && job.bucket === 'scheduled' && !job.primary_complete_date && (
+            <div className="flex flex-wrap gap-1.5 pt-1 border-t" onClick={(e) => e.stopPropagation()}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-[10px] gap-1 text-green-700 hover:bg-green-50"
+                disabled={markPrimaryComplete.isPending}
+                onClick={() => {
+                  if (confirm(`Mark primary trade (${job.primary_trade || 'roofing'}) as complete for ${job.customer_name}?${
+                    (job.secondary_trades && job.secondary_trades.length > 0)
+                      ? `\n\nSecondary trades tracking will start: ${job.secondary_trades.join(', ')}`
+                      : '\n\nJob will move to Review for Completion (no secondary trades).'
+                  }`)) {
+                    markPrimaryComplete.mutate(job.id, {
+                      onSuccess: () => toast.success(`Primary trade marked complete for ${job.customer_name}`),
+                      onError: (err: any) => toast.error(err?.response?.data?.detail || 'Failed to mark primary complete'),
+                    });
+                  }
+                }}
+              >
+                <Flag className="h-3 w-3" />
+                Mark Primary Complete
+              </Button>
+            </div>
+          )}
+
+          {/* Row 11: Mark secondary trades complete — for waiting_on_trades / primary_complete buckets */}
+          {!compact && (job.bucket === 'waiting_on_trades' || job.bucket === 'primary_complete') &&
+           job.open_secondary_trades.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 pt-1 border-t" onClick={(e) => e.stopPropagation()}>
+              <span className="text-[10px] text-muted-foreground self-center mr-1">
+                Mark complete:
+              </span>
+              {job.open_secondary_trades.map((trade) => (
+                <Button
+                  key={trade}
+                  variant="outline"
+                  size="sm"
+                  className="h-6 text-[10px] gap-1 text-green-700 hover:bg-green-50"
+                  disabled={updateSecondaryTradeStatus.isPending}
+                  onClick={() => {
+                    updateSecondaryTradeStatus.mutate(
+                      { jobId: job.id, trade, status: 'complete' },
+                      {
+                        onSuccess: () => toast.success(`${trade} marked complete`),
+                        onError: (err: any) => toast.error(err?.response?.data?.detail || 'Failed to update trade status'),
+                      }
+                    );
+                  }}
+                >
+                  <PackageCheck className="h-3 w-3" />
+                  {trade}
+                </Button>
+              ))}
             </div>
           )}
         </CardContent>
@@ -469,4 +665,25 @@ function NotePreview({ notesRaw, expanded = false }: { notesRaw: string; expande
       📝 {firstSegment}
     </p>
   );
+}
+
+/**
+ * Format an ISO timestamp as a short relative time (e.g. "2m ago", "1h ago", "Apr 5").
+ */
+function formatDistanceFromNow(iso: string): string {
+  try {
+    const then = new Date(iso);
+    const now = new Date();
+    const diffMs = now.getTime() - then.getTime();
+    const mins = Math.round(diffMs / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.round(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.round(hrs / 24);
+    if (days < 7) return `${days}d ago`;
+    return then.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  } catch {
+    return '';
+  }
 }

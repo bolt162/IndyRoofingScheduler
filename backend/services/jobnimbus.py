@@ -1,7 +1,8 @@
 """
-JobNimbus API Client — READ-ONLY.
-No data is ever written to JobNimbus through this service.
-Notes are generated locally and displayed in the UI only.
+JobNimbus API Client.
+Primarily READ-ONLY — fetches jobs and notes from JN.
+The ONLY write operation is push_note_to_jn() which creates a note activity
+on a JN job. This is triggered manually by the scheduler (never automatic).
 """
 import httpx
 from datetime import datetime
@@ -25,6 +26,29 @@ def _jn_get(endpoint: str, params: dict | None = None) -> dict:
     resp = httpx.get(url, headers=HEADERS, params=params, timeout=30)
     resp.raise_for_status()
     return resp.json()
+
+
+def _jn_post(endpoint: str, body: dict) -> dict:
+    """POST to a JN endpoint. Used only for pushing notes (activities)."""
+    url = f"{BASE_URL}/{endpoint}"
+    resp = httpx.post(url, headers=HEADERS, json=body, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def push_note_to_jn(jn_job_id: str, note_text: str) -> dict:
+    """
+    Create a note activity on a JN job.
+    Returns the created activity dict with the new 'jnid'.
+    Raises httpx.HTTPError on failure.
+    """
+    body = {
+        "parent": jn_job_id,           # JN link to job
+        "type": "note",
+        "record_type_name": "Note",
+        "note": note_text,
+    }
+    return _jn_post("activities", body)
 
 
 def fetch_jobs_at_status(status_label: str = "Schedule Job") -> list[dict]:
@@ -191,12 +215,11 @@ def map_jn_job_to_model(jn_data: dict) -> dict:
     latitude = geo.get("lat")
     longitude = geo.get("lon")  # JN uses "lon" not "lng"
 
-    # Material type from "Roof Material Type" custom field, normalized to MaterialType enum
+    # Material type from "Roof Material Type" custom field, normalized to MaterialType enum.
+    # NOTE: Siding is a TRADE not a material — never put "siding" in material_type.
+    # Siding-specific weather thresholds are applied via primary_trade in weather.py.
     raw_material = (jn_data.get("Roof Material Type") or "").lower()
-    trade_1 = (jn_data.get("Trade #1") or jn_data.get("cf_string_11") or "").lower()
     material_type = _normalize_material(raw_material)
-    if not material_type and trade_1 == "siding":
-        material_type = "siding"
 
     # Square footage from "Roof Total Square" custom field
     # JN stores this in "squares" (1 square = 100 sq ft), so multiply by 100

@@ -26,6 +26,9 @@ async def lifespan(app: FastAPI):
 
     Base.metadata.create_all(bind=engine)
     _seed_default_settings()
+    _cleanup_siding_material()
+    _migrate_note_log_columns()
+    _migrate_crew_columns()
 
     # Start APScheduler for weather checks + JN sync polling
     scheduler = _start_scheduler()
@@ -101,6 +104,90 @@ def _seed_default_settings():
             if not existing:
                 db.add(SystemSettings(key=key, value=info["value"], description=info["description"]))
         db.commit()
+    finally:
+        db.close()
+
+
+def _cleanup_siding_material():
+    """One-time cleanup: clear material_type='siding' on existing jobs.
+    Siding is a TRADE, not a material — it should be in primary_trade only.
+    Safe to run on every startup (no-op if no siding material rows exist)."""
+    from backend.models.job import Job
+    from sqlalchemy import update
+    db = SessionLocal()
+    try:
+        result = db.execute(
+            update(Job).where(Job.material_type == "siding").values(material_type="")
+        )
+        if result.rowcount > 0:
+            logger.info(f"Cleanup: cleared material_type='siding' on {result.rowcount} jobs (siding moved to primary_trade)")
+        db.commit()
+    except Exception as e:
+        logger.warning(f"Siding cleanup failed: {e}")
+    finally:
+        db.close()
+
+
+def _migrate_crew_columns():
+    """Add rank and notes columns to crews table if missing.
+    Safe to run on every startup."""
+    from sqlalchemy import inspect, text
+    db = SessionLocal()
+    try:
+        insp = inspect(engine)
+        if "crews" not in insp.get_table_names():
+            return
+        existing = {col["name"] for col in insp.get_columns("crews")}
+        additions = []
+        if "rank" not in existing:
+            additions.append("ADD COLUMN rank INTEGER DEFAULT 999")
+        if "notes" not in existing:
+            additions.append("ADD COLUMN notes TEXT")
+        for stmt in additions:
+            try:
+                db.execute(text(f"ALTER TABLE crews {stmt}"))
+                db.commit()
+                logger.info(f"Migration: ALTER TABLE crews {stmt}")
+            except Exception as e:
+                logger.warning(f"Migration skip ({stmt}): {e}")
+                db.rollback()
+    except Exception as e:
+        logger.warning(f"Crew column migration failed: {e}")
+    finally:
+        db.close()
+
+
+def _migrate_note_log_columns():
+    """Add new columns to note_logs table if they don't exist.
+    This is a lightweight migration for production DBs that don't use Alembic.
+    Safe to run on every startup."""
+    from sqlalchemy import inspect, text
+    db = SessionLocal()
+    try:
+        insp = inspect(engine)
+        if "note_logs" not in insp.get_table_names():
+            return  # Table not yet created; create_all will handle it
+        existing = {col["name"] for col in insp.get_columns("note_logs")}
+
+        is_sqlite = "sqlite" in str(engine.url)
+        additions = []
+        if "pushed_at" not in existing:
+            additions.append("ADD COLUMN pushed_at TIMESTAMP")
+        if "jn_note_id" not in existing:
+            additions.append("ADD COLUMN jn_note_id VARCHAR(255)")
+        if "push_error" not in existing:
+            additions.append("ADD COLUMN push_error TEXT")
+
+        for stmt in additions:
+            try:
+                db.execute(text(f"ALTER TABLE note_logs {stmt}"))
+                db.commit()
+                logger.info(f"Migration: ALTER TABLE note_logs {stmt}")
+            except Exception as e:
+                logger.warning(f"Migration skip ({stmt}): {e}")
+                db.rollback()
+    except Exception as e:
+        logger.warning(f"NoteLog column migration failed: {e}")
     finally:
         db.close()
 
@@ -183,10 +270,21 @@ def _start_scheduler():
             misfire_grace_time=3600,
         )
 
+        # --- Secondary trade aging check (8am daily) ---
+        # Client requirement: secondary trades due within 7 days of primary complete,
+        # escalate higher at 10 days. Generates warning/escalation notes once per job per level.
+        from backend.services.secondary_trade_escalation import run_daily_escalation_check
+        scheduler.add_job(
+            run_daily_escalation_check, CronTrigger(hour=8, minute=0),
+            id="secondary_trade_escalation", name="Secondary Trade Escalation",
+            misfire_grace_time=3600,
+        )
+
         scheduler.start()
         logger.info(
             f"Scheduler started: JN sync every {sync_interval}min, "
-            f"weather morning={morning_time}, night-before={night_time}, 5am spot check"
+            f"weather morning={morning_time}, night-before={night_time}, 5am spot check, "
+            f"secondary trade escalation 8am daily"
         )
         return scheduler
     except ImportError:

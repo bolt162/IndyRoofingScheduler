@@ -12,13 +12,75 @@ from backend.services.geocoding import geocode_address
 router = APIRouter()
 
 
+def _compute_secondary_aging(job: Job, db: Session) -> dict:
+    """Compute secondary trade aging fields: days since primary complete, aging level, open trades."""
+    from datetime import datetime as _dt
+    from backend.models.settings import SystemSettings as _SS
+
+    result = {
+        "days_since_primary_complete": None,
+        "secondary_aging_level": None,
+        "open_secondary_trades": [],
+    }
+
+    secondary_trades = job.secondary_trades or []
+    if not secondary_trades:
+        return result
+
+    # Open (not complete) trades
+    status_map = job.secondary_trades_status or {}
+    open_trades = [t for t in secondary_trades if status_map.get(t) != "complete"]
+    result["open_secondary_trades"] = open_trades
+
+    # Days since primary complete
+    if not job.primary_complete_date:
+        return result
+
+    delta = _dt.utcnow() - job.primary_complete_date
+    days = delta.days
+    result["days_since_primary_complete"] = days
+
+    if not open_trades:
+        # All complete
+        result["secondary_aging_level"] = "normal"
+        return result
+
+    # Look up thresholds
+    warn_setting = db.query(_SS).filter(_SS.key == "secondary_aging_yellow_days").first()
+    esc_setting = db.query(_SS).filter(_SS.key == "secondary_aging_red_days").first()
+    warn_days = int(warn_setting.value) if warn_setting and warn_setting.value else 7
+    esc_days = int(esc_setting.value) if esc_setting and esc_setting.value else 10
+
+    if days >= esc_days:
+        result["secondary_aging_level"] = "escalated"
+    elif days >= warn_days:
+        result["secondary_aging_level"] = "warning"
+    else:
+        result["secondary_aging_level"] = "normal"
+
+    return result
+
+
 def _enrich_with_latest_note(job: Job, db: Session) -> dict:
-    """Add latest_system_note to job response."""
+    """Add latest_system_note + push status + secondary trade aging fields to job response."""
     job_dict = JobResponse.model_validate(job).model_dump()
     latest = db.query(NoteLog).filter(
         NoteLog.job_id == job.id
     ).order_by(NoteLog.created_at.desc()).first()
-    job_dict["latest_system_note"] = latest.note_text if latest else None
+    if latest:
+        job_dict["latest_system_note"] = latest.note_text
+        job_dict["latest_system_note_id"] = latest.id
+        job_dict["latest_system_note_pushed"] = latest.pushed_to_jn
+        job_dict["latest_system_note_pushed_at"] = latest.pushed_at.isoformat() if latest.pushed_at else None
+    else:
+        job_dict["latest_system_note"] = None
+        job_dict["latest_system_note_id"] = None
+        job_dict["latest_system_note_pushed"] = None
+        job_dict["latest_system_note_pushed_at"] = None
+
+    # Secondary trade aging
+    aging = _compute_secondary_aging(job, db)
+    job_dict.update(aging)
     return job_dict
 
 
@@ -209,6 +271,92 @@ def set_standalone_option(job_id: int, request: StandaloneOptionRequest, db: Ses
     return _enrich_with_latest_note(job, db)
 
 
+# --- Secondary Trade Tracking ---
+
+@router.post("/{job_id}/mark-primary-complete")
+def mark_primary_complete(job_id: int, db: Session = Depends(get_db)):
+    """
+    Mark the primary trade (e.g. roofing) as complete.
+    Initializes secondary trades tracking if job has secondary trades.
+    Moves bucket to waiting_on_trades (if secondaries) or primary_complete (no secondaries).
+    """
+    from datetime import datetime as _dt
+
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.primary_complete_date:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Primary trade already marked complete on {job.primary_complete_date.isoformat()}",
+        )
+
+    job.primary_complete_date = _dt.utcnow()
+
+    # Initialize per-trade status dict
+    secondary_trades = job.secondary_trades or []
+    if secondary_trades:
+        status_map = {t: "pending" for t in secondary_trades}
+        job.secondary_trades_status = status_map
+        job.bucket = JobBucket.WAITING_ON_TRADES.value
+    else:
+        # No secondaries — job goes to review for completion
+        job.secondary_trades_status = {}
+        job.bucket = JobBucket.REVIEW_FOR_COMPLETION.value
+
+    db.commit()
+    db.refresh(job)
+    return _enrich_with_latest_note(job, db)
+
+
+class SecondaryTradeStatusRequest(BaseModel):
+    trade: str
+    status: str  # "pending" | "in_progress" | "complete" | "blocked"
+
+
+@router.post("/{job_id}/secondary-trade-status")
+def update_secondary_trade_status(
+    job_id: int,
+    request: SecondaryTradeStatusRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Update the status of a single secondary trade on a job.
+    If ALL secondary trades become 'complete', move bucket to review_for_completion.
+    """
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if request.status not in ("pending", "in_progress", "complete", "blocked"):
+        raise HTTPException(
+            status_code=400,
+            detail="Status must be one of: pending, in_progress, complete, blocked",
+        )
+
+    secondary_trades = job.secondary_trades or []
+    if request.trade not in secondary_trades:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'{request.trade}' is not a secondary trade on this job. Available: {secondary_trades}",
+        )
+
+    # SQLAlchemy JSON columns need a new dict to detect changes
+    current = dict(job.secondary_trades_status or {})
+    current[request.trade] = request.status
+    job.secondary_trades_status = current
+
+    # If all secondary trades are now complete, advance bucket
+    all_complete = all(current.get(t) == "complete" for t in secondary_trades)
+    if all_complete and job.bucket in (JobBucket.WAITING_ON_TRADES.value, JobBucket.PRIMARY_COMPLETE.value):
+        job.bucket = JobBucket.REVIEW_FOR_COMPLETION.value
+
+    db.commit()
+    db.refresh(job)
+    return _enrich_with_latest_note(job, db)
+
+
 @router.get("/{job_id}/notes")
 def get_job_notes(job_id: int, db: Session = Depends(get_db)):
     """Get all system-generated notes for a job."""
@@ -221,7 +369,58 @@ def get_job_notes(job_id: int, db: Session = Depends(get_db)):
             "note_type": n.note_type,
             "note_text": n.note_text,
             "pushed_to_jn": n.pushed_to_jn,
+            "pushed_at": n.pushed_at.isoformat() if n.pushed_at else None,
+            "jn_note_id": n.jn_note_id,
+            "push_error": n.push_error,
             "created_at": n.created_at.isoformat() if n.created_at else None,
         }
         for n in notes
     ]
+
+
+@router.post("/notes/{note_id}/push")
+def push_note_to_jobnimbus(note_id: int, db: Session = Depends(get_db)):
+    """
+    Manually push a single system-generated note to JobNimbus.
+    This is the ONLY write operation to JN. Requires a valid jn_job_id.
+    """
+    from backend.services.jobnimbus import push_note_to_jn
+    from datetime import datetime as dt
+
+    note = db.query(NoteLog).filter(NoteLog.id == note_id).first()
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    if note.pushed_to_jn:
+        return {
+            "status": "already_pushed",
+            "note_id": note.id,
+            "pushed_at": note.pushed_at.isoformat() if note.pushed_at else None,
+            "jn_note_id": note.jn_note_id,
+        }
+
+    if not note.jn_job_id:
+        raise HTTPException(
+            status_code=400,
+            detail="This note's job has no JobNimbus ID (manually-created job). Cannot push.",
+        )
+
+    try:
+        result = push_note_to_jn(note.jn_job_id, note.note_text)
+        # JN activity response includes 'jnid' for the new activity
+        note.jn_note_id = result.get("jnid") or result.get("id") or ""
+        note.pushed_to_jn = True
+        note.pushed_at = dt.utcnow()
+        note.push_error = None
+        db.commit()
+        db.refresh(note)
+        return {
+            "status": "pushed",
+            "note_id": note.id,
+            "pushed_at": note.pushed_at.isoformat(),
+            "jn_note_id": note.jn_note_id,
+        }
+    except Exception as e:
+        note.push_error = str(e)[:500]
+        db.commit()
+        raise HTTPException(status_code=502, detail=f"JN push failed: {str(e)[:300]}")

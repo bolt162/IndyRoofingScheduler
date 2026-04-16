@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import {
-  Users, Truck, Sliders, Ruler, Cloud, Brain, Calendar, Clock, Pencil, Trash2, Pause, Play,
+  Users, Truck, Sliders, Ruler, Cloud, Brain, Calendar, Clock, Pencil, Trash2, Pause, Play, ArrowUp, ArrowDown, Trophy, Medal, Award,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,7 +13,7 @@ import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useSettings, useUpdateSetting, usePMs, useAddPM, useCrews, useAddCrew, useUpdateCrew, useDeleteCrew, useResetDB } from '@/api/settings';
+import { useSettings, useUpdateSetting, usePMs, useAddPM, useUpdatePM, useDeletePM, useCrews, useAddCrew, useUpdateCrew, useDeleteCrew, useResetDB } from '@/api/settings';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
@@ -23,6 +23,8 @@ export function SettingsPage() {
   const updateSetting = useUpdateSetting();
   const { data: pms } = usePMs();
   const addPM = useAddPM();
+  const updatePM = useUpdatePM();
+  const deletePM = useDeletePM();
   const { data: crews } = useCrews();
   const addCrew = useAddCrew();
   const updateCrew = useUpdateCrew();
@@ -34,6 +36,18 @@ export function SettingsPage() {
   const [editingCrewId, setEditingCrewId] = useState<number | null>(null);
   const [editCrewName, setEditCrewName] = useState('');
   const [editCrewSpecialties, setEditCrewSpecialties] = useState('');
+  const [editCrewRank, setEditCrewRank] = useState('');
+  const [editCrewNotes, setEditCrewNotes] = useState('');
+
+  // New crew — rank/notes extras
+  const [newCrewRank, setNewCrewRank] = useState<number>(0);
+  const [newCrewNotes, setNewCrewNotes] = useState('');
+
+  // PM edit state
+  const [editingPMId, setEditingPMId] = useState<number | null>(null);
+  const [editPMName, setEditPMName] = useState('');
+  const [editPMBaseline, setEditPMBaseline] = useState(3);
+  const [editPMMax, setEditPMMax] = useState(5);
 
   // New PM form
   const [newPMName, setNewPMName] = useState('');
@@ -43,6 +57,32 @@ export function SettingsPage() {
   // New crew form
   const [newCrewName, setNewCrewName] = useState('');
   const [newCrewSpecialties, setNewCrewSpecialties] = useState('');
+
+  // AI Rules draft state — save/cancel pattern (doesn't auto-save on blur)
+  const savedAIRules = settings?.['ai_custom_rules']?.value ?? '';
+  const [aiRulesDraft, setAIRulesDraft] = useState(savedAIRules);
+  const [aiRulesInitialized, setAIRulesInitialized] = useState(false);
+
+  // Initialize draft from settings once loaded
+  if (!aiRulesInitialized && settings) {
+    setAIRulesDraft(savedAIRules);
+    setAIRulesInitialized(true);
+  }
+
+  const aiRulesDirty = aiRulesDraft !== savedAIRules;
+
+  const handleSaveAIRules = async () => {
+    try {
+      await updateSetting.mutateAsync({ key: 'ai_custom_rules', value: aiRulesDraft });
+      toast.success('AI rules saved');
+    } catch {
+      toast.error('Failed to save AI rules');
+    }
+  };
+
+  const handleCancelAIRules = () => {
+    setAIRulesDraft(savedAIRules);
+  };
 
   const handleUpdateSetting = async (key: string, value: string) => {
     try {
@@ -67,10 +107,22 @@ export function SettingsPage() {
   const handleAddCrew = async () => {
     if (!newCrewName) return;
     try {
-      const specialties = newCrewSpecialties ? newCrewSpecialties.split(',').map((s) => s.trim()) : [];
-      await addCrew.mutateAsync({ name: newCrewName, specialties });
+      const specialties = newCrewSpecialties ? newCrewSpecialties.split(',').map((s) => s.trim()).filter(Boolean) : [];
+      // Auto-assign rank if not specified: next rank after highest existing rank < 999
+      const rank = newCrewRank > 0 ? newCrewRank : (Math.max(
+        0,
+        ...(crews ?? []).filter(c => c.rank < 999).map(c => c.rank)
+      ) + 1);
+      await addCrew.mutateAsync({
+        name: newCrewName,
+        specialties,
+        rank,
+        notes: newCrewNotes || null,
+      });
       setNewCrewName('');
       setNewCrewSpecialties('');
+      setNewCrewRank(0);
+      setNewCrewNotes('');
       toast.success('Crew added');
     } catch {
       toast.error('Failed to add crew');
@@ -78,6 +130,23 @@ export function SettingsPage() {
   };
 
   const getSetting = (key: string) => settings?.[key]?.value ?? '';
+
+  // Swap rank with neighbor in the sorted crew list. direction: 'up' or 'down'.
+  const swapCrewRank = (crewId: number, direction: 'up' | 'down') => {
+    if (!crews) return;
+    const sorted = [...crews].sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
+    const idx = sorted.findIndex(c => c.id === crewId);
+    if (idx === -1) return;
+    const neighborIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (neighborIdx < 0 || neighborIdx >= sorted.length) return;
+    const me = sorted[idx];
+    const neighbor = sorted[neighborIdx];
+    // Swap their ranks. If either is 999 (unranked), give them real ranks.
+    const myNewRank = neighbor.rank < 999 ? neighbor.rank : neighborIdx + 1;
+    const neighborNewRank = me.rank < 999 ? me.rank : idx + 1;
+    updateCrew.mutate({ id: me.id, update: { rank: myNewRank } });
+    updateCrew.mutate({ id: neighbor.id, update: { rank: neighborNewRank } });
+  };
 
   return (
     <div className="p-6 space-y-6">
@@ -106,16 +175,144 @@ export function SettingsPage() {
             <CardContent className="space-y-4">
               {/* Existing PMs */}
               <div className="space-y-2">
+                {pms?.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No PMs added yet.</p>
+                )}
                 {pms?.map((pm) => (
-                  <div key={pm.id} className="flex items-center gap-4 p-3 bg-muted rounded-md">
-                    <span className="font-medium text-sm flex-1">{pm.name}</span>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span>Baseline: {pm.baseline_capacity}</span>
-                      <span>Max: {pm.max_capacity}</span>
-                    </div>
-                    <Badge variant={pm.is_active ? 'default' : 'secondary'}>
-                      {pm.is_active ? 'Active' : 'Inactive'}
-                    </Badge>
+                  <div key={pm.id} className="p-3 bg-muted rounded-md space-y-2">
+                    {editingPMId === pm.id ? (
+                      /* Edit mode */
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-4 gap-3">
+                          <div className="col-span-2">
+                            <Label className="text-xs">Name</Label>
+                            <Input
+                              value={editPMName}
+                              onChange={(e) => setEditPMName(e.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Baseline</Label>
+                            <Input
+                              type="number"
+                              min={1}
+                              max={10}
+                              value={editPMBaseline}
+                              onChange={(e) => setEditPMBaseline(parseInt(e.target.value) || 0)}
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Max</Label>
+                            <Input
+                              type="number"
+                              min={1}
+                              max={10}
+                              value={editPMMax}
+                              onChange={(e) => setEditPMMax(parseInt(e.target.value) || 0)}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs"
+                            disabled={updatePM.isPending || !editPMName}
+                            onClick={() => {
+                              updatePM.mutate({
+                                id: pm.id,
+                                update: {
+                                  name: editPMName,
+                                  baseline_capacity: editPMBaseline,
+                                  max_capacity: editPMMax,
+                                },
+                              }, {
+                                onSuccess: () => {
+                                  toast.success(`Updated ${editPMName}`);
+                                  setEditingPMId(null);
+                                },
+                                onError: () => toast.error('Failed to update PM'),
+                              });
+                            }}
+                          >
+                            Save
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            onClick={() => setEditingPMId(null)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Display mode */
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm">{pm.name}</span>
+                            <Badge variant={pm.is_active ? 'default' : 'secondary'} className="text-[10px]">
+                              {pm.is_active ? 'Active' : 'Inactive — On leave'}
+                            </Badge>
+                          </div>
+                          <div className="flex items-center gap-3 mt-1 text-[11px] text-muted-foreground">
+                            <span>Baseline: <strong className="text-foreground">{pm.baseline_capacity}</strong> jobs/day</span>
+                            <span>Max: <strong className="text-foreground">{pm.max_capacity}</strong> jobs/day</span>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs gap-1"
+                            onClick={() => {
+                              updatePM.mutate({
+                                id: pm.id,
+                                update: { is_active: !pm.is_active },
+                              }, {
+                                onSuccess: () => toast.success(pm.is_active ? `${pm.name} deactivated` : `${pm.name} activated`),
+                              });
+                            }}
+                          >
+                            {pm.is_active ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+                            {pm.is_active ? 'Deactivate' : 'Activate'}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs gap-1"
+                            onClick={() => {
+                              setEditingPMId(pm.id);
+                              setEditPMName(pm.name);
+                              setEditPMBaseline(pm.baseline_capacity);
+                              setEditPMMax(pm.max_capacity);
+                            }}
+                          >
+                            <Pencil className="h-3 w-3" />
+                            Edit
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs gap-1 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                            onClick={() => {
+                              if (confirm(`Delete PM "${pm.name}"? This cannot be undone.\n\nNote: Deletion is blocked if any jobs are still assigned to this PM. Use Deactivate instead for temporary leave.`)) {
+                                deletePM.mutate(pm.id, {
+                                  onSuccess: () => toast.success(`${pm.name} deleted`),
+                                  onError: (err: any) => toast.error(
+                                    err?.response?.data?.detail || 'Failed to delete PM'
+                                  ),
+                                });
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -167,19 +364,31 @@ export function SettingsPage() {
         <TabsContent value="crews">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Crew Roster</CardTitle>
+              <CardTitle className="text-base">Crew Roster (ranked best first)</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Rank crews from best to worst. Top-ranked crews are auto-assigned to the most complex jobs ("Michael Jordan first").
+              </p>
             </CardHeader>
             <CardContent className="space-y-4">
               {crews?.length === 0 && (
                 <p className="text-sm text-muted-foreground">No crews added yet.</p>
               )}
-              {crews?.map((crew) => (
+              {crews?.map((crew, idx) => {
+                const sortedCrews = [...(crews ?? [])].sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
+                const sortedIdx = sortedCrews.findIndex(c => c.id === crew.id);
+                const isFirst = sortedIdx === 0;
+                const isLast = sortedIdx === sortedCrews.length - 1;
+                const rankIcon = crew.rank === 1 ? <Trophy className="h-4 w-4 text-yellow-500" />
+                  : crew.rank === 2 ? <Medal className="h-4 w-4 text-gray-400" />
+                  : crew.rank === 3 ? <Award className="h-4 w-4 text-amber-700" />
+                  : null;
+                return (
                 <div key={crew.id} className="p-3 bg-muted rounded-md space-y-2">
                   {editingCrewId === crew.id ? (
                     /* Edit mode */
                     <div className="space-y-2">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="col-span-2">
                           <Label className="text-xs">Name</Label>
                           <Input
                             value={editCrewName}
@@ -187,28 +396,59 @@ export function SettingsPage() {
                           />
                         </div>
                         <div>
-                          <Label className="text-xs">Specialties (comma-separated)</Label>
+                          <Label className="text-xs">Rank (1 = best)</Label>
                           <Input
-                            value={editCrewSpecialties}
-                            onChange={(e) => setEditCrewSpecialties(e.target.value)}
+                            type="number"
+                            min={1}
+                            value={editCrewRank}
+                            onChange={(e) => setEditCrewRank(e.target.value)}
                           />
+                          {editCrewRank === '' && (
+                            <p className="text-[10px] text-red-600 mt-0.5">Rank can't be empty</p>
+                          )}
                         </div>
+                      </div>
+                      <div>
+                        <Label className="text-xs">Specialties (comma-separated)</Label>
+                        <Input
+                          value={editCrewSpecialties}
+                          onChange={(e) => setEditCrewSpecialties(e.target.value)}
+                          placeholder="roofing, slate, tpo"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Notes (strengths, warranties, history)</Label>
+                        <Textarea
+                          value={editCrewNotes}
+                          onChange={(e) => setEditCrewNotes(e.target.value)}
+                          placeholder="e.g., handles complex roofs, few warranties, steep pitch expert"
+                          className="min-h-[60px]"
+                        />
                       </div>
                       <div className="flex gap-2">
                         <Button
                           size="sm"
                           className="h-7 text-xs"
-                          disabled={updateCrew.isPending}
+                          disabled={updateCrew.isPending || !editCrewName || editCrewRank === ''}
                           onClick={() => {
+                            const parsedRank = parseInt(editCrewRank) || 999;
                             updateCrew.mutate({
                               id: crew.id,
                               update: {
-                                name: editCrewName || undefined,
+                                name: editCrewName,
                                 specialties: editCrewSpecialties
                                   ? editCrewSpecialties.split(',').map(s => s.trim()).filter(Boolean)
-                                  : undefined,
+                                  : [],
+                                rank: parsedRank,
+                                notes: editCrewNotes || null,
                               },
-                            }, { onSuccess: () => setEditingCrewId(null) });
+                            }, {
+                              onSuccess: () => {
+                                toast.success(`Updated ${editCrewName}`);
+                                setEditingCrewId(null);
+                              },
+                              onError: () => toast.error('Failed to update crew'),
+                            });
                           }}
                         >
                           Save
@@ -226,11 +466,22 @@ export function SettingsPage() {
                   ) : (
                     /* Display mode */
                     <div className="flex items-start justify-between gap-3">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {rankIcon}
+                          <Badge
+                            variant="outline"
+                            className={
+                              crew.rank === 1 ? 'text-[10px] bg-yellow-50 text-yellow-800 border-yellow-400 font-bold'
+                              : crew.rank < 999 ? 'text-[10px] bg-blue-50 text-blue-700 border-blue-300'
+                              : 'text-[10px] text-muted-foreground'
+                            }
+                          >
+                            {crew.rank < 999 ? `Rank #${crew.rank}` : 'Unranked'}
+                          </Badge>
                           <span className="font-medium text-sm">{crew.name}</span>
                           <Badge variant={crew.is_active ? 'default' : 'secondary'} className="text-[10px]">
-                            {crew.is_active ? 'Active' : 'Inactive'}
+                            {crew.is_active ? 'Active' : 'Inactive — On leave'}
                           </Badge>
                         </div>
                         {crew.specialties && crew.specialties.length > 0 ? (
@@ -244,75 +495,128 @@ export function SettingsPage() {
                         ) : (
                           <p className="text-[10px] text-muted-foreground mt-1">No specialties assigned</p>
                         )}
+                        {crew.notes && (
+                          <p className="text-[11px] text-muted-foreground italic mt-1.5 whitespace-pre-wrap">
+                            {crew.notes}
+                          </p>
+                        )}
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs gap-1"
-                          onClick={() => {
-                            updateCrew.mutate({
-                              id: crew.id,
-                              update: { is_active: !crew.is_active },
-                            });
-                          }}
-                        >
-                          {crew.is_active ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
-                          {crew.is_active ? 'Deactivate' : 'Activate'}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs gap-1"
-                          onClick={() => {
-                            setEditingCrewId(crew.id);
-                            setEditCrewName(crew.name);
-                            setEditCrewSpecialties(crew.specialties?.join(', ') || '');
-                          }}
-                        >
-                          <Pencil className="h-3 w-3" />
-                          Edit
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs gap-1 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                          onClick={() => {
-                            if (confirm(`Delete crew "${crew.name}"?`)) {
-                              deleteCrew.mutate(crew.id);
-                            }
-                          }}
-                        >
-                          <Trash2 className="h-3 w-3" />
-                          Delete
-                        </Button>
+                      <div className="flex flex-col items-end gap-1.5 shrink-0">
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-6 w-6 p-0"
+                            title="Move up (promote rank)"
+                            disabled={isFirst || updateCrew.isPending}
+                            onClick={() => swapCrewRank(crew.id, 'up')}
+                          >
+                            <ArrowUp className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-6 w-6 p-0"
+                            title="Move down (demote rank)"
+                            disabled={isLast || updateCrew.isPending}
+                            onClick={() => swapCrewRank(crew.id, 'down')}
+                          >
+                            <ArrowDown className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs gap-1"
+                            onClick={() => {
+                              updateCrew.mutate({
+                                id: crew.id,
+                                update: { is_active: !crew.is_active },
+                              }, {
+                                onSuccess: () => toast.success(crew.is_active ? `${crew.name} deactivated` : `${crew.name} activated`),
+                              });
+                            }}
+                          >
+                            {crew.is_active ? <Pause className="h-3 w-3" /> : <Play className="h-3 w-3" />}
+                            {crew.is_active ? 'Deactivate' : 'Activate'}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs gap-1"
+                            onClick={() => {
+                              setEditingCrewId(crew.id);
+                              setEditCrewName(crew.name);
+                              setEditCrewSpecialties(crew.specialties?.join(', ') || '');
+                              setEditCrewRank(String(crew.rank));
+                              setEditCrewNotes(crew.notes || '');
+                            }}
+                          >
+                            <Pencil className="h-3 w-3" />
+                            Edit
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs gap-1 text-destructive hover:bg-destructive hover:text-destructive-foreground"
+                            onClick={() => {
+                              if (confirm(`Delete crew "${crew.name}"?`)) {
+                                deleteCrew.mutate(crew.id);
+                              }
+                            }}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            Delete
+                          </Button>
+                        </div>
                       </div>
                     </div>
                   )}
                 </div>
-              ))}
+                );
+              })}
 
               <Separator />
 
               <div className="space-y-3">
                 <p className="text-sm font-medium">Add New Crew</p>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2">
                     <Label>Name</Label>
                     <Input
                       value={newCrewName}
                       onChange={(e) => setNewCrewName(e.target.value)}
-                      placeholder="Crew Name"
+                      placeholder="Crew Name (e.g., Louise)"
                     />
                   </div>
                   <div>
-                    <Label>Specialties (comma-separated)</Label>
+                    <Label>Rank (optional)</Label>
                     <Input
-                      value={newCrewSpecialties}
-                      onChange={(e) => setNewCrewSpecialties(e.target.value)}
-                      placeholder="roofing, slate, tpo"
+                      type="number"
+                      min={1}
+                      value={newCrewRank || ''}
+                      onChange={(e) => setNewCrewRank(parseInt(e.target.value) || 0)}
+                      placeholder="Auto"
                     />
                   </div>
+                </div>
+                <div>
+                  <Label>Specialties (comma-separated)</Label>
+                  <Input
+                    value={newCrewSpecialties}
+                    onChange={(e) => setNewCrewSpecialties(e.target.value)}
+                    placeholder="roofing, slate, tpo"
+                  />
+                </div>
+                <div>
+                  <Label>Notes (optional — strengths, history, warranties)</Label>
+                  <Textarea
+                    value={newCrewNotes}
+                    onChange={(e) => setNewCrewNotes(e.target.value)}
+                    placeholder="e.g., handles complex roofs, few warranties, steep pitch expert"
+                    className="min-h-[60px]"
+                  />
                 </div>
                 <Button size="sm" onClick={handleAddCrew} disabled={!newCrewName || addCrew.isPending}>
                   Add Crew
@@ -411,7 +715,6 @@ export function SettingsPage() {
                   { key: 'wood_shake', label: 'Wood Shake' },
                   { key: 'slate', label: 'Slate' },
                   { key: 'metal', label: 'Metal' },
-                  { key: 'siding', label: 'Siding' },
                 ].map(({ key, label }) => (
                   <div key={key} className="space-y-2 p-3 bg-muted rounded-md">
                     <p className="text-sm font-medium">{label}</p>
@@ -493,18 +796,42 @@ export function SettingsPage() {
         <TabsContent value="ai">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">AI Scoring Rules</CardTitle>
+              <CardTitle className="text-base flex items-center justify-between">
+                <span>AI Scoring Rules</span>
+                {aiRulesDirty && (
+                  <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-300">
+                    Unsaved changes
+                  </Badge>
+                )}
+              </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground">
-                Write plain English rules that the AI scoring engine will follow when ranking jobs.
+                Write plain English rules that the AI scoring engine will follow when ranking jobs. Click Save to apply.
               </p>
               <Textarea
                 className="min-h-[300px] font-mono text-sm"
-                defaultValue={getSetting('ai_custom_rules')}
-                onBlur={(e) => handleUpdateSetting('ai_custom_rules', e.target.value)}
+                value={aiRulesDraft}
+                onChange={(e) => setAIRulesDraft(e.target.value)}
                 placeholder="Example: Always prioritize insurance jobs that have been in queue for more than 30 days. If two jobs are in the same cluster, prefer the one with a confirmed permit."
               />
+              <div className="flex items-center justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCancelAIRules}
+                  disabled={!aiRulesDirty || updateSetting.isPending}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleSaveAIRules}
+                  disabled={!aiRulesDirty || updateSetting.isPending}
+                >
+                  {updateSetting.isPending ? 'Saving...' : 'Save'}
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>

@@ -13,10 +13,13 @@ export type JobBucket =
 export type PaymentType = 'cash' | 'finance' | 'insurance';
 export type JobType = 'insurance' | 'retail';
 export type DurationTier = 'tier_1' | 'tier_2' | 'tier_3' | 'low_slope';
+// NOTE: 'siding' is intentionally NOT a material type — it's a trade.
+// Siding-only jobs have material_type='' and primary_trade='siding'.
+// Weather thresholds for siding jobs are applied via primary_trade in backend.
 export type MaterialType =
   | 'asphalt' | 'polymer_modified' | 'tpo' | 'duro_last'
   | 'epdm' | 'coating' | 'wood_shake' | 'slate'
-  | 'metal' | 'siding' | 'other';
+  | 'metal' | 'other';
 export type TradeType = 'roofing' | 'siding' | 'gutters' | 'windows' | 'paint' | 'interior' | 'other';
 export type WeatherStatus = 'clear' | 'do_not_build' | 'scheduler_decision';
 export type PlanStatus = 'draft' | 'confirmed' | 'cancelled';
@@ -57,7 +60,6 @@ export const MATERIAL_LABELS: Record<MaterialType, string> = {
   wood_shake: 'Wood Shake',
   slate: 'Slate',
   metal: 'Metal',
-  siding: 'Siding',
   other: 'Other',
 };
 
@@ -108,8 +110,26 @@ export interface Job {
   primary_complete_date: string | null;
   secondary_trades_status: Record<string, string> | null;
   latest_system_note: string | null;
+  latest_system_note_id: number | null;
+  latest_system_note_pushed: boolean | null;
+  latest_system_note_pushed_at: string | null;
+  // Secondary trade aging (post primary-complete tracking)
+  days_since_primary_complete: number | null;
+  secondary_aging_level: 'normal' | 'warning' | 'escalated' | null;
+  open_secondary_trades: string[];
   created_at: string;
   updated_at: string;
+}
+
+export interface JobNote {
+  id: number;
+  note_type: NoteType;
+  note_text: string;
+  pushed_to_jn: boolean;
+  pushed_at: string | null;
+  jn_note_id: string | null;
+  push_error: string | null;
+  created_at: string;
 }
 
 export interface JobCreate {
@@ -172,6 +192,8 @@ export interface Crew {
   name: string;
   specialties: string[];
   is_active: boolean;
+  rank: number; // 1 = best ("Michael Jordan"), higher = bench. 999 = unranked
+  notes: string | null;
   created_at: string;
 }
 
@@ -209,6 +231,12 @@ export interface ScoringResult {
   explanation: string;
   cluster_id: string | null;
   suggested_pm_id?: number | null;
+  // Crew recommendation (from crew_matching service)
+  suggested_crew_id?: number | null;
+  suggested_crew_name?: string | null;
+  suggested_crew_rank?: number | null;
+  complexity_score?: number | null;
+  crew_warning?: string | null;
   customer_name?: string;
   address?: string;
   material_type?: string;

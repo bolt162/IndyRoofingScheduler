@@ -216,7 +216,10 @@ def _weather_prefilter(
             scorable.append(job)
             continue
 
-        result = check_material_thresholds(db, job.material_type or "", forecast)
+        result = check_material_thresholds(
+            db, job.material_type or "", forecast,
+            primary_trade=job.primary_trade or "",
+        )
         job.weather_status = result["status"]
         job.weather_detail = result["detail"]
 
@@ -472,7 +475,9 @@ def run_scoring_engine(db: Session, pm_ids: list[int] | None = None, target_date
             top_jobs = scored_jobs[:max_claude_jobs]
             proximity_data = _build_proximity_summary(top_jobs)
             weather_summary = _build_weather_summary(top_jobs)
-            crew_data = [{"name": c.name, "specialties": c.specialties or []} for c in crews]
+            # Ranked crews (best first) with notes for Claude's "Michael Jordan" reasoning
+            from backend.services.crew_matching import build_crew_context_for_claude
+            crew_data = build_crew_context_for_claude(db)
             sit_time_avg = float(_get_setting(db, "sit_time_rolling_avg_days", "38"))
 
             ai_result = _run_claude_scoring(
@@ -501,15 +506,38 @@ def run_scoring_engine(db: Session, pm_ids: list[int] | None = None, target_date
         raw_clusters, pms, scored_jobs,
     )
 
-    # Enrich scored_jobs with cluster_id and suggested_pm_id
+    # --- Step 6: Match ranked crews to complex jobs (client request: "Michael Jordan first") ---
+    from backend.services.crew_matching import match_crews_to_pm_jobs
+    pm_plan = match_crews_to_pm_jobs(db, pm_plan)
+
+    # Enrich scored_jobs with cluster_id, suggested_pm_id, and suggested_crew from pm_plan
     job_cluster_map: dict[int, tuple[str, int | None]] = {}
     for c in clusters_enriched:
         for jid in c["job_ids"]:
             job_cluster_map[jid] = (c["cluster_id"], c.get("assigned_pm_id"))
+
+    # Build a job_id -> crew info lookup from pm_plan (after crew matching)
+    job_crew_map: dict[int, dict] = {}
+    for pm in pm_plan:
+        for job in pm.get("jobs", []):
+            job_crew_map[job["job_id"]] = {
+                "suggested_crew_id": job.get("suggested_crew_id"),
+                "suggested_crew_name": job.get("suggested_crew_name"),
+                "suggested_crew_rank": job.get("suggested_crew_rank"),
+                "complexity_score": job.get("complexity_score"),
+                "crew_warning": job.get("crew_warning"),
+            }
+
     for sj in scored_jobs:
         cid, pm_id = job_cluster_map.get(sj["job_id"], (None, None))
         sj["cluster_id"] = cid
         sj["suggested_pm_id"] = pm_id
+        crew_info = job_crew_map.get(sj["job_id"], {})
+        sj["suggested_crew_id"] = crew_info.get("suggested_crew_id")
+        sj["suggested_crew_name"] = crew_info.get("suggested_crew_name")
+        sj["suggested_crew_rank"] = crew_info.get("suggested_crew_rank")
+        sj["complexity_score"] = crew_info.get("complexity_score")
+        sj["crew_warning"] = crew_info.get("crew_warning")
 
     return {
         "recommendations": scored_jobs,
@@ -580,7 +608,14 @@ def _run_claude_scoring(
     # Build context sections
     crew_section = ""
     if crews:
-        crew_section = f"\nAVAILABLE CREWS ({len(crews)}):\n{json.dumps(crews, indent=2)}\n"
+        crew_section = (
+            f"\nAVAILABLE CREWS ranked best first ({len(crews)} total). "
+            f"Per ops team: 'Michael Jordan' (rank 1) should get the hardest/most "
+            f"expensive jobs; use bench players for standard work. Specialty crews "
+            f"MUST be used for slate/wood_shake/metal/TPO/EPDM jobs. "
+            f"Consider each crew's notes field when making recommendations:\n"
+            f"{json.dumps(crews, indent=2)}\n"
+        )
 
     proximity_section = ""
     if proximity:

@@ -128,13 +128,23 @@ def _get_openmeteo_forecast(lat: float, lon: float, target_date: str | None = No
 def check_material_thresholds(
     db: Session, material_type: str, forecast: dict,
     rain_window_result: dict | None = None,
+    primary_trade: str = "",
 ) -> dict:
     """
     Check if weather conditions meet material-specific thresholds.
     Enhanced with humidity, rain window, thunderstorm, and snow/ice checks
     when Clarity Wx data is available.
+
+    Siding-only jobs (primary_trade='siding' with no material_type) use
+    siding-specific weather thresholds even though siding isn't a roofing material.
     """
     mat = (material_type or "").lower()
+    trade = (primary_trade or "").lower()
+
+    # Siding-only job (no roofing material) — use siding weather thresholds
+    if not mat and trade == "siding":
+        mat = "siding"
+
     temp_min = forecast.get("temp_min", 0)
     temp_max = forecast.get("temp_max", 0)
     wind_max = forecast.get("wind_max", 0)
@@ -147,7 +157,7 @@ def check_material_thresholds(
     ice = forecast.get("ice", 0)
     source = forecast.get("source", "unknown")
 
-    # Get material-specific thresholds from settings
+    # Threshold map — "siding" is keyed here for trade-based lookup, not as a material
     threshold_map = {
         "asphalt": ("weather_asphalt_min_temp", "weather_asphalt_max_wind"),
         "polymer_modified": ("weather_polymer_min_temp", "weather_polymer_max_wind"),
@@ -268,7 +278,10 @@ def check_weather_for_job(
             job.latitude, job.longitude, hours
         )
 
-    result = check_material_thresholds(db, mat, forecast, rain_window_result)
+    result = check_material_thresholds(
+        db, mat, forecast, rain_window_result,
+        primary_trade=job.primary_trade or "",
+    )
 
     # Update job weather status
     job.weather_status = result["status"]

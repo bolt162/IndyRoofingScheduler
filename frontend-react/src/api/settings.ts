@@ -53,6 +53,37 @@ export function useAddPM() {
   });
 }
 
+// Update PM (edit name/capacity, activate/deactivate)
+export function useUpdatePM() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, update }: {
+      id: number;
+      update: { name?: string; baseline_capacity?: number; max_capacity?: number; is_active?: boolean };
+    }) => {
+      const { data } = await api.patch(`/settings/pms/${id}`, update);
+      return data as PM;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pms'] });
+    },
+  });
+}
+
+// Delete PM (blocked if any jobs are assigned)
+export function useDeletePM() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const { data } = await api.delete(`/settings/pms/${id}`);
+      return data;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pms'] });
+    },
+  });
+}
+
 // Crews
 export function useCrews() {
   return useQuery<Crew[]>({
@@ -67,8 +98,18 @@ export function useCrews() {
 export function useAddCrew() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ name, specialties }: { name: string; specialties?: string[] }) => {
-      const { data } = await api.post('/settings/crews', { name, specialties: specialties || [] });
+    mutationFn: async ({ name, specialties, rank, notes }: {
+      name: string;
+      specialties?: string[];
+      rank?: number;
+      notes?: string | null;
+    }) => {
+      const { data } = await api.post('/settings/crews', {
+        name,
+        specialties: specialties || [],
+        rank: rank ?? 999,
+        notes: notes ?? null,
+      });
       return data as Crew;
     },
     onSuccess: () => {
@@ -81,7 +122,16 @@ export function useAddCrew() {
 export function useUpdateCrew() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, update }: { id: number; update: { name?: string; specialties?: string[]; is_active?: boolean } }) => {
+    mutationFn: async ({ id, update }: {
+      id: number;
+      update: {
+        name?: string;
+        specialties?: string[];
+        is_active?: boolean;
+        rank?: number;
+        notes?: string | null;
+      };
+    }) => {
       const { data } = await api.patch(`/settings/crews/${id}`, update);
       return data as Crew;
     },

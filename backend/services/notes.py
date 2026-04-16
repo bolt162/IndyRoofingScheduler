@@ -133,8 +133,13 @@ def generate_not_built_note(db: Session, job: Job, reason: str, detail: str = ""
     return note
 
 
-def generate_secondary_trade_alert(db: Session, job: Job, days_since_primary: int) -> NoteLog:
-    """Generate a secondary trade alert note."""
+def generate_secondary_trade_alert(
+    db: Session, job: Job, days_since_primary: int,
+    escalation_level: str = "warning",
+) -> NoteLog:
+    """Generate a secondary trade alert note.
+    escalation_level: "warning" (7 days) or "escalated" (10+ days).
+    """
     remaining = [t for t in (job.secondary_trades or [])
                  if (job.secondary_trades_status or {}).get(t) != "complete"]
     context = {
@@ -144,6 +149,16 @@ def generate_secondary_trade_alert(db: Session, job: Job, days_since_primary: in
     }
 
     note_text, template_version = _render_note(db, "note_template_secondary_trade_alert", context)
+
+    # Prepend urgency banner for escalated alerts
+    if escalation_level == "escalated":
+        note_text = (
+            f"[SECONDARY TRADE ESCALATION -- {days_since_primary} days since primary complete] "
+            f"URGENT: Secondary trades are overdue beyond the escalation threshold. "
+            f"Revenue is floating while awaiting {', '.join(remaining) or 'trade completion'}. "
+            f"Immediate scheduling action required.\n\n"
+            f"{note_text}"
+        )
 
     note = NoteLog(
         job_id=job.id,

@@ -25,5 +25,8 @@ class NoteLog(Base):
     note_type: Mapped[str] = mapped_column(String(50))
     note_text: Mapped[str] = mapped_column(Text)
     pushed_to_jn: Mapped[bool] = mapped_column(Boolean, default=False)
+    pushed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    jn_note_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    push_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     template_version: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

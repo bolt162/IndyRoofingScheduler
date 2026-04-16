@@ -26,7 +26,7 @@ _MATERIAL_NORMALIZE = {
     "epdm": "epdm", "coating": "coating",
     "wood shake": "wood_shake", "cedar shake": "wood_shake", "shake": "wood_shake",
     "slate": "slate", "metal": "metal", "standing seam": "metal",
-    "siding": "siding",
+    # NOTE: "siding" intentionally excluded — it's a trade, not a material.
 }
 
 
@@ -59,7 +59,7 @@ Extract and return a JSON object with these fields:
 - "duration_hint": estimated days if mentioned or inferable (integer or null)
 - "duration_reason": why you estimated this duration (string or null)
 - "permit_signal": true/false/null — any mention of permits being ready or needed
-- "material_type_hint": inferred roofing material type if mentioned (one of: "asphalt", "polymer_modified", "tpo", "duro_last", "epdm", "coating", "wood_shake", "slate", "metal", "siding", "other") or null if not determinable. Common brand names: IKO, OC/Owens Corning, GAF, CertainTeed = asphalt shingles.
+- "material_type_hint": inferred ROOFING material type if mentioned (one of: "asphalt", "polymer_modified", "tpo", "duro_last", "epdm", "coating", "wood_shake", "slate", "metal", "other") or null if not determinable. Common brand names: IKO, OC/Owens Corning, GAF, CertainTeed = asphalt shingles. IMPORTANT: "siding" is a TRADE not a roofing material — return null for material_type_hint if the job is siding-only with no roofing material mentioned.
 - "square_footage_hint": estimated square footage if mentioned (number or null). Note: "squares" in roofing = multiply by 100 to get sq ft. E.g. "30 square" = 3000 sq ft.
 - "customer_flags": list of strings — any customer concerns (e.g. "called multiple times", "unhappy", "urgent request")
 - "scope_details": list of strings — specific scope items found (e.g. "re-deck", "ice and water entire roof", "box vents", "gutters")
@@ -109,7 +109,7 @@ Return ONLY valid JSON. No explanation text."""
             # Normalize through alias map
             normalized = _MATERIAL_NORMALIZE.get(hint, hint)
             if normalized in {"asphalt", "polymer_modified", "tpo", "duro_last", "epdm",
-                              "coating", "wood_shake", "slate", "metal", "siding", "other"}:
+                              "coating", "wood_shake", "slate", "metal", "other"}:
                 job.material_type = normalized
                 # Re-classify duration tier now that we have material
                 from backend.services.jobnimbus import _classify_duration_tier
