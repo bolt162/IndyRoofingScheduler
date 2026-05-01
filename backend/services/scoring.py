@@ -389,11 +389,26 @@ def _assign_pms_to_clusters(
 # ---------------------------------------------------------------------------
 
 def run_scoring_engine(db: Session, pm_ids: list[int] | None = None, target_date: str | None = None) -> dict:
-    """Run the full scoring engine on all To Schedule jobs."""
-    jobs = db.query(Job).filter(Job.bucket == JobBucket.TO_SCHEDULE.value).all()
+    """
+    Run the full scoring engine on jobs that need scheduling work.
+    Includes:
+      - to_schedule: primary trade not yet scheduled
+      - primary_complete: primary done but still has trades (e.g. no secondaries detected,
+        but scheduler may add secondary trades manually requiring rescore)
+      - waiting_on_trades: primary done, secondary trades pending — these need scheduling for
+        the secondary work (gutters, siding, etc.)
+    Excludes scheduled (already on calendar), pending_confirmation, coming_soon, completed, etc.
+    """
+    schedulable_buckets = [
+        JobBucket.TO_SCHEDULE.value,
+        JobBucket.PRIMARY_COMPLETE.value,
+        JobBucket.WAITING_ON_TRADES.value,
+    ]
+    jobs = db.query(Job).filter(Job.bucket.in_(schedulable_buckets)).all()
     if not jobs:
         return {
-            "recommendations": [], "clusters": [], "ai_explanation": "No jobs in To Schedule queue.",
+            "recommendations": [], "clusters": [],
+            "ai_explanation": "No jobs eligible for scheduling (To Schedule / Primary Complete / Waiting on Trades).",
             "weather_blocked": [], "weather_blocked_count": 0,
         }
 

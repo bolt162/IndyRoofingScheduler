@@ -261,7 +261,8 @@ def map_jn_job_to_model(jn_data: dict) -> dict:
         payment_type = "insurance" if job_type == "insurance" else "cash"
 
     # Primary trade from "Trade #1" custom field, normalized to TradeType enum
-    primary_trade = _normalize_trade(trade_1)
+    raw_trade_1 = (jn_data.get("Trade #1") or jn_data.get("cf_string_11") or "").lower()
+    primary_trade = _normalize_trade(raw_trade_1)
 
     # Secondary trades from "Trade #2" and "Trade #3" custom fields
     raw_trade_2 = (jn_data.get("Trade #2") or jn_data.get("cf_string_12") or "").lower()

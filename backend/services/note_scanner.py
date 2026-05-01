@@ -150,11 +150,24 @@ def scan_all_unscanned_jobs(db: Session) -> dict:
     Scan jobs that have never been scanned (ai_note_scan_result is NULL/empty).
     Jobs that were scanned before are ALWAYS skipped — even if material wasn't extracted.
     This prevents re-scanning the same jobs on every sync and burning API tokens.
+
+    Bucket filter: only scan jobs in buckets where AI insights are actionable —
+    to_schedule (deciding what to build), not_built (returned to queue),
+    primary_complete + waiting_on_trades (secondary trade scheduling).
+    Skips pending_confirmation, coming_soon, scheduled, review_for_completion,
+    completed — these don't benefit from AI re-scanning.
     """
+    relevant_buckets = [
+        JobBucket.TO_SCHEDULE.value,
+        JobBucket.NOT_BUILT.value,
+        JobBucket.PRIMARY_COMPLETE.value,
+        JobBucket.WAITING_ON_TRADES.value,
+    ]
     jobs = db.query(Job).filter(
         Job.jn_notes_raw != None,
         Job.jn_notes_raw != "",
         (Job.ai_note_scan_result == None) | (Job.ai_note_scan_result == ""),
+        Job.bucket.in_(relevant_buckets),
     ).all()
 
     scanned = 0
