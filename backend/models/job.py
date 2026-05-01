@@ -17,6 +17,9 @@ class JobBucket(str, enum.Enum):
     WAITING_ON_TRADES = "waiting_on_trades"
     REVIEW_FOR_COMPLETION = "review_for_completion"
     COMPLETED = "completed"
+    # Job exists in JN but moved to an untracked status (e.g., Lost, Disqualified, At Risk - Lead).
+    # Hidden from main dashboard. Restored automatically if JN status moves back to tracked.
+    ARCHIVED = "archived"
 
 
 class PaymentType(str, enum.Enum):

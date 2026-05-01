@@ -51,8 +51,19 @@ export function DashboardPage() {
   const handleSyncJN = async () => {
     try {
       const result = await syncJN.mutateAsync();
-      const scanMsg = result.scanned ? `, ${result.scanned} AI-scanned` : '';
-      toast.success(`Synced: ${result.created} new, ${result.updated} updated from JN${scanMsg}`);
+      const parts: string[] = [];
+      parts.push(`${result.created} new`);
+      parts.push(`${result.updated} updated`);
+      if (result.archived) parts.push(`${result.archived} archived`);
+      if (result.restored) parts.push(`${result.restored} restored`);
+      if (result.scanned) parts.push(`${result.scanned} AI-scanned`);
+      const summary = `Synced: ${parts.join(', ')}`;
+      const errorCount = result.errors?.length ?? 0;
+      if (errorCount > 0) {
+        toast.warning(`${summary} · ${errorCount} error(s) — check logs`);
+      } else {
+        toast.success(summary);
+      }
     } catch {
       toast.error('JN sync failed');
     }
@@ -575,6 +586,7 @@ export function DashboardPage() {
               <TabsTrigger value="primary_complete">Primary Complete</TabsTrigger>
               <TabsTrigger value="waiting_on_trades">Waiting Trades</TabsTrigger>
               <TabsTrigger value="review_for_completion">Review</TabsTrigger>
+              <TabsTrigger value="archived">Archived</TabsTrigger>
             </TabsList>
           </div>
         </Tabs>

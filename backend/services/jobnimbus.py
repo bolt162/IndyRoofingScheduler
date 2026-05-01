@@ -4,6 +4,8 @@ Primarily READ-ONLY — fetches jobs and notes from JN.
 The ONLY write operation is push_note_to_jn() which creates a note activity
 on a JN job. This is triggered manually by the scheduler (never automatic).
 """
+import json
+import logging
 import httpx
 from datetime import datetime
 
@@ -11,6 +13,9 @@ from sqlalchemy.orm import Session
 
 from backend.config import settings
 from backend.models.job import Job, JobBucket, LOW_SLOPE_MATERIALS, SPECIALTY_MATERIALS, MaterialType, TradeType
+
+
+logger = logging.getLogger("jobnimbus")
 
 
 HEADERS = {
@@ -59,10 +64,47 @@ def fetch_jobs_at_status(status_label: str = "Schedule Job") -> list[dict]:
 
 
 def fetch_jobs_at_tracked_statuses() -> list[dict]:
-    """Fetch all active jobs whose JN status maps to a scheduler bucket."""
-    data = _jn_get("jobs", params={"must": "active", "count": 5000})
-    results = data.get("results", []) if isinstance(data, dict) else data
-    return [j for j in results if j.get("status_name") in TRACKED_JN_STATUSES]
+    """
+    Fetch all active jobs whose JN status maps to a scheduler bucket.
+
+    Uses JN's Elasticsearch-style filter to query each tracked status individually
+    (server-side filtering). This avoids fetching tens of thousands of irrelevant
+    jobs and the 1000-record cap that breaks unfiltered queries.
+
+    For statuses with > 1000 results we paginate via 'from' offset.
+    """
+    JN_PAGE_SIZE = 1000
+    all_results: list[dict] = []
+
+    for status in TRACKED_JN_STATUSES:
+        try:
+            offset = 0
+            while True:
+                filter_json = json.dumps({
+                    "must": [{"match": {"status_name": status}}]
+                })
+                data = _jn_get("jobs", params={
+                    "filter": filter_json,
+                    "count": JN_PAGE_SIZE,
+                    "from": offset,
+                })
+                page_results = data.get("results", []) if isinstance(data, dict) else []
+                if not page_results:
+                    break
+                all_results.extend(page_results)
+                # If we got fewer than a full page, we're done with this status
+                if len(page_results) < JN_PAGE_SIZE:
+                    break
+                offset += JN_PAGE_SIZE
+                # Safety guard — no JN status should ever exceed 50K records
+                if offset > 50000:
+                    logger.warning(f"Pagination safety limit hit for status '{status}'")
+                    break
+        except Exception as e:
+            logger.warning(f"Failed to fetch JN status '{status}': {e}")
+            continue
+
+    return all_results
 
 
 def fetch_job_by_id(jn_job_id: str) -> dict:
@@ -378,6 +420,53 @@ def sync_jobs_from_jn(db: Session) -> dict:
 
     db.commit()
 
+    # --- Orphan reconciliation pass ---
+    # Any job in our DB whose jn_job_id was NOT returned in this sync may have
+    # moved to an untracked JN status (e.g., Lost, Disqualified, At Risk - Lead).
+    # We fetch each individually to confirm, then either:
+    #   - Move to 'archived' bucket if its JN status is no longer tracked
+    #   - Restore to the correct tracked bucket if it slipped through (rare)
+    #   - Leave alone if JN still has it at a tracked status (data race — shouldn't happen)
+    archived = 0
+    restored = 0
+    seen_jnids = {jn.get("jnid") for jn in jn_jobs if jn.get("jnid")}
+    orphans = db.query(Job).filter(
+        Job.jn_job_id.isnot(None),
+        Job.jn_job_id != "",
+        ~Job.jn_job_id.in_(seen_jnids) if seen_jnids else True,
+        Job.bucket != JobBucket.ARCHIVED.value,  # already archived → skip
+    ).all()
+
+    for job in orphans:
+        try:
+            jn_data = fetch_job_by_id(job.jn_job_id)
+            current_status = jn_data.get("status_name") if isinstance(jn_data, dict) else ""
+
+            if current_status in TRACKED_JN_STATUSES:
+                # Edge case: filter missed it but the job IS at a tracked status — restore by mapping
+                new_bucket = JN_STATUS_TO_BUCKET.get(current_status, JobBucket.TO_SCHEDULE.value)
+                if job.bucket != new_bucket:
+                    job.bucket = new_bucket
+                    job.jn_status = current_status
+                    restored += 1
+            else:
+                # JN status moved out of tracked set → archive the local record
+                job.bucket = JobBucket.ARCHIVED.value
+                job.jn_status = current_status or "(unknown)"
+                archived += 1
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                # Job deleted in JN — archive locally (preserves audit trail)
+                job.bucket = JobBucket.ARCHIVED.value
+                job.jn_status = "(deleted in JN)"
+                archived += 1
+            else:
+                errors.append({"jn_id": job.jn_job_id, "error": f"orphan check failed: {e}"})
+        except Exception as e:
+            errors.append({"jn_id": job.jn_job_id, "error": f"orphan check failed: {e}"})
+
+    db.commit()
+
     # Scan AI notes for NEW jobs only (never-scanned jobs where ai_note_scan_result is NULL)
     # This runs after sync so only newly created jobs get scanned — existing jobs are skipped
     scanned = 0
@@ -393,6 +482,8 @@ def sync_jobs_from_jn(db: Session) -> dict:
         "synced_at": datetime.utcnow().isoformat(),
         "created": created,
         "updated": updated,
+        "archived": archived,
+        "restored": restored,
         "scanned": scanned,
         "errors": errors,
         "total_from_jn": len(jn_jobs),

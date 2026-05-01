@@ -8,7 +8,8 @@ export type JobBucket =
   | 'primary_complete'
   | 'waiting_on_trades'
   | 'review_for_completion'
-  | 'completed';
+  | 'completed'
+  | 'archived';
 
 export type PaymentType = 'cash' | 'finance' | 'insurance';
 export type JobType = 'insurance' | 'retail';
@@ -48,6 +49,7 @@ export const BUCKET_LABELS: Record<JobBucket, string> = {
   waiting_on_trades: 'Waiting on Trades',
   review_for_completion: 'Review for Completion',
   completed: 'Completed',
+  archived: 'Archived',
 };
 
 export const MATERIAL_LABELS: Record<MaterialType, string> = {
