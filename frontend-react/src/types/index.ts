@@ -119,6 +119,9 @@ export interface Job {
   open_secondary_trades: string[];
   created_at: string;
   updated_at: string;
+  // Stamp of last AI re-analysis (note scan + recompute). If older than updated_at,
+  // the job has changes that haven't been fed to the AI yet.
+  last_ai_analyzed_at: string | null;
 }
 
 export interface JobNote {

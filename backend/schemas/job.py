@@ -51,6 +51,7 @@ class JobResponse(JobBase):
     secondary_trades_status: dict | None = None
     created_at: datetime
     updated_at: datetime
+    last_ai_analyzed_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

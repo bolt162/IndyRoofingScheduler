@@ -3,6 +3,7 @@ import { differenceInDays, parseISO, format } from 'date-fns';
 import {
   MapPin, Calendar, DollarSign, Layers, Users, Hash, Star, CheckCircle, Pencil,
   Upload, CheckCheck, Trophy, Medal, Award, AlertCircle, Clock, Flag, PackageCheck,
+  Sparkles,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -19,7 +20,7 @@ import {
 import { MustBuildBadge } from './MustBuildBadge';
 import { DurationFlag } from './DurationFlag';
 import { WeatherBadge } from './WeatherBadge';
-import { useSetMustBuild, useUpdateJob, useSetStandaloneOption, usePushNote, useMarkPrimaryComplete, useUpdateSecondaryTradeStatus } from '@/api/jobs';
+import { useSetMustBuild, useUpdateJob, useSetStandaloneOption, usePushNote, useMarkPrimaryComplete, useUpdateSecondaryTradeStatus, useReanalyzeJob } from '@/api/jobs';
 import { toast } from 'sonner';
 import { MATERIAL_LABELS } from '@/types';
 import { cn } from '@/lib/utils';
@@ -86,6 +87,7 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
   const pushNote = usePushNote();
   const markPrimaryComplete = useMarkPrimaryComplete();
   const updateSecondaryTradeStatus = useUpdateSecondaryTradeStatus();
+  const reanalyzeJob = useReanalyzeJob();
 
   // Edit dialog state
   const [editOpen, setEditOpen] = useState(false);
@@ -96,6 +98,30 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
       { id: job.id, deadline: mbDeadline, reason: mbReason || undefined },
       { onSuccess: () => setMustBuildOpen(false) },
     );
+  };
+
+  // Has the job been updated since the last AI re-analysis? Show a "stale" hint if so.
+  const aiStale = (() => {
+    if (!job.last_ai_analyzed_at) return true; // Never analyzed
+    try {
+      // Allow 2s tolerance to avoid flickering right after save
+      return parseISO(job.updated_at).getTime() > parseISO(job.last_ai_analyzed_at).getTime() + 2000;
+    } catch {
+      return false;
+    }
+  })();
+
+  const handleReanalyze = () => {
+    reanalyzeJob.mutate(job.id, {
+      onSuccess: (result) => {
+        if (result.no_changes) {
+          toast.success('AI re-analyzed · no changes detected');
+        } else {
+          toast.success(`AI updated: ${result.changes.join(', ')}`);
+        }
+      },
+      onError: () => toast.error('AI re-analysis failed'),
+    });
   };
 
   const handleConfirmDuration = () => {
@@ -139,13 +165,43 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
               </p>
             </div>
             <div className="flex flex-col items-end gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-0.5 md:gap-1">
                 <button
-                  className="p-0.5 rounded hover:bg-muted transition-colors"
+                  className="relative p-2 md:p-1 rounded hover:bg-muted active:bg-muted transition-colors disabled:opacity-50 min-h-[36px] min-w-[36px] md:min-h-0 md:min-w-0 flex items-center justify-center"
+                  title={
+                    aiStale
+                      ? 'Job changed since last AI analysis — click to update'
+                      : job.last_ai_analyzed_at
+                        ? `AI analyzed ${formatDistanceFromNow(job.last_ai_analyzed_at)}. Click to refresh.`
+                        : 'Update AI analysis'
+                  }
+                  aria-label={
+                    aiStale
+                      ? 'Update AI analysis (job has changes)'
+                      : 'Refresh AI analysis'
+                  }
+                  disabled={reanalyzeJob.isPending}
+                  onClick={(e) => { e.stopPropagation(); handleReanalyze(); }}
+                >
+                  <Sparkles className={cn(
+                    'h-4 w-4 md:h-3.5 md:w-3.5 transition-colors',
+                    reanalyzeJob.isPending
+                      ? 'text-blue-500 animate-pulse'
+                      : aiStale
+                        ? 'text-amber-500 hover:text-amber-600'
+                        : 'text-muted-foreground hover:text-foreground',
+                  )} />
+                  {aiStale && !reanalyzeJob.isPending && (
+                    <span className="absolute top-1.5 right-1.5 md:top-0.5 md:right-0.5 h-1.5 w-1.5 rounded-full bg-amber-500" />
+                  )}
+                </button>
+                <button
+                  className="p-2 md:p-1 rounded hover:bg-muted active:bg-muted transition-colors min-h-[36px] min-w-[36px] md:min-h-0 md:min-w-0 flex items-center justify-center"
                   title="Edit job"
+                  aria-label="Edit job"
                   onClick={(e) => { e.stopPropagation(); setEditOpen(true); }}
                 >
-                  <Pencil className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                  <Pencil className="h-4 w-4 md:h-3.5 md:w-3.5 text-muted-foreground hover:text-foreground" />
                 </button>
               <TooltipProvider>
                 <Tooltip>
@@ -597,10 +653,26 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
         onSubmit={(changes) => {
           updateJob.mutate(
             { id: job.id, update: changes },
-            { onSuccess: () => setEditOpen(false) },
+            {
+              onSuccess: () => {
+                setEditOpen(false);
+                // Auto re-analyze with AI after edit so the score/scan reflect new data
+                reanalyzeJob.mutate(job.id, {
+                  onSuccess: (result) => {
+                    if (result.changes && result.changes.length > 0) {
+                      toast.success(
+                        `Job updated · AI re-analyzed: ${result.changes.join(', ')}`,
+                      );
+                    } else {
+                      toast.success('Job updated · AI analysis refreshed');
+                    }
+                  },
+                });
+              },
+            },
           );
         }}
-        isPending={updateJob.isPending}
+        isPending={updateJob.isPending || reanalyzeJob.isPending}
       />
     </>
   );

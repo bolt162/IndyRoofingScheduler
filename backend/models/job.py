@@ -139,3 +139,6 @@ class Job(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Stamped when the job was last re-analyzed by AI (note scan + score recompute)
+    # If older than updated_at → job has changes that haven't been fed to AI yet
+    last_ai_analyzed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

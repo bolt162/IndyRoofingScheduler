@@ -211,3 +211,28 @@ export function useUpdateSecondaryTradeStatus() {
     },
   });
 }
+
+// Re-analyze a single job — re-fetch JN notes, re-run AI scan, recompute scores
+export function useReanalyzeJob() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (jobId: number) => {
+      const { data } = await api.post(`/jobs/${jobId}/reanalyze`);
+      return data as {
+        status: 'ok';
+        job_id: number;
+        analyzed_at: string;
+        scan_result: any;
+        changes: string[];
+        no_changes: boolean;
+        before: Record<string, any>;
+        after: Record<string, any>;
+        job: Job;
+      };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['jobs'] });
+      qc.invalidateQueries({ queryKey: ['bucketCounts'] });
+    },
+  });
+}

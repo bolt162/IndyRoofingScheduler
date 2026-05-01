@@ -357,6 +357,24 @@ def update_secondary_trade_status(
     return _enrich_with_latest_note(job, db)
 
 
+@router.post("/{job_id}/reanalyze")
+def reanalyze_job_endpoint(job_id: int, db: Session = Depends(get_db)):
+    """
+    Re-analyze a single job: refresh JN notes, re-run AI scan, recompute scores.
+    Used when the scheduler updates job details and wants the AI to incorporate them.
+    Returns a before/after summary listing what changed.
+    """
+    from backend.services.reanalyze import reanalyze_job
+    result = reanalyze_job(db, job_id)
+    if "error" in result:
+        raise HTTPException(status_code=404, detail=result["error"])
+    # Also include the enriched job so the frontend can update its cache in one shot
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if job:
+        result["job"] = _enrich_with_latest_note(job, db)
+    return result
+
+
 @router.get("/{job_id}/notes")
 def get_job_notes(job_id: int, db: Session = Depends(get_db)):
     """Get all system-generated notes for a job."""

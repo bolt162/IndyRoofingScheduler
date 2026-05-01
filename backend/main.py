@@ -29,6 +29,7 @@ async def lifespan(app: FastAPI):
     _cleanup_siding_material()
     _migrate_note_log_columns()
     _migrate_crew_columns()
+    _migrate_job_columns()
 
     # Start APScheduler for weather checks + JN sync polling
     scheduler = _start_scheduler()
@@ -124,6 +125,30 @@ def _cleanup_siding_material():
         db.commit()
     except Exception as e:
         logger.warning(f"Siding cleanup failed: {e}")
+    finally:
+        db.close()
+
+
+def _migrate_job_columns():
+    """Add last_ai_analyzed_at column to jobs table if missing.
+    Safe to run on every startup."""
+    from sqlalchemy import inspect, text
+    db = SessionLocal()
+    try:
+        insp = inspect(engine)
+        if "jobs" not in insp.get_table_names():
+            return
+        existing = {col["name"] for col in insp.get_columns("jobs")}
+        if "last_ai_analyzed_at" not in existing:
+            try:
+                db.execute(text("ALTER TABLE jobs ADD COLUMN last_ai_analyzed_at TIMESTAMP"))
+                db.commit()
+                logger.info("Migration: ALTER TABLE jobs ADD COLUMN last_ai_analyzed_at TIMESTAMP")
+            except Exception as e:
+                logger.warning(f"Migration skip (last_ai_analyzed_at): {e}")
+                db.rollback()
+    except Exception as e:
+        logger.warning(f"Job column migration failed: {e}")
     finally:
         db.close()
 
