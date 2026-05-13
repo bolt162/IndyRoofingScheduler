@@ -195,6 +195,10 @@ export interface PM {
 export interface Crew {
   id: number;
   name: string;
+  // Trades this crew works on: e.g., ["roofing"], ["siding"], or ["roofing", "siding"]
+  // Used for trade-aware crew matching — a roofing-only crew is never assigned to a siding job
+  trades: string[];
+  // Material specialties: slate, tpo, wood_shake, etc. (optional)
   specialties: string[];
   is_active: boolean;
   rank: number; // 1 = best ("Michael Jordan"), higher = bench. 999 = unranked

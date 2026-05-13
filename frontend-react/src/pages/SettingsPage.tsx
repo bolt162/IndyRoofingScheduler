@@ -18,6 +18,52 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
 
+// Trade options available for crew assignment
+const TRADE_OPTIONS = [
+  { value: 'roofing', label: 'Roofing' },
+  { value: 'siding', label: 'Siding' },
+  { value: 'gutters', label: 'Gutters' },
+  { value: 'windows', label: 'Windows' },
+  { value: 'paint', label: 'Paint' },
+  { value: 'interior', label: 'Interior' },
+  { value: 'other', label: 'Other' },
+];
+
+// Reusable trade chip multi-select for crew forms
+function TradeChips({
+  selected,
+  onChange,
+}: {
+  selected: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const toggle = (trade: string) => {
+    if (selected.includes(trade)) {
+      onChange(selected.filter((t) => t !== trade));
+    } else {
+      onChange([...selected, trade]);
+    }
+  };
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {TRADE_OPTIONS.map(({ value, label }) => (
+        <button
+          key={value}
+          type="button"
+          onClick={() => toggle(value)}
+          className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${
+            selected.includes(value)
+              ? 'bg-indigo-100 text-indigo-800 border-indigo-300 font-medium'
+              : 'bg-background text-muted-foreground border-border hover:bg-muted hover:text-foreground'
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function SettingsPage() {
   const { data: settings } = useSettings();
   const updateSetting = useUpdateSetting();
@@ -35,11 +81,13 @@ export function SettingsPage() {
   // Crew edit state
   const [editingCrewId, setEditingCrewId] = useState<number | null>(null);
   const [editCrewName, setEditCrewName] = useState('');
+  const [editCrewTrades, setEditCrewTrades] = useState<string[]>([]);
   const [editCrewSpecialties, setEditCrewSpecialties] = useState('');
   const [editCrewRank, setEditCrewRank] = useState('');
   const [editCrewNotes, setEditCrewNotes] = useState('');
 
-  // New crew — rank/notes extras
+  // New crew — rank/notes/trades extras
+  const [newCrewTrades, setNewCrewTrades] = useState<string[]>(['roofing']);
   const [newCrewRank, setNewCrewRank] = useState<number>(0);
   const [newCrewNotes, setNewCrewNotes] = useState('');
 
@@ -106,6 +154,10 @@ export function SettingsPage() {
 
   const handleAddCrew = async () => {
     if (!newCrewName) return;
+    if (newCrewTrades.length === 0) {
+      toast.error('Select at least one trade for this crew');
+      return;
+    }
     try {
       const specialties = newCrewSpecialties ? newCrewSpecialties.split(',').map((s) => s.trim()).filter(Boolean) : [];
       // Auto-assign rank if not specified: next rank after highest existing rank < 999
@@ -115,11 +167,13 @@ export function SettingsPage() {
       ) + 1);
       await addCrew.mutateAsync({
         name: newCrewName,
+        trades: newCrewTrades,
         specialties,
         rank,
         notes: newCrewNotes || null,
       });
       setNewCrewName('');
+      setNewCrewTrades(['roofing']);
       setNewCrewSpecialties('');
       setNewCrewRank(0);
       setNewCrewNotes('');
@@ -411,12 +465,24 @@ export function SettingsPage() {
                         </div>
                       </div>
                       <div>
-                        <Label className="text-xs">Specialties (comma-separated)</Label>
+                        <Label className="text-xs">Trades (required — what this crew works on)</Label>
+                        <div className="mt-1.5">
+                          <TradeChips selected={editCrewTrades} onChange={setEditCrewTrades} />
+                        </div>
+                        {editCrewTrades.length === 0 && (
+                          <p className="text-[10px] text-red-600 mt-0.5">Select at least one trade</p>
+                        )}
+                      </div>
+                      <div>
+                        <Label className="text-xs">Material specialties (optional, comma-separated)</Label>
                         <Input
                           value={editCrewSpecialties}
                           onChange={(e) => setEditCrewSpecialties(e.target.value)}
-                          placeholder="roofing, slate, tpo"
+                          placeholder="slate, tpo, wood_shake"
                         />
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          Materials this crew can handle. Leave blank for standard asphalt roofing.
+                        </p>
                       </div>
                       <div>
                         <Label className="text-xs">Notes (strengths, warranties, history)</Label>
@@ -431,13 +497,14 @@ export function SettingsPage() {
                         <Button
                           size="sm"
                           className="h-7 text-xs"
-                          disabled={updateCrew.isPending || !editCrewName || editCrewRank === ''}
+                          disabled={updateCrew.isPending || !editCrewName || editCrewRank === '' || editCrewTrades.length === 0}
                           onClick={() => {
                             const parsedRank = parseInt(editCrewRank) || 999;
                             updateCrew.mutate({
                               id: crew.id,
                               update: {
                                 name: editCrewName,
+                                trades: editCrewTrades,
                                 specialties: editCrewSpecialties
                                   ? editCrewSpecialties.split(',').map(s => s.trim()).filter(Boolean)
                                   : [],
@@ -486,17 +553,35 @@ export function SettingsPage() {
                             {crew.is_active ? 'Active' : 'Inactive — On leave'}
                           </Badge>
                         </div>
-                        {crew.specialties && crew.specialties.length > 0 ? (
-                          <div className="flex flex-wrap gap-1 mt-1.5">
-                            {crew.specialties.map((s) => (
-                              <Badge key={s} variant="outline" className="text-[10px] bg-blue-50 text-blue-700">
-                                {s}
+                        <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                          {/* Trades — indigo color to distinguish from material specialties */}
+                          {crew.trades && crew.trades.length > 0 ? (
+                            crew.trades.map((t) => (
+                              <Badge
+                                key={`trade-${t}`}
+                                variant="outline"
+                                className="text-[10px] bg-indigo-50 text-indigo-800 border-indigo-300 font-medium"
+                              >
+                                {t}
                               </Badge>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-[10px] text-muted-foreground mt-1">No specialties assigned</p>
-                        )}
+                            ))
+                          ) : (
+                            <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-300">
+                              ⚠ no trade set
+                            </Badge>
+                          )}
+                          {/* Material specialties — blue, secondary visual weight */}
+                          {crew.specialties && crew.specialties.length > 0 && (
+                            <>
+                              <span className="text-[9px] text-muted-foreground mx-0.5">·</span>
+                              {crew.specialties.map((s) => (
+                                <Badge key={`spec-${s}`} variant="outline" className="text-[10px] bg-blue-50 text-blue-700">
+                                  {s}
+                                </Badge>
+                              ))}
+                            </>
+                          )}
+                        </div>
                         {crew.notes && (
                           <p className="text-[11px] text-muted-foreground italic mt-1.5 whitespace-pre-wrap">
                             {crew.notes}
@@ -550,6 +635,7 @@ export function SettingsPage() {
                             onClick={() => {
                               setEditingCrewId(crew.id);
                               setEditCrewName(crew.name);
+                              setEditCrewTrades(crew.trades?.length ? crew.trades : ['roofing']);
                               setEditCrewSpecialties(crew.specialties?.join(', ') || '');
                               setEditCrewRank(String(crew.rank));
                               setEditCrewNotes(crew.notes || '');
@@ -604,12 +690,24 @@ export function SettingsPage() {
                   </div>
                 </div>
                 <div>
-                  <Label>Specialties (comma-separated)</Label>
+                  <Label>Trades (required — what this crew works on)</Label>
+                  <div className="mt-1.5">
+                    <TradeChips selected={newCrewTrades} onChange={setNewCrewTrades} />
+                  </div>
+                  {newCrewTrades.length === 0 && (
+                    <p className="text-[10px] text-red-600 mt-0.5">Select at least one trade</p>
+                  )}
+                </div>
+                <div>
+                  <Label>Material specialties (optional, comma-separated)</Label>
                   <Input
                     value={newCrewSpecialties}
                     onChange={(e) => setNewCrewSpecialties(e.target.value)}
-                    placeholder="roofing, slate, tpo"
+                    placeholder="slate, tpo, wood_shake"
                   />
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    Materials this crew can handle. Leave blank for standard asphalt roofing.
+                  </p>
                 </div>
                 <div>
                   <Label>Notes (optional — strengths, history, warranties)</Label>
@@ -620,7 +718,11 @@ export function SettingsPage() {
                     className="min-h-[60px]"
                   />
                 </div>
-                <Button size="sm" onClick={handleAddCrew} disabled={!newCrewName || addCrew.isPending}>
+                <Button
+                  size="sm"
+                  onClick={handleAddCrew}
+                  disabled={!newCrewName || newCrewTrades.length === 0 || addCrew.isPending}
+                >
                   Add Crew
                 </Button>
               </div>

@@ -98,14 +98,16 @@ export function useCrews() {
 export function useAddCrew() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ name, specialties, rank, notes }: {
+    mutationFn: async ({ name, trades, specialties, rank, notes }: {
       name: string;
+      trades?: string[];
       specialties?: string[];
       rank?: number;
       notes?: string | null;
     }) => {
       const { data } = await api.post('/settings/crews', {
         name,
+        trades: trades || ['roofing'],
         specialties: specialties || [],
         rank: rank ?? 999,
         notes: notes ?? null,
@@ -126,6 +128,7 @@ export function useUpdateCrew() {
       id: number;
       update: {
         name?: string;
+        trades?: string[];
         specialties?: string[];
         is_active?: boolean;
         rank?: number;

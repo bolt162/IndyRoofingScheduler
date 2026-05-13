@@ -1,13 +1,16 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from './client';
-import type { Job, JobCreate, JobUpdate, JobNote, NotBuiltRequest, BucketCounts, JobBucket } from '@/types';
+import type { Job, JobCreate, JobUpdate, JobNote, NotBuiltRequest, BucketCounts, JobBucket, TradeType } from '@/types';
 
-// List jobs, optionally filtered by bucket
-export function useJobs(bucket?: JobBucket) {
+// List jobs, optionally filtered by bucket and/or primary trade.
+// `trade` is a display-only filter (does not affect scoring).
+export function useJobs(bucket?: JobBucket, trade?: TradeType) {
   return useQuery<Job[]>({
-    queryKey: ['jobs', bucket],
+    queryKey: ['jobs', bucket, trade],
     queryFn: async () => {
-      const params = bucket ? { bucket } : {};
+      const params: Record<string, string> = {};
+      if (bucket) params.bucket = bucket;
+      if (trade) params.trade = trade;
       const { data } = await api.get('/jobs/', { params });
       return data;
     },

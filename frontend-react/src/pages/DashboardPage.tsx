@@ -19,7 +19,7 @@ import { useCheckAllWeather } from '@/api/weather';
 import { usePMs } from '@/api/settings';
 import { useUIStore } from '@/stores/ui-store';
 import { JobFormDialog } from '@/components/jobs/JobFormDialog';
-import type { JobBucket } from '@/types';
+import type { JobBucket, TradeType } from '@/types';
 
 const bucketCards = [
   { key: 'to_schedule' as JobBucket, label: 'To Schedule', icon: ClipboardList, color: 'text-blue-600' },
@@ -31,10 +31,15 @@ const bucketCards = [
 ];
 
 export function DashboardPage() {
-  const { activeBucket, setActiveBucket, latestScoringResult: scoringResult, setLatestScoringResult } = useUIStore();
+  const {
+    activeBucket, setActiveBucket,
+    activeTrade, setActiveTrade,
+    latestScoringResult: scoringResult, setLatestScoringResult,
+  } = useUIStore();
   const { data: counts, isLoading: countsLoading } = useBucketCounts();
   const { data: jobs, isLoading: jobsLoading } = useJobs(
-    activeBucket === 'all' ? undefined : activeBucket
+    activeBucket === 'all' ? undefined : activeBucket,
+    activeTrade === 'all' ? undefined : activeTrade,
   );
   // Separate query for all jobs — used to compute secondary trade aging alerts
   const { data: allJobsForAging } = useJobs();
@@ -567,6 +572,34 @@ export function DashboardPage() {
 
       {/* Job Queue with bucket tabs */}
       <div>
+        {/* Trade filter pills (display-only filter — does not affect scoring) */}
+        <div className="flex flex-wrap items-center gap-1.5 mb-3">
+          <span className="text-[11px] text-muted-foreground mr-1">Trade:</span>
+          {([
+            { value: 'all', label: 'All' },
+            { value: 'roofing', label: 'Roofing' },
+            { value: 'siding', label: 'Siding' },
+            { value: 'gutters', label: 'Gutters' },
+            { value: 'windows', label: 'Windows' },
+            { value: 'paint', label: 'Paint' },
+            { value: 'interior', label: 'Interior' },
+            { value: 'other', label: 'Other' },
+          ] as const).map(({ value, label }) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setActiveTrade(value as TradeType | 'all')}
+              className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors ${
+                activeTrade === value
+                  ? 'bg-primary text-primary-foreground border-primary'
+                  : 'bg-background text-muted-foreground border-border hover:bg-muted hover:text-foreground'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         <Tabs
           value={activeBucket}
           onValueChange={(v) => setActiveBucket(v as JobBucket | 'all')}

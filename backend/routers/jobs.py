@@ -140,10 +140,18 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/")
-def list_jobs(bucket: str | None = None, db: Session = Depends(get_db)):
+def list_jobs(
+    bucket: str | None = None,
+    trade: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """List jobs, optionally filtered by bucket (status) and/or primary trade.
+    Trade filter is display-only — does not affect scoring."""
     query = db.query(Job)
     if bucket:
         query = query.filter(Job.bucket == bucket)
+    if trade:
+        query = query.filter(Job.primary_trade == trade)
     jobs = query.order_by(Job.score.desc()).all()
     return [_enrich_with_latest_note(j, db) for j in jobs]
 

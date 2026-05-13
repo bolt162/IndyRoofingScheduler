@@ -154,9 +154,12 @@ def _migrate_job_columns():
 
 
 def _migrate_crew_columns():
-    """Add rank and notes columns to crews table if missing.
+    """Add rank, notes, and trades columns to crews table if missing.
+    Also backfills 'trades' for legacy crews where specialties contains trade names.
     Safe to run on every startup."""
     from sqlalchemy import inspect, text
+    from backend.models.pm import Crew
+
     db = SessionLocal()
     try:
         insp = inspect(engine)
@@ -168,6 +171,10 @@ def _migrate_crew_columns():
             additions.append("ADD COLUMN rank INTEGER DEFAULT 999")
         if "notes" not in existing:
             additions.append("ADD COLUMN notes TEXT")
+        # Postgres uses JSONB; SQLite stores JSON as TEXT. SQLAlchemy JSON works on both.
+        # Use plain TEXT here so both DBs accept it; the model's JSON type handles parsing.
+        if "trades" not in existing:
+            additions.append("ADD COLUMN trades TEXT")
         for stmt in additions:
             try:
                 db.execute(text(f"ALTER TABLE crews {stmt}"))
@@ -176,6 +183,26 @@ def _migrate_crew_columns():
             except Exception as e:
                 logger.warning(f"Migration skip ({stmt}): {e}")
                 db.rollback()
+
+        # --- Backfill: split trade names out of legacy `specialties` into `trades` ---
+        TRADE_NAMES = {"roofing", "siding", "gutters", "windows", "paint", "interior", "other"}
+        crews = db.query(Crew).all()
+        backfilled = 0
+        for crew in crews:
+            # Only backfill if trades is empty/None — don't overwrite manual edits
+            if crew.trades:
+                continue
+            existing_specialties = list(crew.specialties or [])
+            extracted_trades = [s for s in existing_specialties if s and s.lower() in TRADE_NAMES]
+            remaining_specialties = [s for s in existing_specialties if s and s.lower() not in TRADE_NAMES]
+            if extracted_trades or not crew.trades:
+                # Default to roofing if nothing identifiable in specialties — preserves backward compatibility
+                crew.trades = extracted_trades if extracted_trades else ["roofing"]
+                crew.specialties = remaining_specialties
+                backfilled += 1
+        if backfilled > 0:
+            db.commit()
+            logger.info(f"Migration: backfilled trades on {backfilled} crew(s)")
     except Exception as e:
         logger.warning(f"Crew column migration failed: {e}")
     finally:

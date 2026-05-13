@@ -22,6 +22,13 @@ class Crew(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     name: Mapped[str] = mapped_column(String(255))
+    # Trades this crew works on: e.g., ["roofing"], ["siding"], or ["roofing", "siding"]
+    # Used for trade-aware crew matching — a roofing-only crew is never assigned to a siding job.
+    # Required when adding/editing via UI; backfilled from legacy specialties on first boot.
+    trades: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
+    # Material specialties (NOT trades): slate, tpo, wood_shake, etc.
+    # Optional. A roofing crew with specialties=["slate"] can do both standard asphalt
+    # and the harder slate work.
     specialties: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     # Rank: 1 = best crew ("Michael Jordan"), higher = bench players

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { startOfWeek, addDays } from 'date-fns';
-import type { JobBucket, ScoringResponse } from '@/types';
+import type { JobBucket, TradeType, ScoringResponse } from '@/types';
 
 interface UIState {
   // Week selector
@@ -14,9 +14,11 @@ interface UIState {
   setSelectedPMIds: (ids: number[]) => void;
   togglePM: (id: number) => void;
 
-  // Job list filter
+  // Job list filter — bucket (status group) and trade (primary trade type)
   activeBucket: JobBucket | 'all';
   setActiveBucket: (bucket: JobBucket | 'all') => void;
+  activeTrade: TradeType | 'all';
+  setActiveTrade: (trade: TradeType | 'all') => void;
 
   // Map mode: status = bucket colors, pm = PM assignment colors, plan = Build Plan hierarchy
   mapMode: 'status' | 'pm' | 'plan';
@@ -61,6 +63,8 @@ export const useUIStore = create<UIState>((set, get) => ({
 
   activeBucket: 'to_schedule',
   setActiveBucket: (bucket) => set({ activeBucket: bucket }),
+  activeTrade: 'all',
+  setActiveTrade: (trade) => set({ activeTrade: trade }),
 
   mapMode: 'status',
   setMapMode: (mode) => set({ mapMode: mode }),

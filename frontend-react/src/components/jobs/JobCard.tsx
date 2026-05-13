@@ -100,16 +100,12 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
     );
   };
 
-  // Has the job been updated since the last AI re-analysis? Show a "stale" hint if so.
-  const aiStale = (() => {
-    if (!job.last_ai_analyzed_at) return true; // Never analyzed
-    try {
-      // Allow 2s tolerance to avoid flickering right after save
-      return parseISO(job.updated_at).getTime() > parseISO(job.last_ai_analyzed_at).getTime() + 2000;
-    } catch {
-      return false;
-    }
-  })();
+  // The AI is "stale" if the job has notes worth analyzing but the cached
+  // ai_note_scan_result is missing — either because it was never scanned, or because
+  // the JN sync invalidated it after notes/material/square footage changed.
+  // We deliberately do NOT compare updated_at to last_ai_analyzed_at — that timestamp
+  // ticks on every field change (bucket, status, weather, etc.) and would over-report.
+  const aiStale = !!(job.jn_notes_raw && job.jn_notes_raw.trim()) && !job.ai_note_scan_result;
 
   const handleReanalyze = () => {
     reanalyzeJob.mutate(job.id, {
@@ -165,43 +161,49 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
               </p>
             </div>
             <div className="flex flex-col items-end gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-              <div className="flex items-center gap-0.5 md:gap-1">
+              <div className="flex items-center gap-1">
                 <button
-                  className="relative p-2 md:p-1 rounded hover:bg-muted active:bg-muted transition-colors disabled:opacity-50 min-h-[36px] min-w-[36px] md:min-h-0 md:min-w-0 flex items-center justify-center"
+                  className={cn(
+                    "relative inline-flex items-center gap-1 rounded border px-1.5 py-1 text-[10px] font-medium transition-colors disabled:opacity-50",
+                    "min-h-[28px] md:min-h-0",
+                    reanalyzeJob.isPending
+                      ? 'border-blue-300 bg-blue-50 text-blue-700'
+                      : aiStale
+                        ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 active:bg-amber-100'
+                        : 'border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted active:bg-muted',
+                  )}
                   title={
                     aiStale
                       ? 'Job changed since last AI analysis — click to update'
                       : job.last_ai_analyzed_at
                         ? `AI analyzed ${formatDistanceFromNow(job.last_ai_analyzed_at)}. Click to refresh.`
-                        : 'Update AI analysis'
+                        : 'Run AI analysis on this job'
                   }
                   aria-label={
                     aiStale
-                      ? 'Update AI analysis (job has changes)'
-                      : 'Refresh AI analysis'
+                      ? 'Update AI — job has changes'
+                      : 'Update AI analysis'
                   }
                   disabled={reanalyzeJob.isPending}
                   onClick={(e) => { e.stopPropagation(); handleReanalyze(); }}
                 >
                   <Sparkles className={cn(
-                    'h-4 w-4 md:h-3.5 md:w-3.5 transition-colors',
-                    reanalyzeJob.isPending
-                      ? 'text-blue-500 animate-pulse'
-                      : aiStale
-                        ? 'text-amber-500 hover:text-amber-600'
-                        : 'text-muted-foreground hover:text-foreground',
+                    'h-3 w-3 shrink-0',
+                    reanalyzeJob.isPending && 'animate-pulse',
                   )} />
+                  <span>{reanalyzeJob.isPending ? 'Updating…' : 'Update AI'}</span>
                   {aiStale && !reanalyzeJob.isPending && (
-                    <span className="absolute top-1.5 right-1.5 md:top-0.5 md:right-0.5 h-1.5 w-1.5 rounded-full bg-amber-500" />
+                    <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-background" />
                   )}
                 </button>
                 <button
-                  className="p-2 md:p-1 rounded hover:bg-muted active:bg-muted transition-colors min-h-[36px] min-w-[36px] md:min-h-0 md:min-w-0 flex items-center justify-center"
-                  title="Edit job"
+                  className="inline-flex items-center gap-1 rounded border border-border bg-background px-1.5 py-1 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted active:bg-muted transition-colors min-h-[28px] md:min-h-0"
+                  title="Edit job details"
                   aria-label="Edit job"
                   onClick={(e) => { e.stopPropagation(); setEditOpen(true); }}
                 >
-                  <Pencil className="h-4 w-4 md:h-3.5 md:w-3.5 text-muted-foreground hover:text-foreground" />
+                  <Pencil className="h-3 w-3 shrink-0" />
+                  <span>Edit</span>
                 </button>
               <TooltipProvider>
                 <Tooltip>

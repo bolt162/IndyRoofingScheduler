@@ -86,8 +86,11 @@ Return ONLY valid JSON. No explanation text."""
 
         result = json.loads(text)
 
-        # Store result on job
+        # Store result on job + stamp analysis timestamp
+        # (last_ai_analyzed_at represents when the CURRENT state was AI-analyzed)
+        from datetime import datetime as _dt
         job.ai_note_scan_result = json.dumps(result)
+        job.last_ai_analyzed_at = _dt.utcnow()
 
         # Auto-apply duration hint (spec §4.3: adopt note-derived duration, keep unconfirmed)
         if result.get("duration_hint") and not job.duration_confirmed:

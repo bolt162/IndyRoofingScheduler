@@ -396,6 +396,19 @@ def sync_jobs_from_jn(db: Session) -> dict:
 
             existing = db.query(Job).filter(Job.jn_job_id == jn_id).first()
             if existing:
+                # Detect AI-relevant changes BEFORE applying updates so we can invalidate
+                # the AI cache. Note re-scan is the only mechanism to update AI insights
+                # for an existing job — so any field that affects AI output must trigger it.
+                ai_relevant_changed = False
+                new_material = mapped.get("material_type")
+                new_sq_footage = mapped.get("square_footage")
+                if jn_notes_raw and jn_notes_raw != (existing.jn_notes_raw or ""):
+                    ai_relevant_changed = True
+                if new_material is not None and new_material != (existing.material_type or ""):
+                    ai_relevant_changed = True
+                if new_sq_footage is not None and new_sq_footage != existing.square_footage:
+                    ai_relevant_changed = True
+
                 # Update fields that may have changed
                 for field in ["customer_name", "address", "latitude", "longitude",
                               "payment_type", "material_type", "square_footage",
@@ -403,9 +416,16 @@ def sync_jobs_from_jn(db: Session) -> dict:
                               "duration_confirmed", "crew_requirement_flag"]:
                     if mapped.get(field) is not None:
                         setattr(existing, field, mapped[field])
-                # Update notes only if they actually changed (avoids unnecessary re-scans)
+                # Update notes only if they actually changed
                 if jn_notes_raw and jn_notes_raw != (existing.jn_notes_raw or ""):
                     existing.jn_notes_raw = jn_notes_raw
+
+                # If anything that affects AI output changed, invalidate the cache so
+                # the post-sync scanner picks this job up again.
+                if ai_relevant_changed:
+                    existing.ai_note_scan_result = None
+                    existing.last_ai_analyzed_at = None
+
                 existing.last_synced_at = datetime.utcnow()
                 updated += 1
             else:
@@ -467,16 +487,18 @@ def sync_jobs_from_jn(db: Session) -> dict:
 
     db.commit()
 
-    # Scan AI notes for NEW jobs only (never-scanned jobs where ai_note_scan_result is NULL)
-    # This runs after sync so only newly created jobs get scanned — existing jobs are skipped
+    # Run AI note scanner — picks up jobs whose ai_note_scan_result is NULL.
+    # Includes:
+    #   - newly created jobs (never scanned)
+    #   - existing jobs whose AI cache was just invalidated above (notes/material/sq_ft changed)
+    # Cheap no-op when nothing needs scanning.
     scanned = 0
-    if created > 0:
-        try:
-            from backend.services.note_scanner import scan_all_unscanned_jobs
-            scan_result = scan_all_unscanned_jobs(db)
-            scanned = scan_result.get("scanned", 0)
-        except Exception:
-            pass  # Don't fail the sync if scanning fails
+    try:
+        from backend.services.note_scanner import scan_all_unscanned_jobs
+        scan_result = scan_all_unscanned_jobs(db)
+        scanned = scan_result.get("scanned", 0)
+    except Exception:
+        pass  # Don't fail the sync if scanning fails
 
     return {
         "synced_at": datetime.utcnow().isoformat(),

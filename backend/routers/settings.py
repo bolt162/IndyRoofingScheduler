@@ -99,7 +99,8 @@ def list_crews(db: Session = Depends(get_db)):
 
 class CrewCreate(BaseModel):
     name: str
-    specialties: list[str] = []
+    trades: list[str] = []  # e.g. ["roofing"], ["siding"], ["roofing", "siding"]
+    specialties: list[str] = []  # material specialties: slate, tpo, wood_shake, etc.
     rank: int = 999
     notes: str | None = None
 
@@ -108,6 +109,7 @@ class CrewCreate(BaseModel):
 def add_crew(data: CrewCreate, db: Session = Depends(get_db)):
     crew = Crew(
         name=data.name,
+        trades=data.trades or ["roofing"],  # fall back to roofing if blank
         specialties=data.specialties or [],
         rank=data.rank,
         notes=data.notes,
@@ -120,6 +122,7 @@ def add_crew(data: CrewCreate, db: Session = Depends(get_db)):
 
 class CrewUpdate(BaseModel):
     name: str | None = None
+    trades: list[str] | None = None
     specialties: list[str] | None = None
     is_active: bool | None = None
     rank: int | None = None
