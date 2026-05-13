@@ -624,11 +624,19 @@ def _run_claude_scoring(
     crew_section = ""
     if crews:
         crew_section = (
-            f"\nAVAILABLE CREWS ranked best first ({len(crews)} total). "
-            f"Per ops team: 'Michael Jordan' (rank 1) should get the hardest/most "
-            f"expensive jobs; use bench players for standard work. Specialty crews "
-            f"MUST be used for slate/wood_shake/metal/TPO/EPDM jobs. "
-            f"Consider each crew's notes field when making recommendations:\n"
+            f"\nAVAILABLE CREWS ranked best first ({len(crews)} total).\n"
+            f"\nCREW MATCHING RULES (strict, in order):\n"
+            f"1. TRADE FIRST: a crew's 'trades' list MUST contain the job's primary_trade. "
+            f"A roofing-only crew (trades=['roofing']) is NEVER assigned to a siding job, "
+            f"and vice versa. Multi-trade crews (e.g., trades=['roofing','siding']) can do either.\n"
+            f"2. MATERIAL SPECIALTY: jobs with slate/wood_shake/metal/TPO/EPDM materials "
+            f"MUST go to crews whose 'specialties' includes that material.\n"
+            f"3. RANK (Michael Jordan rule): within the eligible pool, the highest-ranked crew "
+            f"(rank 1 is best) gets the hardest job. Hardness = complexity_score on each job. "
+            f"Use bench players (higher rank numbers) for standard work.\n"
+            f"4. Each crew can only be assigned ONE job per scoring run (one crew = one day).\n"
+            f"5. Read each crew's 'notes' for context about strengths and constraints.\n"
+            f"\nCrew data (ranked best first):\n"
             f"{json.dumps(crews, indent=2)}\n"
         )
 
