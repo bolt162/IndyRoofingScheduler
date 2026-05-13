@@ -85,12 +85,33 @@ export function useDeletePM() {
 }
 
 // Crews
+// Defensive coercion: production DB had crews.trades stored as a JSON-encoded
+// string (legacy TEXT column type) rather than a real array. The backend migration
+// now fixes the column type, but old responses cached by the browser may still
+// have strings. This guard converts them to arrays so the UI doesn't crash.
+function normalizeStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((v) => typeof v === 'string');
+  if (typeof value === 'string') {
+    if (!value.trim()) return [];
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.filter((v) => typeof v === 'string');
+    } catch { /* fall through */ }
+  }
+  return [];
+}
+
 export function useCrews() {
   return useQuery<Crew[]>({
     queryKey: ['crews'],
     queryFn: async () => {
       const { data } = await api.get('/settings/crews');
-      return data;
+      // Normalize trades + specialties — defensive against stringified arrays
+      return (Array.isArray(data) ? data : []).map((c: any) => ({
+        ...c,
+        trades: normalizeStringArray(c?.trades),
+        specialties: normalizeStringArray(c?.specialties),
+      })) as Crew[];
     },
   });
 }

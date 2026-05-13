@@ -165,16 +165,20 @@ def _migrate_crew_columns():
         insp = inspect(engine)
         if "crews" not in insp.get_table_names():
             return
-        existing = {col["name"] for col in insp.get_columns("crews")}
+        existing_cols = insp.get_columns("crews")
+        existing = {col["name"] for col in existing_cols}
+        is_postgres = "postgres" in str(engine.url).lower()
+
         additions = []
         if "rank" not in existing:
             additions.append("ADD COLUMN rank INTEGER DEFAULT 999")
         if "notes" not in existing:
             additions.append("ADD COLUMN notes TEXT")
-        # Postgres uses JSONB; SQLite stores JSON as TEXT. SQLAlchemy JSON works on both.
-        # Use plain TEXT here so both DBs accept it; the model's JSON type handles parsing.
+        # CRITICAL: trades must be JSON type on Postgres so SQLAlchemy round-trips
+        # the list correctly. TEXT works on SQLite (its JSON is stored as TEXT).
         if "trades" not in existing:
-            additions.append("ADD COLUMN trades TEXT")
+            col_type = "JSON" if is_postgres else "TEXT"
+            additions.append(f"ADD COLUMN trades {col_type}")
         for stmt in additions:
             try:
                 db.execute(text(f"ALTER TABLE crews {stmt}"))
@@ -183,6 +187,26 @@ def _migrate_crew_columns():
             except Exception as e:
                 logger.warning(f"Migration skip ({stmt}): {e}")
                 db.rollback()
+
+        # --- Repair: if 'trades' exists but is TEXT (from earlier bad migration on Postgres),
+        # convert it to JSON so SQLAlchemy can deserialize it correctly ---
+        if is_postgres and "trades" in existing:
+            trades_col = next((c for c in existing_cols if c["name"] == "trades"), None)
+            # SQLAlchemy reports the column's actual type. We check if it's text.
+            col_type_str = str(trades_col["type"]).upper() if trades_col else ""
+            if "TEXT" in col_type_str or "VARCHAR" in col_type_str:
+                try:
+                    # Cast existing TEXT values to JSON. Values like '["roofing"]' become arrays.
+                    db.execute(text(
+                        "ALTER TABLE crews ALTER COLUMN trades TYPE JSON USING "
+                        "CASE WHEN trades IS NULL OR trades = '' THEN NULL "
+                        "ELSE trades::json END"
+                    ))
+                    db.commit()
+                    logger.info("Migration: converted crews.trades from TEXT to JSON")
+                except Exception as e:
+                    logger.warning(f"Migration repair (trades TEXT→JSON) skipped: {e}")
+                    db.rollback()
 
         # --- Backfill: split trade names out of legacy `specialties` into `trades` ---
         TRADE_NAMES = {"roofing", "siding", "gutters", "windows", "paint", "interior", "other"}
