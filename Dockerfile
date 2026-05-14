@@ -4,9 +4,12 @@ WORKDIR /app/frontend-react
 COPY frontend-react/package.json frontend-react/package-lock.json ./
 RUN npm ci
 COPY frontend-react/ ./
-# Build-time env vars for Vite (must be set at build time, not runtime)
+# Build-time env vars for Vite (must be set at build time, not runtime).
+# Railway forwards these from its env via railway.toml [build.args].
 ARG VITE_GOOGLE_MAPS_API_KEY=""
 ENV VITE_GOOGLE_MAPS_API_KEY=$VITE_GOOGLE_MAPS_API_KEY
+ARG VITE_CLERK_PUBLISHABLE_KEY=""
+ENV VITE_CLERK_PUBLISHABLE_KEY=$VITE_CLERK_PUBLISHABLE_KEY
 RUN npm run build
 
 # Stage 2: Python backend + serve static frontend
