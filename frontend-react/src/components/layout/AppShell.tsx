@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
 import { Menu } from 'lucide-react';
 import { Sidebar } from './Sidebar';
+import { UserMenu } from './UserMenu';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Toaster } from '@/components/ui/sonner';
@@ -40,7 +41,13 @@ export function AppShell() {
           >
             <Menu className="h-5 w-5" />
           </Button>
-          <h1 className="text-sm font-semibold truncate">Indy Roof Scheduler</h1>
+          <h1 className="text-sm font-semibold truncate flex-1">Indy Roof Scheduler</h1>
+          <UserMenu />
+        </header>
+        {/* Desktop top bar — visible only at md+ to show the user menu */}
+        <header className="hidden md:flex h-12 items-center gap-2 border-b px-4 bg-background shrink-0">
+          <div className="flex-1" />
+          <UserMenu />
         </header>
         <div className="flex-1 overflow-auto">
           <Outlet />

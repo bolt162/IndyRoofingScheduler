@@ -26,5 +26,12 @@ class Settings:
     BAMWX_API_SECRET: str = _get_secret("BAMWX_API_SECRET")
     BAMWX_BASE_URL: str = _get_secret("BAMWX_BASE_URL", "https://api.claritywx.com")
 
+    # Auth — Clerk handles user identity and approval state.
+    # CLERK_JWKS_URL: Clerk dashboard → API Keys → "Show JWT public key" / JWKS endpoint
+    # CLERK_JWT_ISSUER: the URL the JWT claims as 'iss' — Clerk dashboard shows it
+    # (Typically https://<your-instance>.clerk.accounts.dev)
+    CLERK_JWKS_URL: str = _get_secret("CLERK_JWKS_URL", "")
+    CLERK_JWT_ISSUER: str = _get_secret("CLERK_JWT_ISSUER", "")
+
 
 settings = Settings()

@@ -16,3 +16,7 @@ anthropic
 
 # Scheduling
 apscheduler
+
+# Auth — Clerk-signed JWT verification (RS256 via JWKS).
+# pyjwt's PyJWKClient handles the JWKS fetch + caching for us.
+pyjwt[crypto]

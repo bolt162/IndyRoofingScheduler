@@ -9,7 +9,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from backend.database import engine, Base, SessionLocal
-from backend.routers import jobs, scoring, schedule, settings, weather
+from backend.routers import jobs, scoring, schedule, settings, weather, auth as auth_router
+from backend.services.auth import get_approved_user
+from fastapi import Depends
 
 logger = logging.getLogger("scheduler")
 
@@ -23,6 +25,7 @@ async def lifespan(app: FastAPI):
     from backend.models.note_log import NoteLog  # noqa
     from backend.models.schedule import SchedulePlan  # noqa
     from backend.models.settings import SystemSettings  # noqa
+    # No User model — Clerk owns user identity & approval state
 
     Base.metadata.create_all(bind=engine)
     _seed_default_settings()
@@ -52,11 +55,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
-app.include_router(scoring.router, prefix="/api/scoring", tags=["scoring"])
-app.include_router(schedule.router, prefix="/api/schedule", tags=["schedule"])
-app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
-app.include_router(weather.router, prefix="/api/weather", tags=["weather"])
+# Auth router is mounted without router-level guard. Its /me endpoint has its
+# own get_current_user dependency (no approval check) so pending users can call
+# it to discover they're pending.
+app.include_router(auth_router.router, prefix="/api/auth", tags=["auth"])
+
+# All other API routers REQUIRE a valid Clerk JWT AND approved=true claim.
+# get_approved_user verifies signature + issuer + expiry, then 403s pending users.
+_protected = [Depends(get_approved_user)]
+app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"], dependencies=_protected)
+app.include_router(scoring.router, prefix="/api/scoring", tags=["scoring"], dependencies=_protected)
+app.include_router(schedule.router, prefix="/api/schedule", tags=["schedule"], dependencies=_protected)
+app.include_router(settings.router, prefix="/api/settings", tags=["settings"], dependencies=_protected)
+app.include_router(weather.router, prefix="/api/weather", tags=["weather"], dependencies=_protected)
 
 
 # Health check — must be defined before any catch-all
