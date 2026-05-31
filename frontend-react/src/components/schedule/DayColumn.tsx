@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { PMCapacityBar } from './PMCapacityBar';
-import { WeatherOverlay } from './WeatherOverlay';
 import { DraggableJobCard } from './DraggableJobCard';
 import { cn } from '@/lib/utils';
 import type { Job, PM } from '@/types';
@@ -15,9 +14,10 @@ interface DayColumnProps {
   pms: PM[];
   pmJobCounts: Record<number, number>;
   isToday?: boolean;
+  onUnschedule?: (job: Job) => void;
 }
 
-export function DayColumn({ date, jobs, pms, pmJobCounts, isToday }: DayColumnProps) {
+export function DayColumn({ date, jobs, pms, pmJobCounts, isToday, onUnschedule }: DayColumnProps) {
   const dateStr = format(date, 'yyyy-MM-dd');
   const { setNodeRef, isOver } = useDroppable({
     id: `day-${dateStr}`,
@@ -71,7 +71,11 @@ export function DayColumn({ date, jobs, pms, pmJobCounts, isToday }: DayColumnPr
               </p>
             ) : (
               jobs.map((job) => (
-                <DraggableJobCard key={job.id} job={job} />
+                <DraggableJobCard
+                  key={job.id}
+                  job={job}
+                  onUnschedule={onUnschedule ? () => onUnschedule(job) : undefined}
+                />
               ))
             )}
           </div>

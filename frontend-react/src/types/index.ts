@@ -157,9 +157,10 @@ export interface JobUpdate {
   must_build_reason?: string;
   bucket?: JobBucket;
   not_built_reason?: string;
-  assigned_pm_id?: number;
-  assigned_crew_id?: number;
-  date_scheduled?: string;
+  // Nullable so a job can be unscheduled (cleared back to the unassigned queue)
+  assigned_pm_id?: number | null;
+  assigned_crew_id?: number | null;
+  date_scheduled?: string | null;
   duration_days?: number;
   duration_confirmed?: boolean;
   standalone_option?: StandaloneOption;

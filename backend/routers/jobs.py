@@ -233,6 +233,22 @@ def set_must_build(job_id: int, update: JobUpdate, db: Session = Depends(get_db)
     return _enrich_with_latest_note(job, db)
 
 
+@router.post("/{job_id}/clear-must-build")
+def clear_must_build(job_id: int, db: Session = Depends(get_db)):
+    """Remove the Must-Build flag from a job (reverts the scoring override).
+    Clears deadline and reason together so no stale must-build metadata lingers.
+    The job returns to normal scoring on the next scoring run."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    job.must_build = False
+    job.must_build_deadline = None
+    job.must_build_reason = None
+    db.commit()
+    db.refresh(job)
+    return _enrich_with_latest_note(job, db)
+
+
 @router.post("/{job_id}/not-built")
 def mark_not_built(job_id: int, request: NotBuiltRequest, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.id == job_id).first()

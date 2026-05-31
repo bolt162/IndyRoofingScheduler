@@ -74,6 +74,21 @@ export function useSetMustBuild() {
   });
 }
 
+// Clear the must-build flag (reverts the scoring override)
+export function useClearMustBuild() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const { data } = await api.post(`/jobs/${id}/clear-must-build`);
+      return data as Job;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['jobs'] });
+      qc.invalidateQueries({ queryKey: ['bucketCounts'] });
+    },
+  });
+}
+
 // Background sync status — polls to check if initial sync is still running
 export function useSyncStatus() {
   return useQuery<{ running: boolean; last_result: any; error: string | null }>({

@@ -1,28 +1,28 @@
 import { useMemo, useState } from 'react';
-import { addDays, format, isSameDay, isToday, parseISO } from 'date-fns';
+import { addDays, format, isToday } from 'date-fns';
 import {
   DndContext,
   type DragEndEvent,
   PointerSensor,
   TouchSensor,
+  useDroppable,
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
 import { toast } from 'sonner';
 import {
-  ChevronLeft, ChevronRight, Calendar, AlertTriangle, Check,
+  ChevronLeft, ChevronRight, Check,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { DayColumn } from '@/components/schedule/DayColumn';
-import { DraggableJobCard } from '@/components/schedule/DraggableJobCard';
+import { UnassignedJobRow } from '@/components/schedule/UnassignedJobRow';
 import { useJobs, useUpdateJob } from '@/api/jobs';
 import { useSchedulePlans, useConfirmPlan } from '@/api/schedule';
 import { usePMs } from '@/api/settings';
 import { useUIStore } from '@/stores/ui-store';
+import { cn } from '@/lib/utils';
 import type { Job } from '@/types';
 
 export function WeeklyPlanPage() {
@@ -100,13 +100,48 @@ export function WeeklyPlanPage() {
     [plans, weekDays]
   );
 
+  // Drop zone for the unassigned sidebar — dropping a scheduled job here removes it.
+  const { setNodeRef: setUnassignedDropRef, isOver: isOverUnassigned } = useDroppable({
+    id: 'unassigned',
+    data: { unassigned: true },
+  });
+
+  // Clean undo: send a scheduled job back to the unassigned queue.
+  // No reschedule penalty — clears date + PM and returns it to To Schedule.
+  const unscheduleJob = async (job: Job) => {
+    try {
+      await updateJob.mutateAsync({
+        id: job.id,
+        update: {
+          bucket: 'to_schedule',
+          date_scheduled: null,
+          assigned_pm_id: null,
+        },
+      });
+      toast.success(`Removed ${job.customer_name} from the schedule`);
+    } catch {
+      toast.error('Failed to remove job from schedule');
+    }
+  };
+
   const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over) return;
 
     const job = active.data.current?.job as Job | undefined;
+    if (!job) return;
+
+    // Dropped onto the unassigned sidebar → unschedule (only meaningful if scheduled)
+    if (over.id === 'unassigned' || over.data.current?.unassigned) {
+      if (job.bucket === 'scheduled') {
+        await unscheduleJob(job);
+      }
+      return;
+    }
+
+    // Dropped onto a day column → schedule / move to that day
     const dayStr = over.data.current?.date as string | undefined;
-    if (!job || !dayStr) return;
+    if (!dayStr) return;
 
     // Require exactly one PM selected to assign jobs
     if (selectedPMIds.length === 0) {
@@ -156,12 +191,13 @@ export function WeeklyPlanPage() {
       {/* Desktop: side-by-side layout | Mobile: stacked */}
       <div className="flex flex-col md:flex-row h-full">
         {/* Unassigned jobs sidebar — full sidebar on desktop, collapsible panel on mobile */}
-        <div className="md:w-72 md:border-r flex flex-col md:shrink-0 overflow-hidden border-b md:border-b-0">
+        <div className="md:w-80 lg:w-96 md:border-r flex flex-col md:shrink-0 overflow-hidden border-b md:border-b-0">
           {/* Desktop header (always visible) */}
           <div className="hidden md:block p-4 shrink-0">
             <h3 className="text-sm font-semibold mb-1">Unassigned Jobs</h3>
             <p className="text-xs text-muted-foreground">
-              {unassignedJobs.length} jobs to schedule — drag into a day
+              {unassignedJobs.length} jobs to schedule — drag into a day, or drag a
+              scheduled job back here to remove it
             </p>
           </div>
           {/* Mobile collapsible header */}
@@ -179,11 +215,23 @@ export function WeeklyPlanPage() {
             {unassignedOpenMobile ? <ChevronLeft className="h-4 w-4 rotate-90" /> : <ChevronRight className="h-4 w-4 rotate-90" />}
           </button>
           <Separator className="shrink-0 hidden md:block" />
-          <ScrollArea className={`flex-1 min-h-0 p-3 ${unassignedOpenMobile ? 'max-h-[40vh]' : 'hidden md:block'}`}>
-            <div className="space-y-2">
-              {unassignedJobs.map((job) => (
-                <DraggableJobCard key={job.id} job={job} />
-              ))}
+          <ScrollArea className={`flex-1 min-h-0 ${unassignedOpenMobile ? 'max-h-[40vh]' : 'hidden md:block'}`}>
+            <div
+              ref={setUnassignedDropRef}
+              className={cn(
+                'space-y-1.5 p-3 min-h-full rounded-md transition-colors',
+                isOverUnassigned && 'ring-2 ring-primary bg-primary/5',
+              )}
+            >
+              {unassignedJobs.length === 0 ? (
+                <p className="text-xs text-muted-foreground text-center py-6">
+                  No unassigned jobs
+                </p>
+              ) : (
+                unassignedJobs.map((job) => (
+                  <UnassignedJobRow key={job.id} job={job} />
+                ))
+              )}
             </div>
           </ScrollArea>
         </div>
@@ -260,6 +308,7 @@ export function WeeklyPlanPage() {
                     pms={activePMs}
                     pmJobCounts={pmJobCountsByDay[key] ?? {}}
                     isToday={isToday(day)}
+                    onUnschedule={unscheduleJob}
                   />
                 );
               })}

@@ -20,7 +20,7 @@ import {
 import { MustBuildBadge } from './MustBuildBadge';
 import { DurationFlag } from './DurationFlag';
 import { WeatherBadge } from './WeatherBadge';
-import { useSetMustBuild, useUpdateJob, useSetStandaloneOption, usePushNote, useMarkPrimaryComplete, useUpdateSecondaryTradeStatus, useReanalyzeJob } from '@/api/jobs';
+import { useSetMustBuild, useClearMustBuild, useUpdateJob, useSetStandaloneOption, usePushNote, useMarkPrimaryComplete, useUpdateSecondaryTradeStatus, useReanalyzeJob } from '@/api/jobs';
 import { toast } from 'sonner';
 import { MATERIAL_LABELS } from '@/types';
 import { cn } from '@/lib/utils';
@@ -76,6 +76,7 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
   const [mbDeadline, setMbDeadline] = useState('');
   const [mbReason, setMbReason] = useState('');
   const setMustBuild = useSetMustBuild();
+  const clearMustBuild = useClearMustBuild();
 
   // Confirm Duration dialog state
   const [confirmDurOpen, setConfirmDurOpen] = useState(false);
@@ -455,6 +456,29 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
                 disabled={setStandaloneOption.isPending}
               >
                 Sales Rep Managed
+              </Button>
+            </div>
+          )}
+
+          {/* Row 8b: Remove Must-Build — shown on any flagged job (bucket-independent) */}
+          {!compact && job.must_build && (
+            <div className="flex flex-wrap gap-1.5 pt-1 border-t" onClick={(e) => e.stopPropagation()}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-[10px] gap-1 text-muted-foreground hover:bg-muted"
+                disabled={clearMustBuild.isPending}
+                onClick={() => {
+                  if (confirm(`Remove Must-Build flag from ${job.customer_name}? It will return to normal scoring.`)) {
+                    clearMustBuild.mutate(job.id, {
+                      onSuccess: () => toast.success(`Must-Build removed for ${job.customer_name}`),
+                      onError: (err: any) => toast.error(err?.response?.data?.detail || 'Failed to remove Must-Build'),
+                    });
+                  }
+                }}
+              >
+                <Star className="h-3 w-3" />
+                {clearMustBuild.isPending ? 'Removing…' : 'Remove Must-Build'}
               </Button>
             </div>
           )}
