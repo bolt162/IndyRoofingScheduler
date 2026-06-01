@@ -56,7 +56,9 @@ class MaterialType(str, enum.Enum):
 
 class TradeType(str, enum.Enum):
     ROOFING = "roofing"
+    ROOFING_REPAIR = "roofing_repair"
     SIDING = "siding"
+    SIDING_REPAIR = "siding_repair"
     GUTTERS = "gutters"
     WINDOWS = "windows"
     PAINT = "paint"

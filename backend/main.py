@@ -220,7 +220,7 @@ def _migrate_crew_columns():
                     db.rollback()
 
         # --- Backfill: split trade names out of legacy `specialties` into `trades` ---
-        TRADE_NAMES = {"roofing", "siding", "gutters", "windows", "paint", "interior", "other"}
+        TRADE_NAMES = {"roofing", "roofing_repair", "siding", "siding_repair", "gutters", "windows", "paint", "interior", "other"}
         crews = db.query(Crew).all()
         backfilled = 0
         for crew in crews:

@@ -127,7 +127,12 @@ def fetch_notes_for_job(jn_job_id: str) -> list[dict]:
 
 TRADE_ALIASES = {
     "roofing": "roofing", "roof": "roofing",
+    # Repair is a distinct trade from install — JN sends it as a "Roofing Repair"
+    # / "Siding Repair" trade value. Repair crews are gated on these so install
+    # crews are never assigned repair work (and vice versa).
+    "roofing repair": "roofing_repair", "roof repair": "roofing_repair",
     "siding": "siding", "side": "siding",
+    "siding repair": "siding_repair",
     "gutters": "gutters", "gutter": "gutters",
     "windows": "windows", "window": "windows",
     "paint": "paint", "painting": "paint",

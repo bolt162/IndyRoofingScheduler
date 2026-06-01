@@ -21,7 +21,9 @@ export type MaterialType =
   | 'asphalt' | 'polymer_modified' | 'tpo' | 'duro_last'
   | 'epdm' | 'coating' | 'wood_shake' | 'slate'
   | 'metal' | 'other';
-export type TradeType = 'roofing' | 'siding' | 'gutters' | 'windows' | 'paint' | 'interior' | 'other';
+export type TradeType =
+  | 'roofing' | 'roofing_repair' | 'siding' | 'siding_repair'
+  | 'gutters' | 'windows' | 'paint' | 'interior' | 'other';
 export type WeatherStatus = 'clear' | 'do_not_build' | 'scheduler_decision';
 export type PlanStatus = 'draft' | 'confirmed' | 'cancelled';
 export type NoteType =
