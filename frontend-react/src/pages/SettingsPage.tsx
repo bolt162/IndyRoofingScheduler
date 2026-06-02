@@ -21,7 +21,9 @@ import {
 // Trade options available for crew assignment
 const TRADE_OPTIONS = [
   { value: 'roofing', label: 'Roofing' },
+  { value: 'roofing_repair', label: 'Roof Repair' },
   { value: 'siding', label: 'Siding' },
+  { value: 'siding_repair', label: 'Siding Repair' },
   { value: 'gutters', label: 'Gutters' },
   { value: 'windows', label: 'Windows' },
   { value: 'paint', label: 'Paint' },
