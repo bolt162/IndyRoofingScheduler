@@ -106,9 +106,8 @@ export function Sidebar({ mobileCompact = false, onNavigate }: SidebarProps) {
                 {[
                   { key: 'to_schedule', label: 'To Schedule', color: 'bg-blue-500' },
                   { key: 'scheduled', label: 'Scheduled', color: 'bg-green-500' },
-                  { key: 'primary_complete', label: 'Primary Complete', color: 'bg-purple-500' },
-                  { key: 'waiting_on_trades', label: 'Waiting on Trades', color: 'bg-yellow-500' },
-                  { key: 'review_for_completion', label: 'Review', color: 'bg-orange-500' },
+                  { key: 'other_trades', label: 'Other Trades', color: 'bg-purple-500' },
+                  { key: 'primary_completed', label: 'Primary Completed', color: 'bg-orange-500' },
                 ].map(({ key, label, color }) => (
                   <div key={key} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">

@@ -1,6 +1,6 @@
 import {
   RefreshCw, Zap, ClipboardList,
-  Package, CheckCircle2, Clock, Eye, Truck, User, MapPin,
+  Package, CheckCircle2, Eye, Truck, User, MapPin,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -24,9 +24,8 @@ import type { JobBucket, TradeType } from '@/types';
 const bucketCards = [
   { key: 'to_schedule' as JobBucket, label: 'To Schedule', icon: ClipboardList, color: 'text-blue-600' },
   { key: 'scheduled' as JobBucket, label: 'Scheduled', icon: CheckCircle2, color: 'text-green-600' },
-  { key: 'primary_complete' as JobBucket, label: 'Primary Complete', icon: Package, color: 'text-purple-600' },
-  { key: 'waiting_on_trades' as JobBucket, label: 'Waiting on Trades', icon: Clock, color: 'text-yellow-600' },
-  { key: 'review_for_completion' as JobBucket, label: 'Review', icon: Eye, color: 'text-orange-600' },
+  { key: 'other_trades' as JobBucket, label: 'Other Trades', icon: Package, color: 'text-purple-600' },
+  { key: 'primary_completed' as JobBucket, label: 'Primary Completed', icon: Eye, color: 'text-orange-600' },
   { key: 'completed' as JobBucket, label: 'Completed', icon: Truck, color: 'text-emerald-600' },
 ];
 
@@ -618,9 +617,8 @@ export function DashboardPage() {
               </TabsTrigger>
               <TabsTrigger value="to_schedule">To Schedule</TabsTrigger>
               <TabsTrigger value="scheduled">Scheduled</TabsTrigger>
-              <TabsTrigger value="primary_complete">Primary Complete</TabsTrigger>
-              <TabsTrigger value="waiting_on_trades">Waiting Trades</TabsTrigger>
-              <TabsTrigger value="review_for_completion">Review</TabsTrigger>
+              <TabsTrigger value="other_trades">Other Trades</TabsTrigger>
+              <TabsTrigger value="primary_completed">Primary Completed</TabsTrigger>
               <TabsTrigger value="archived">Archived</TabsTrigger>
             </TabsList>
           </div>

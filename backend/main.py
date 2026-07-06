@@ -33,6 +33,7 @@ async def lifespan(app: FastAPI):
     _migrate_note_log_columns()
     _migrate_crew_columns()
     _migrate_job_columns()
+    _migrate_job_buckets()
 
     # Start APScheduler for weather checks + JN sync polling
     scheduler = _start_scheduler()
@@ -136,6 +137,43 @@ def _cleanup_siding_material():
         db.commit()
     except Exception as e:
         logger.warning(f"Siding cleanup failed: {e}")
+    finally:
+        db.close()
+
+
+def _migrate_job_buckets():
+    """Remap legacy bucket values after the Other Trades / Primary Completed rewire.
+    Idempotent: after the first run, subsequent runs are no-ops.
+
+      primary_complete      → other_trades
+      waiting_on_trades     → other_trades
+      review_for_completion → primary_completed
+    """
+    from sqlalchemy import inspect, text
+    db = SessionLocal()
+    try:
+        insp = inspect(engine)
+        if "jobs" not in insp.get_table_names():
+            return
+        remaps = [
+            ("primary_complete", "other_trades"),
+            ("waiting_on_trades", "other_trades"),
+            ("review_for_completion", "primary_completed"),
+        ]
+        for old, new in remaps:
+            try:
+                result = db.execute(
+                    text("UPDATE jobs SET bucket = :new WHERE bucket = :old"),
+                    {"old": old, "new": new},
+                )
+                if result.rowcount > 0:
+                    logger.info(f"Migration: remapped bucket {old} → {new} on {result.rowcount} jobs")
+            except Exception as e:
+                logger.warning(f"Migration skip (bucket {old} → {new}): {e}")
+                db.rollback()
+        db.commit()
+    except Exception as e:
+        logger.warning(f"Job bucket migration failed: {e}")
     finally:
         db.close()
 

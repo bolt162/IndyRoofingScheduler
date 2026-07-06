@@ -5,9 +5,8 @@ export type JobBucket =
   | 'to_schedule'
   | 'scheduled'
   | 'not_built'
-  | 'primary_complete'
-  | 'waiting_on_trades'
-  | 'review_for_completion'
+  | 'other_trades'
+  | 'primary_completed'
   | 'completed'
   | 'archived';
 
@@ -47,9 +46,8 @@ export const BUCKET_LABELS: Record<JobBucket, string> = {
   to_schedule: 'To Schedule',
   scheduled: 'Scheduled',
   not_built: 'Not Built',
-  primary_complete: 'Primary Complete',
-  waiting_on_trades: 'Waiting on Trades',
-  review_for_completion: 'Review for Completion',
+  other_trades: 'Other Trades',
+  primary_completed: 'Primary Completed',
   completed: 'Completed',
   archived: 'Archived',
 };

@@ -13,9 +13,13 @@ class JobBucket(str, enum.Enum):
     TO_SCHEDULE = "to_schedule"
     SCHEDULED = "scheduled"
     NOT_BUILT = "not_built"
-    PRIMARY_COMPLETE = "primary_complete"
-    WAITING_ON_TRADES = "waiting_on_trades"
-    REVIEW_FOR_COMPLETION = "review_for_completion"
+    # Other Trades — primary trade done in JN; app no longer splits by open/closed
+    # secondaries (used to be primary_complete + waiting_on_trades).
+    OTHER_TRADES = "other_trades"
+    # Primary Completed — jobs in JN's COC/Punchlist or Job Complete (Job Review)
+    # statuses. This is the review-style tab. Renamed from review_for_completion.
+    PRIMARY_COMPLETED = "primary_completed"
+    # Completed — JN's terminal "Completed" status. Not surfaced as a dashboard tab.
     COMPLETED = "completed"
     # Job exists in JN but moved to an untracked status (e.g., Lost, Disqualified, At Risk - Lead).
     # Hidden from main dashboard. Restored automatically if JN status moves back to tracked.

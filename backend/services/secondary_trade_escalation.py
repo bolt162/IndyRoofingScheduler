@@ -6,7 +6,7 @@ Client requirement: once primary trade (roofing) is complete, secondary trades
 escalate higher — because revenue ($5K+) is floating while waiting.
 
 This service runs daily and:
-1. Finds jobs in primary_complete or waiting_on_trades buckets
+1. Finds jobs in the other_trades bucket
 2. Checks days since primary_complete_date
 3. Generates warning note at 7+ days (once per job)
 4. Generates escalation note at 10+ days (once per job)
@@ -69,13 +69,10 @@ def check_secondary_trade_aging(db: Session | None = None) -> dict:
         warn_days = _get_threshold(db, "secondary_aging_yellow_days", 7)
         esc_days = _get_threshold(db, "secondary_aging_red_days", 10)
 
-        # Find all jobs in buckets that have secondary trades pending
-        target_buckets = [
-            JobBucket.PRIMARY_COMPLETE.value,
-            JobBucket.WAITING_ON_TRADES.value,
-        ]
+        # Find all jobs in Other Trades that have a primary_complete_date set.
+        # (primary_complete and waiting_on_trades were merged into other_trades.)
         candidate_jobs = db.query(Job).filter(
-            Job.bucket.in_(target_buckets),
+            Job.bucket == JobBucket.OTHER_TRADES.value,
             Job.primary_complete_date.isnot(None),
         ).all()
 

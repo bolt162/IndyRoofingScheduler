@@ -180,21 +180,23 @@ JN_STATUS_TO_BUCKET = {
     # Coming Soon — approved, materials ordered, not yet schedulable
     "Order/Schedule": "coming_soon",
     "Procurement": "coming_soon",
-    "Pending Start Date": "coming_soon",
     "Pending Materials": "coming_soon",
     "Permit & Order": "coming_soon",
     # To Schedule — enters scoring engine
     "Schedule Job": "to_schedule",
     "Schedule Production": "to_schedule",
-    # Scheduled — plan confirmed, actively being built
+    # Scheduled — on the calendar, actively being built, or lined up to start.
+    # Pending Start Date lives here (was coming_soon) so schedulers can Mark
+    # Not Built when a start day gets pushed for weather/scope/etc.
+    "Pending Start Date": "scheduled",
     "Job In Progress": "scheduled",
     "In Production": "scheduled",
-    # Primary Complete — primary trade done, secondaries open
-    "Other Trades": "primary_complete",
-    # Review for Completion
-    "COC / Punch List": "review_for_completion",
-    # Completed
-    "Job Complete (Job Review)": "completed",
+    # Other Trades — primary trade done. No app-side split by open secondaries.
+    "Other Trades": "other_trades",
+    # Primary Completed — review-style tab pulling COC/Punch List + Job Complete.
+    "COC / Punch List": "primary_completed",
+    "Job Complete (Job Review)": "primary_completed",
+    # Completed — terminal state (not surfaced as a dashboard tab).
     "Completed": "completed",
 }
 TRACKED_JN_STATUSES = set(JN_STATUS_TO_BUCKET.keys())
@@ -332,17 +334,14 @@ def map_jn_job_to_model(jn_data: dict) -> dict:
     # Description (useful for AI note scanning)
     description = jn_data.get("description") or ""
 
-    # Bucket assignment: derive from JN status, with auto-transitions
+    # Bucket assignment: derive from JN status. No app-side split for Other Trades
+    # anymore — the tab shows every job in that JN status regardless of secondary state.
     jn_status = jn_data.get("status_name") or ""
     bucket = JN_STATUS_TO_BUCKET.get(jn_status, JobBucket.TO_SCHEDULE.value)
 
     # Low-slope hard gate: override to pending_confirmation (spec §4.2)
     if tier == "low_slope" and not dur_confirmed:
         bucket = "pending_confirmation"
-
-    # Auto-transition: Primary Complete with open secondaries → Waiting on Trades (spec §8.2)
-    if bucket == "primary_complete" and secondary_trades:
-        bucket = "waiting_on_trades"
 
     return {
         "jn_job_id": str(jn_data.get("jnid") or ""),

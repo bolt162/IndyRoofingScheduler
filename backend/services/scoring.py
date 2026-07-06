@@ -393,22 +393,20 @@ def run_scoring_engine(db: Session, pm_ids: list[int] | None = None, target_date
     Run the full scoring engine on jobs that need scheduling work.
     Includes:
       - to_schedule: primary trade not yet scheduled
-      - primary_complete: primary done but still has trades (e.g. no secondaries detected,
-        but scheduler may add secondary trades manually requiring rescore)
-      - waiting_on_trades: primary done, secondary trades pending — these need scheduling for
-        the secondary work (gutters, siding, etc.)
-    Excludes scheduled (already on calendar), pending_confirmation, coming_soon, completed, etc.
+      - other_trades: primary done, secondary trades still need scheduling
+        (gutters, siding, etc.)
+    Excludes scheduled (already on calendar), pending_confirmation, coming_soon,
+    primary_completed (review tab), completed, etc.
     """
     schedulable_buckets = [
         JobBucket.TO_SCHEDULE.value,
-        JobBucket.PRIMARY_COMPLETE.value,
-        JobBucket.WAITING_ON_TRADES.value,
+        JobBucket.OTHER_TRADES.value,
     ]
     jobs = db.query(Job).filter(Job.bucket.in_(schedulable_buckets)).all()
     if not jobs:
         return {
             "recommendations": [], "clusters": [],
-            "ai_explanation": "No jobs eligible for scheduling (To Schedule / Primary Complete / Waiting on Trades).",
+            "ai_explanation": "No jobs eligible for scheduling (To Schedule / Other Trades).",
             "weather_blocked": [], "weather_blocked_count": 0,
         }
 

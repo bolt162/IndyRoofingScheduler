@@ -544,8 +544,8 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
             </div>
           )}
 
-          {/* Row 11: Mark secondary trades complete — for waiting_on_trades / primary_complete buckets */}
-          {!compact && (job.bucket === 'waiting_on_trades' || job.bucket === 'primary_complete') &&
+          {/* Row 11: Mark secondary trades complete — for the Other Trades bucket */}
+          {!compact && job.bucket === 'other_trades' &&
            job.open_secondary_trades.length > 0 && (
             <div className="flex flex-wrap gap-1.5 pt-1 border-t" onClick={(e) => e.stopPropagation()}>
               <span className="text-[10px] text-muted-foreground self-center mr-1">

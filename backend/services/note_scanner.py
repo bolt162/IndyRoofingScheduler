@@ -156,15 +156,14 @@ def scan_all_unscanned_jobs(db: Session) -> dict:
 
     Bucket filter: only scan jobs in buckets where AI insights are actionable —
     to_schedule (deciding what to build), not_built (returned to queue),
-    primary_complete + waiting_on_trades (secondary trade scheduling).
-    Skips pending_confirmation, coming_soon, scheduled, review_for_completion,
+    other_trades (secondary trade scheduling).
+    Skips pending_confirmation, coming_soon, scheduled, primary_completed,
     completed — these don't benefit from AI re-scanning.
     """
     relevant_buckets = [
         JobBucket.TO_SCHEDULE.value,
         JobBucket.NOT_BUILT.value,
-        JobBucket.PRIMARY_COMPLETE.value,
-        JobBucket.WAITING_ON_TRADES.value,
+        JobBucket.OTHER_TRADES.value,
     ]
     jobs = db.query(Job).filter(
         Job.jn_notes_raw != None,

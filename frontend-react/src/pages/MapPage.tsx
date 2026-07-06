@@ -21,7 +21,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Layers, Users, MapPin, ClipboardList } from 'lucide-react';
+import { Layers, Users, MapPin, ClipboardList, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
 import type { Job, JobBucket, ClusterInfo, ScoringResult } from '@/types';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
@@ -71,9 +71,19 @@ function getMarkerColor(
   switch (job.bucket) {
     case 'scheduled': return '#22C55E';
     case 'to_schedule': return '#3B82F6';
-    case 'primary_complete': return '#A855F7';
+    case 'other_trades': return '#A855F7';
+    case 'primary_completed': return '#F97316';
     default: return '#6B7280';
   }
+}
+
+// A job is "mappable" only if BOTH coords are present AND not the (0,0)
+// null-island fallback JN sometimes returns when geocoding fails.
+function hasValidCoords(job: Job): boolean {
+  return (
+    job.latitude != null && job.longitude != null &&
+    !(job.latitude === 0 && job.longitude === 0)
+  );
 }
 
 function MarkerPin({ color, label, dimmed }: { color: string; label: string; dimmed?: boolean }) {
@@ -236,9 +246,9 @@ export function MapPage() {
     return { planPMs, clusterColorMap, jobClusterMap, planJobIds };
   }, [latestScoringResult]);
 
-  // Filter jobs with lat/lng
+  // Filter jobs with usable coordinates.
   const jobs = useMemo(() => {
-    let result = allJobs?.filter((j) => j.latitude && j.longitude) ?? [];
+    let result = allJobs?.filter(hasValidCoords) ?? [];
     if (bucketFilter !== 'all') {
       result = result.filter((j) => j.bucket === bucketFilter);
     }
@@ -268,6 +278,16 @@ export function MapPage() {
     }
     return result;
   }, [allJobs, bucketFilter, mapMode, scoringPMMap, selectedPMFilter, planJobIds, selectedPlanPM, planPMs]);
+
+  // Jobs the map can't plot — missing coords or null-island (0,0).
+  // Only include buckets a scheduler cares about; hide archived/completed.
+  const unmappedJobs = useMemo(() => {
+    const visibleBuckets: Set<Job['bucket']> = new Set([
+      'to_schedule', 'scheduled', 'other_trades',
+    ]);
+    return (allJobs ?? [])
+      .filter((j) => visibleBuckets.has(j.bucket) && !hasValidCoords(j));
+  }, [allJobs]);
 
   // Determine which jobs are "highlighted" (not dimmed)
   const highlightedJobIds = useMemo(() => {
@@ -376,9 +396,16 @@ export function MapPage() {
                 <SelectItem value="all">All Buckets</SelectItem>
                 <SelectItem value="to_schedule">To Schedule</SelectItem>
                 <SelectItem value="scheduled">Scheduled</SelectItem>
-                <SelectItem value="primary_complete">Primary Complete</SelectItem>
+                <SelectItem value="other_trades">Other Trades</SelectItem>
+                <SelectItem value="primary_completed">Primary Completed</SelectItem>
               </SelectContent>
             </Select>
+          )}
+
+          {/* Unmapped Jobs — surfaces jobs the map can't plot so they don't
+              silently vanish. Includes null/missing coords AND null-island (0,0). */}
+          {unmappedJobs.length > 0 && (
+            <UnmappedJobsPanel jobs={unmappedJobs} />
           )}
         </div>
 
@@ -678,6 +705,54 @@ export function MapPage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Collapsible panel listing jobs that couldn't be placed on the map.
+ *
+ * Root cause is usually JN returning geo=(0,0) or missing geo despite a valid
+ * address on the job. Surfacing them here means schedulers see the job exists
+ * and can review it manually instead of it silently vanishing from the map.
+ */
+function UnmappedJobsPanel({ jobs }: { jobs: Job[] }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="rounded-md border border-amber-200 bg-amber-50">
+      <button
+        type="button"
+        onClick={() => setExpanded((v) => !v)}
+        className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium text-amber-900 hover:bg-amber-100 rounded-md transition-colors"
+      >
+        {expanded ? (
+          <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+        ) : (
+          <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+        )}
+        <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+        <span className="flex-1">Unmapped Jobs ({jobs.length})</span>
+      </button>
+      {expanded && (
+        <div className="px-3 pb-2">
+          <p className="text-[10px] text-amber-800/80 mb-2 leading-snug">
+            These jobs are missing valid coordinates from JobNimbus. Review the
+            address in JN so they can be plotted on the map.
+          </p>
+          <div className="space-y-1 max-h-48 overflow-y-auto">
+            {jobs.map((j) => (
+              <div key={j.id} className="text-[11px] rounded bg-white px-2 py-1.5 border border-amber-100">
+                <div className="font-medium text-foreground truncate">
+                  {j.customer_name || 'Unnamed job'}
+                </div>
+                <div className="text-muted-foreground truncate">
+                  {j.address || <em>no address on file</em>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

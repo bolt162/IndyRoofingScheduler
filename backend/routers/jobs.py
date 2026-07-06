@@ -302,7 +302,7 @@ def mark_primary_complete(job_id: int, db: Session = Depends(get_db)):
     """
     Mark the primary trade (e.g. roofing) as complete.
     Initializes secondary trades tracking if job has secondary trades.
-    Moves bucket to waiting_on_trades (if secondaries) or primary_complete (no secondaries).
+    Moves bucket to other_trades (matching JN's "Other Trades" file status semantics).
     """
     from datetime import datetime as _dt
 
@@ -318,16 +318,11 @@ def mark_primary_complete(job_id: int, db: Session = Depends(get_db)):
 
     job.primary_complete_date = _dt.utcnow()
 
-    # Initialize per-trade status dict
+    # Initialize per-trade status dict for tracking. All jobs go to OTHER_TRADES
+    # regardless of whether secondaries exist — no more app-side split.
     secondary_trades = job.secondary_trades or []
-    if secondary_trades:
-        status_map = {t: "pending" for t in secondary_trades}
-        job.secondary_trades_status = status_map
-        job.bucket = JobBucket.WAITING_ON_TRADES.value
-    else:
-        # No secondaries — job goes to review for completion
-        job.secondary_trades_status = {}
-        job.bucket = JobBucket.REVIEW_FOR_COMPLETION.value
+    job.secondary_trades_status = {t: "pending" for t in secondary_trades} if secondary_trades else {}
+    job.bucket = JobBucket.OTHER_TRADES.value
 
     db.commit()
     db.refresh(job)
@@ -347,7 +342,8 @@ def update_secondary_trade_status(
 ):
     """
     Update the status of a single secondary trade on a job.
-    If ALL secondary trades become 'complete', move bucket to review_for_completion.
+    If ALL secondary trades become 'complete', advance bucket to primary_completed
+    (the review-style tab) so the job leaves Other Trades.
     """
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
@@ -371,10 +367,10 @@ def update_secondary_trade_status(
     current[request.trade] = request.status
     job.secondary_trades_status = current
 
-    # If all secondary trades are now complete, advance bucket
+    # If all secondary trades are now complete, advance bucket to the review tab.
     all_complete = all(current.get(t) == "complete" for t in secondary_trades)
-    if all_complete and job.bucket in (JobBucket.WAITING_ON_TRADES.value, JobBucket.PRIMARY_COMPLETE.value):
-        job.bucket = JobBucket.REVIEW_FOR_COMPLETION.value
+    if all_complete and job.bucket == JobBucket.OTHER_TRADES.value:
+        job.bucket = JobBucket.PRIMARY_COMPLETED.value
 
     db.commit()
     db.refresh(job)
