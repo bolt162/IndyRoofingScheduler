@@ -707,12 +707,15 @@ Be factual and objective — these explanations may be referenced in court-admis
 """
 
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model=settings.ANTHROPIC_MODEL,
         max_tokens=2000,
+        # Sonnet 5+ runs adaptive thinking by default; keep it off so the
+        # response is a single text block and max_tokens isn't eaten by thinking.
+        thinking={"type": "disabled"},
         messages=[{"role": "user", "content": prompt}],
     )
 
-    text = response.content[0].text
+    text = "".join(block.text for block in response.content if block.type == "text")
     try:
         return json.loads(text)
     except json.JSONDecodeError:

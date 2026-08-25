@@ -21,6 +21,8 @@ class Settings:
     JOBNIMBUS_API_KEY: str = _get_secret("JOBNIMBUS_API_KEY")
     JOBNIMBUS_BASE_URL: str = _get_secret("JOBNIMBUS_BASE_URL", "https://app.jobnimbus.com/api1")
     ANTHROPIC_API_KEY: str = _get_secret("ANTHROPIC_API_KEY")
+    # Claude model ID used by scoring + note scanning. Override per-env without a code change.
+    ANTHROPIC_MODEL: str = _get_secret("ANTHROPIC_MODEL", "claude-sonnet-5")
     GOOGLE_MAPS_API_KEY: str = _get_secret("GOOGLE_MAPS_API_KEY")
     BAMWX_API_KEY: str = _get_secret("BAMWX_API_KEY")
     BAMWX_API_SECRET: str = _get_secret("BAMWX_API_SECRET")

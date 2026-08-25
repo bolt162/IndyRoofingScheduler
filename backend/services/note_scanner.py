@@ -71,12 +71,15 @@ Return ONLY valid JSON. No explanation text."""
 
     try:
         response = client.messages.create(
-            model="claude-sonnet-4-20250514",
+            model=settings.ANTHROPIC_MODEL,
             max_tokens=500,
+            # Sonnet 5+ runs adaptive thinking by default; keep it off so the
+            # response is a single text block and max_tokens isn't eaten by thinking.
+            thinking={"type": "disabled"},
             messages=[{"role": "user", "content": prompt}],
         )
 
-        text = response.content[0].text.strip()
+        text = "".join(block.text for block in response.content if block.type == "text").strip()
         # Parse JSON, handling markdown code blocks
         if text.startswith("```"):
             text = text.split("```")[1]

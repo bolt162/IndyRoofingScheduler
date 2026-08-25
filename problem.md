@@ -490,7 +490,7 @@ The following stack is recommended based on the requirements - web-based, scalab
 | ------------------- | --------------------------------------------------------------------------------------- |
 | **Backend**         | Node.js or Python (FastAPI) - both have strong JobNimbus API and Anthropic SDK support  |
 | **Database**        | PostgreSQL - job queue, scheduling history, settings, note logs                         |
-| **AI Layer**        | Anthropic Claude API (claude-sonnet-4-6) - scoring engine and note generation           |
+| **AI Layer**        | Anthropic Claude API (claude-sonnet-5, via ANTHROPIC_MODEL) - scoring engine and note generation |
 | **Maps**            | Google Maps API - geocoding, drive time calculation, map display                        |
 | **Weather Stage 1** | OpenWeatherMap API or Weather.gov - free tier sufficient for daily polling              |
 | **Weather Stage 2** | BamWx API - existing subscription, hyper-local construction forecasts                   |
