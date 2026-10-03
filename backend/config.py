@@ -10,9 +10,15 @@ def _get_secret(key: str, default: str = "") -> str:
 
 
 def _fix_database_url(url: str) -> str:
-    """Fix Railway's postgres:// to postgresql:// (SQLAlchemy requires the latter)."""
-    if url.startswith("postgres://"):
-        return url.replace("postgres://", "postgresql://", 1)
+    """Point Postgres URLs at the psycopg2 driver.
+
+    Railway hands out postgres:// (SQLAlchemy requires postgresql://), and SQLAlchemy 2.1+
+    defaults a bare postgresql:// to psycopg v3, which isn't installed — only
+    psycopg2-binary is. URLs that already name a driver are left alone.
+    """
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg2://" + url[len(prefix):]
     return url
 
 
