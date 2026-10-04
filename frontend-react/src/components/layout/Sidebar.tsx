@@ -5,6 +5,7 @@ import {
   CalendarDays,
   XCircle,
   Settings,
+  Mail,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -21,6 +22,7 @@ const navItems = [
   { to: '/map', label: 'Map View', icon: Map },
   { to: '/plan', label: 'Weekly Plan', icon: CalendarDays },
   { to: '/not-built', label: 'Not Built', icon: XCircle },
+  { to: '/emails', label: 'Customer Emails', icon: Mail },
   { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
