@@ -4,8 +4,10 @@ Primarily READ-ONLY — fetches jobs and notes from JN.
 The ONLY write operation is push_note_to_jn() which creates a note activity
 on a JN job. This is triggered manually by the scheduler (never automatic).
 """
+import html
 import json
 import logging
+import re
 import httpx
 from datetime import datetime
 
@@ -118,11 +120,57 @@ def fetch_contacts_for_job(jn_job_id: str) -> list[dict]:
     return data.get("results", data) if isinstance(data, dict) else data
 
 
+# Activity types that are people writing about the job. Everything else (status changes,
+# automations, emails, task completions, payments) is noise for the note scanner.
+NOTE_ACTIVITY_TYPES = {"note", "phone call", "comment", "comment (migrated)"}
+# Notes the system writes itself; feeding them back to the AI would be circular.
+SYSTEM_NOTE_PREFIXES = ("[SCHEDULER SYSTEM", "[BUILD QUEUE EMAIL")
+MAX_NOTES = 50
+MAX_NOTES_CHARS = 12000
+
+
 def fetch_notes_for_job(jn_job_id: str) -> list[dict]:
-    """Fetch all activity/notes for a JN job."""
-    # JN API uses parent_jnid to filter activities by parent job
-    data = _jn_get("activities", params={"parent_jnid": jn_job_id, "count": 100})
-    return data.get("results", data) if isinstance(data, dict) else data
+    """
+    Fetch the human-written notes on a JN job, newest first.
+
+    JN's activities endpoint ignores a parent_jnid param (it returns every activity in the
+    account) and wraps results in "activity", not "results". Filter on related.id instead.
+    """
+    filt = json.dumps({"must": [{"term": {"related.id": jn_job_id}}]})
+    data = _jn_get("activities", params={"filter": filt, "size": 200})
+    items = data.get("activity", []) if isinstance(data, dict) else []
+    notes = [
+        a for a in items
+        if isinstance(a, dict)
+        and (a.get("record_type_name") or "").strip().lower() in NOTE_ACTIVITY_TYPES
+        and (a.get("note") or "").strip()
+        and not (a.get("note") or "").lstrip().upper().startswith(SYSTEM_NOTE_PREFIXES)
+    ]
+    notes.sort(key=lambda a: a.get("date_created") or 0, reverse=True)
+    return notes[:MAX_NOTES]
+
+
+def _plain(text: str) -> str:
+    text = re.sub(r"<br\s*/?>|</p>", "\n", text or "", flags=re.I)
+    text = html.unescape(re.sub(r"<[^>]+>", " ", text))
+    return "\n".join(re.sub(r"[ \t]+", " ", line).strip() for line in text.splitlines()).strip()
+
+
+def build_notes_raw(description: str, notes: list[dict]) -> str:
+    """Job description plus the most recent notes, capped so a busy job can't run up AI cost."""
+    parts = []
+    if (description or "").strip():
+        parts.append(f"[Job Description] {description.strip()}")
+    total = sum(len(p) for p in parts)
+    for n in notes:
+        text = _plain(n.get("note") or "")
+        if not text:
+            continue
+        if total + len(text) > MAX_NOTES_CHARS:
+            break
+        parts.append(f"[Note] {text}")
+        total += len(text)
+    return "\n---\n".join(parts)
 
 
 TRADE_ALIASES = {
@@ -382,21 +430,13 @@ def sync_jobs_from_jn(db: Session) -> dict:
             mapped = map_jn_job_to_model(jn_data)
             jn_id = mapped["jn_job_id"]
 
-            # Build jn_notes_raw: job description + any JN activities/notes
-            notes_parts = []
+            # Build jn_notes_raw: job description + the job's recent notes
             description = jn_data.get("description") or ""
-            if description.strip():
-                notes_parts.append(f"[Job Description] {description}")
             try:
-                activities = fetch_notes_for_job(jn_id)
-                for n in activities:
-                    if isinstance(n, dict):
-                        note_text = n.get("note") or n.get("description") or ""
-                        if note_text.strip():
-                            notes_parts.append(f"[Note] {note_text}")
+                notes = fetch_notes_for_job(jn_id)
             except Exception:
-                pass
-            jn_notes_raw = "\n---\n".join(notes_parts)
+                notes = []
+            jn_notes_raw = build_notes_raw(description, notes)
 
             existing = db.query(Job).filter(Job.jn_job_id == jn_id).first()
             if existing:

@@ -43,18 +43,10 @@ def reanalyze_job(db: Session, job_id: int) -> dict:
     notes_changed = False
     if job.jn_job_id:
         try:
-            from backend.services.jobnimbus import fetch_notes_for_job
-            activities = fetch_notes_for_job(job.jn_job_id)
-            notes_parts = []
-            description = ""  # JN job description requires job fetch — skip for now (re-sync covers this)
-            if description:
-                notes_parts.append(f"[Job Description] {description}")
-            for n in activities:
-                if isinstance(n, dict):
-                    note_text = n.get("note") or n.get("description") or ""
-                    if note_text.strip():
-                        notes_parts.append(f"[Note] {note_text}")
-            new_notes_raw = "\n---\n".join(notes_parts)
+            from backend.services.jobnimbus import build_notes_raw, fetch_job_by_id, fetch_notes_for_job
+            jn_job = fetch_job_by_id(job.jn_job_id)
+            description = (jn_job or {}).get("description") or "" if isinstance(jn_job, dict) else ""
+            new_notes_raw = build_notes_raw(description, fetch_notes_for_job(job.jn_job_id))
             # Only update if actually changed (preserves existing description if API hiccups)
             if new_notes_raw and new_notes_raw != (job.jn_notes_raw or ""):
                 job.jn_notes_raw = new_notes_raw
