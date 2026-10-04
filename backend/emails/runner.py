@@ -506,3 +506,18 @@ def send_preview(db: Session, now: datetime | None = None, mode: str | None = No
                                     f"Hi {rep.display_name.split()[0]},\n\n" + preview_text(preview, rep.jn_name)), [rep.email])
         reps_sent += 1
     return {"sending": preview["sending"], "reps": reps_sent}
+
+
+def send_samples(db: Session, now: datetime | None = None, mode: str | None = None) -> dict:
+    """Every template for every sample job, to the test recipient only (acceptance check)."""
+    from backend.emails.preview import REPAIR_SEQUENCE, SAMPLES, SEQUENCE
+    rc = RunContext(db, now or datetime.utcnow(), mode)
+    if rc.mode != "test":
+        return {"sent": 0, "error": "samples only send in test mode"}
+    sent = 0
+    for name, ctx in SAMPLES.items():
+        for key in (REPAIR_SEQUENCE if K.is_repair(ctx.track) else SEQUENCE):
+            email = compose(key, ctx)
+            email.subject = f"[{name}] {email.subject}"
+            sent += bool(send(db, None, email, ["sample@example.com"], customer_name=ctx.customer_name, mode="test"))
+    return {"sent": sent}

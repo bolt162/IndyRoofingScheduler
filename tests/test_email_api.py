@@ -115,13 +115,23 @@ def test_unsubscribe_link_works_only_with_valid_token(env, monkeypatch):
     db.close()
 
 
-def test_opt_out_link_appears_in_customer_emails_once_configured(env, monkeypatch):
+def test_opt_out_link_works_with_no_setup(env, monkeypatch):
     client, Session = env
+    monkeypatch.delenv("EMAIL_UNSUBSCRIBE_SECRET", raising=False)
+    monkeypatch.delenv("EMAIL_PUBLIC_BASE_URL", raising=False)
+    import backend.database as database
+    from backend.emails import unsubscribe
+    monkeypatch.setattr(database, "SessionLocal", Session)
+    monkeypatch.setattr(unsubscribe, "_cached", None)
     job_id = add_queued_job(Session)
-    assert "Stop these weekly updates" not in client.get(f"/api/emails/preview/job/{job_id}").json()["html"]
-    monkeypatch.setenv("EMAIL_UNSUBSCRIBE_SECRET", "s3cret")
-    monkeypatch.setenv("EMAIL_PUBLIC_BASE_URL", "https://indyscheduler.top")
-    assert "Stop these weekly updates" in client.get(f"/api/emails/preview/job/{job_id}").json()["html"]
+    html = client.get(f"/api/emails/preview/job/{job_id}").json()["html"]
+    assert "Stop these weekly updates" in html and "https://indyscheduler.top/api/email/unsubscribe?job=" in html
+    link = unsubscribe.link_for(job_id)
+    assert client.get(link.replace("https://indyscheduler.top", "")).status_code == 200
+    from backend.models.settings import SystemSettings
+    db = Session()
+    assert len(db.query(SystemSettings).filter_by(key="email_unsubscribe_secret").one().value) == 64
+    db.close()
 
 
 def test_team_list_seeds_and_updates(env):
@@ -167,3 +177,14 @@ def test_timers_do_nothing_when_mode_is_off(monkeypatch):
     monkeypatch.setattr(R, "run_weekly", lambda db: called.append(1))
     main._email_job("run_weekly")()
     assert called == []
+
+
+
+def test_samples_only_send_in_test_mode(monkeypatch):
+    sent = []
+    monkeypatch.setattr(R, "send", lambda db, job_id, email, to, customer_name="", mode=None: sent.append(email.subject) or True)
+    monkeypatch.setattr(R.team, "seed_team", lambda db: 0)
+    assert R.send_samples(None, mode="live")["sent"] == 0
+    result = R.send_samples(None, mode="test")
+    assert result["sent"] == len(sent) > 80
+    assert any(s.startswith("[low_slope]") for s in sent) and any(s.startswith("[siding_repair]") for s in sent)

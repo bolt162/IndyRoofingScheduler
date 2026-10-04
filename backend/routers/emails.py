@@ -181,6 +181,7 @@ TASKS = {
     "long-wait": runner.run_long_wait_alerts,
     "research": runner.run_research,
     "preview": runner.send_preview,
+    "samples": runner.send_samples,
 }
 
 
