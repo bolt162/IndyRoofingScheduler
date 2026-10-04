@@ -260,6 +260,10 @@ def mark_not_built(job_id: int, request: NotBuiltRequest, db: Session = Depends(
     job.priority_bump += 5.0  # elevated priority on return to queue
     db.commit()
 
+    # Build queue emails: start the same-day reschedule check (never blocks this action)
+    from backend.emails import events as email_events
+    email_events.safely(email_events.on_reschedule, db, job)
+
     # Note 2: Generate not-built note with reason
     from backend.services.notes import generate_not_built_note
     generate_not_built_note(db, job, request.reason, request.detail or "")

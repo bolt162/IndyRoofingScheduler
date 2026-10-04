@@ -34,3 +34,6 @@ frontend-react/.env
 
 # Streamlit (removed)
 .streamlit/secrets.toml
+
+# Local email preview renders
+email-previews/

@@ -349,6 +349,10 @@ def _auto_rollback_job(db: Session, job: Job, weather_detail: str):
     job.priority_bump += 5.0
     db.commit()
 
+    # Build queue emails: start the same-day reschedule check (never blocks the rollback)
+    from backend.emails import events as email_events
+    email_events.safely(email_events.on_reschedule, db, job)
+
     # Generate weather rollback note (stored locally, pushed_to_jn=False)
     generate_weather_rollback_note(db, job, weather_detail)
 

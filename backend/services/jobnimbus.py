@@ -424,6 +424,7 @@ def sync_jobs_from_jn(db: Session) -> dict:
     created = 0
     updated = 0
     errors = []
+    observed = []  # (job, bucket before this sync, raw JN data) for the email hooks
 
     for jn_data in jn_jobs:
         try:
@@ -440,6 +441,7 @@ def sync_jobs_from_jn(db: Session) -> dict:
 
             existing = db.query(Job).filter(Job.jn_job_id == jn_id).first()
             if existing:
+                observed.append((existing, existing.bucket, jn_data))
                 # Detect AI-relevant changes BEFORE applying updates so we can invalidate
                 # the AI cache. Note re-scan is the only mechanism to update AI insights
                 # for an existing job — so any field that affects AI output must trigger it.
@@ -477,12 +479,18 @@ def sync_jobs_from_jn(db: Session) -> dict:
                 job = Job(**mapped)
                 job.last_synced_at = datetime.utcnow()
                 db.add(job)
+                observed.append((job, None, jn_data))
                 created += 1
 
         except Exception as e:
             errors.append({"jn_id": jn_data.get("jnid", "unknown"), "error": str(e)})
 
     db.commit()
+
+    # Build queue emails: record queue entries, newly scheduled jobs, and finished builds.
+    # Wrapped so an email problem can never break the sync.
+    from backend.emails import events as email_events
+    email_events.safely(email_events.after_sync, db, observed)
 
     # --- Orphan reconciliation pass ---
     # Any job in our DB whose jn_job_id was NOT returned in this sync may have
