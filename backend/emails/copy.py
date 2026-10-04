@@ -638,3 +638,49 @@ Address: {job_address}
 
 JobNimbus: {job_link}
 """
+
+
+# ---------------------------------------------------------------------------
+# INTERNAL EMAILS (team only, never customers)
+# ---------------------------------------------------------------------------
+LONG_WAIT_OPS_SUBJECT = "{weeks} weeks in the queue: {customer_name} ({rep_label})"
+LONG_WAIT_OPS_BODY = """
+Greg,
+
+{customer_name} at {job_address} has been in the build queue for {weeks} weeks ({project_word}).
+
+{rep_line}
+
+Rescheduled: {rescheduled_count} times
+
+JobNimbus: {job_link}
+"""
+LONG_WAIT_OPS_REP_LINE = "{rep_name} has been asked to get an update from production and reach out to them personally."
+LONG_WAIT_OPS_NO_REP_LINE = "The rep on this job ({jn_rep}) is no longer with us, so this customer needs someone to reach out."
+
+LONG_WAIT_REP_SUBJECT = "Personal touch needed: {customer_name}, {weeks} weeks waiting"
+LONG_WAIT_REP_BODY = """
+Hi {rep_first},
+
+{customer_name} at {job_address} has been waiting {weeks} weeks for their {project_word}.
+
+Please check with production on where the job stands, then give them a personal call or text to let them know what's going on. A quick check-in from you goes a long way.
+
+Customer phone: {customer_phone}
+
+JobNimbus: {job_link}
+"""
+
+JN_EMAIL_MISSING_SUBJECT = "No scheduling email from JobNimbus: {customer_name}"
+JN_EMAIL_MISSING_BODY = """
+{customer_name} at {job_address} was scheduled, but JobNimbus's "Project Update" scheduling email doesn't show on the job.
+
+Please make sure they get their project date and details. Our fun "you're on the calendar" email still went out{date_note}.
+
+JobNimbus: {job_link}
+"""
+
+RESEARCH_SUBJECT = "New shingle product researched: {product}"
+
+PREVIEW_SUBJECT = "Thursday build queue emails: {count} going out"
+PREVIEW_REP_SUBJECT = "Your customers' Thursday emails: {count} going out"
