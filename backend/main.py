@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from backend.database import engine, Base, SessionLocal
-from backend.routers import jobs, scoring, schedule, settings, weather, auth as auth_router
+from backend.routers import jobs, scoring, schedule, settings, weather, emails, auth as auth_router
 from backend.services.auth import get_approved_user
 from fastapi import Depends
 
@@ -25,6 +25,7 @@ async def lifespan(app: FastAPI):
     from backend.models.note_log import NoteLog  # noqa
     from backend.models.schedule import SchedulePlan  # noqa
     from backend.models.settings import SystemSettings  # noqa
+    from backend.models.email import EmailState, EmailLog, JobEvent, ProductClassification, TeamContact  # noqa
     # No User model — Clerk owns user identity & approval state
 
     Base.metadata.create_all(bind=engine)
@@ -69,6 +70,33 @@ app.include_router(scoring.router, prefix="/api/scoring", tags=["scoring"], depe
 app.include_router(schedule.router, prefix="/api/schedule", tags=["schedule"], dependencies=_protected)
 app.include_router(settings.router, prefix="/api/settings", tags=["settings"], dependencies=_protected)
 app.include_router(weather.router, prefix="/api/weather", tags=["weather"], dependencies=_protected)
+app.include_router(emails.router, prefix="/api/emails", tags=["emails"], dependencies=_protected)
+
+
+# Customer opt-out link from build queue emails. Public on purpose: customers aren't
+# logged in. The signed token means only the link we emailed works.
+@app.get("/api/email/unsubscribe")
+def email_unsubscribe(job: int, t: str):
+    from starlette.responses import HTMLResponse
+    from backend.emails import unsubscribe
+    from backend.emails.events import states_for
+    page = ('<!doctype html><html><body style="font-family:Arial,sans-serif;max-width:520px;margin:60px auto;'
+            'padding:0 16px;color:#111827"><h2>{title}</h2><p>{msg}</p></body></html>')
+    if not unsubscribe.valid(job, t):
+        return HTMLResponse(page.format(title="Link not recognized",
+                                        msg="Please call us at (317) 886-7436 and we'll update your preferences."), 400)
+    db = SessionLocal()
+    try:
+        for st in states_for(db, job).values():
+            st.suppressed = True
+            st.suppressed_reason = "unsubscribed"
+        db.commit()
+    finally:
+        db.close()
+    return HTMLResponse(page.format(
+        title="You're unsubscribed",
+        msg="You won't get any more weekly build updates from us. Your spot in our schedule doesn't change. "
+            "Questions? Call us at (317) 886-7436."))
 
 
 # Health check — must be defined before any catch-all
@@ -333,6 +361,40 @@ def _jn_sync_job():
         db.close()
 
 
+def _email_job(name):
+    """Wrap a build queue email task: own DB session, skipped when EMAIL_MODE=off, never raises."""
+    def run():
+        from backend.emails.config import email_mode
+        from backend.emails import runner
+        if email_mode() == "off":
+            return
+        db = SessionLocal()
+        try:
+            result = getattr(runner, name)(db)
+            logger.info(f"Email task {name}: {result}")
+        except Exception as e:
+            logger.error(f"Email task {name} failed: {e}")
+        finally:
+            db.close()
+    run.__name__ = f"email_{name}"
+    return run
+
+
+def _add_email_jobs(scheduler, CronTrigger):
+    """Build queue customer emails (all times America/Indiana/Indianapolis)."""
+    jobs = [
+        ("run_research", CronTrigger(hour=9, minute=0), "Email: research new shingle products"),
+        ("run_long_wait_alerts", CronTrigger(day_of_week="mon-fri", hour=9, minute=15), "Email: long-wait alerts"),
+        ("run_weekly", CronTrigger(day_of_week="thu", hour=10, minute=0), "Email: Thursday weekly update"),
+        ("run_welcomes", CronTrigger(day_of_week="mon-wed,fri-sun", hour=10, minute=0), "Email: welcomes"),
+        ("send_preview", CronTrigger(day_of_week="wed", hour=14, minute=0), "Email: Wednesday preview"),
+        ("run_reschedule_checks", CronTrigger(hour=17, minute=0), "Email: same-day reschedule check"),
+        ("run_scheduled_emails", CronTrigger(hour="8-19", minute="*/30"), "Email: you're on the calendar"),
+    ]
+    for name, trigger, label in jobs:
+        scheduler.add_job(_email_job(name), trigger, id=f"email_{name}", name=label, misfire_grace_time=3600)
+
+
 def _start_scheduler():
     """Start APScheduler for weather checks (spec §6.2, §6.4) and JN sync polling."""
     try:
@@ -404,6 +466,8 @@ def _start_scheduler():
             id="secondary_trade_escalation", name="Secondary Trade Escalation",
             misfire_grace_time=3600,
         )
+
+        _add_email_jobs(scheduler, CronTrigger)
 
         scheduler.start()
         logger.info(

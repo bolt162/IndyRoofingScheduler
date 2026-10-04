@@ -414,7 +414,7 @@ def _label(template: str | None) -> str:
 
 def build_preview(db: Session, thursday: datetime | None = None, mode: str | None = None) -> dict:
     """What Thursday's send will do, without sending or changing progress."""
-    now = thursday or next_thursday_10am()
+    now = thursday or coming_thursday_10am()
     rc = RunContext(db, now, mode)
     plans = plan_weekly(rc)
     rows = []
@@ -438,6 +438,17 @@ def build_preview(db: Session, thursday: datetime | None = None, mode: str | Non
     # Planning never advances anyone's sequence (only a real send does), so nothing to undo
     return {"for": now.isoformat(), "rows": rows, "sending": len(sending), "fix": fix,
             "long_wait": sorted(long_wait, key=lambda r: -r["weeks"])}
+
+
+def coming_thursday_10am(now: datetime | None = None) -> datetime:
+    """The Thursday send that hasn't happened yet: today if it's Thursday before 10:00."""
+    from datetime import timezone
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo("America/Indiana/Indianapolis")
+    local = (now.replace(tzinfo=timezone.utc) if now else datetime.now(timezone.utc)).astimezone(tz)
+    if local.weekday() == 3 and local.hour < 10:
+        return local.replace(hour=10, minute=0, second=0, microsecond=0).astimezone(timezone.utc).replace(tzinfo=None)
+    return next_thursday_10am(now)
 
 
 def next_thursday_10am(now: datetime | None = None) -> datetime:
