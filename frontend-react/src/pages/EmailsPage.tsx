@@ -44,6 +44,16 @@ export function EmailsPage() {
           </span>
         )}
       </div>
+      {status && status.mode === 'off' && status.mode_setting && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          EMAIL_MODE in Railway is set to "{status.mode_setting}", which isn't recognized. Use exactly test, live, or off.
+        </div>
+      )}
+      {status && status.mode !== 'off' && !status.smtp_ready && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          The email login (SMTP_USER / SMTP_PASS) isn't set in Railway, so nothing can actually send yet.
+        </div>
+      )}
       <Tabs defaultValue="thursday">
         <TabsList>
           <TabsTrigger value="thursday">This Thursday</TabsTrigger>

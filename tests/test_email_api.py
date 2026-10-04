@@ -188,3 +188,17 @@ def test_samples_only_send_in_test_mode(monkeypatch):
     result = R.send_samples(None, mode="test")
     assert result["sent"] == len(sent) > 80
     assert any(s.startswith("[low_slope]") for s in sent) and any(s.startswith("[siding_repair]") for s in sent)
+
+
+@pytest.mark.parametrize("raw,mode", [("test", "test"), ('"test"', "test"), (" Test ", "test"), ("'live'", "live"), ("tset", "off")])
+def test_email_mode_tolerates_quotes_and_spaces(monkeypatch, raw, mode):
+    from backend.emails.config import email_mode
+    monkeypatch.setenv("EMAIL_MODE", raw)
+    assert email_mode() == mode
+
+
+def test_status_shows_what_railway_sent(env, monkeypatch):
+    client, _ = env
+    monkeypatch.setenv("EMAIL_MODE", "tset")
+    s = client.get("/api/emails/status").json()
+    assert s["mode"] == "off" and s["mode_setting"] == "tset"

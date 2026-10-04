@@ -14,6 +14,9 @@ export interface EmailLogRow {
 
 export interface EmailStatus {
   mode: 'off' | 'test' | 'live';
+  mode_setting: string | null;
+  smtp_ready: boolean;
+  test_recipient: string | null;
   weather_slowdown_date: string | null;
   next_thursday: string;
   recent: EmailLogRow[];

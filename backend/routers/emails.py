@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.emails import research, runner, team
-from backend.emails.config import email_mode
+from backend.emails.config import email_mode, email_mode_raw, smtp_settings, test_recipient
 from backend.emails.events import states_for
 from backend.models.email import EmailLog, ProductClassification, TeamContact
 from backend.models.job import Job
@@ -31,6 +31,10 @@ def status(db: Session = Depends(get_db)):
     weather = db.query(SystemSettings).filter(SystemSettings.key == WEATHER_KEY).first()
     return {
         "mode": email_mode(),
+        # What the server actually received, so a mistyped Railway value is easy to spot
+        "mode_setting": email_mode_raw(),
+        "smtp_ready": bool(smtp_settings()["user"] and smtp_settings()["password"]),
+        "test_recipient": test_recipient() or None,
         "weather_slowdown_date": weather.value if weather and weather.value else None,
         "next_thursday": runner.coming_thursday_10am().isoformat(),
         "recent": [{"at": l.created_at.isoformat(), "job_id": l.job_id, "template": l.template,
