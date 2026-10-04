@@ -19,7 +19,7 @@ THU = datetime(2026, 10, 8, 14, 0)  # Thursday 10:00 Eastern, stored as UTC
 def db():
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
-    session = sessionmaker(bind=engine)()
+    session = sessionmaker(bind=engine, autocommit=False, autoflush=False)()
     yield session
     session.close()
 
@@ -316,3 +316,17 @@ def test_builds_completed_week_counts_finished_roofs(db, jn):
 def test_next_thursday_is_10am_indianapolis_year_round():
     assert R.next_thursday_10am(datetime(2026, 10, 5, 12)) == datetime(2026, 10, 8, 14, 0)   # EDT
     assert R.next_thursday_10am(datetime(2026, 12, 7, 12)) == datetime(2026, 12, 10, 15, 0)  # EST
+
+
+def test_preview_works_when_no_progress_records_exist_yet(db, jn, outbox):
+    """Production's first page load: jobs synced, but no email state rows created yet."""
+    for i in range(3):
+        job = Job(customer_name=f"Fresh{i} Owner", address="x", bucket="to_schedule", jn_status="Schedule Job",
+                  primary_trade="roofing", sales_rep="Nick Smith", rescheduled_count=0, jn_job_id=f"jn-fresh{i}")
+        db.add(job)
+        db.commit()
+        jn["details"][job.jn_job_id] = JobDetails(jnid=job.jn_job_id, is_commercial=False, first_name="F",
+                                                  customer_email="f@example.com")
+    preview = R.build_preview(db, THU, mode="test")
+    assert len(preview["rows"]) == 3
+    assert db.query(EmailState).count() == 6  # one test + one live row per job, no duplicates

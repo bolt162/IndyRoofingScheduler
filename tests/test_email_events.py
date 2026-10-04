@@ -18,7 +18,7 @@ NOW = datetime(2026, 10, 8, 15, 0)
 def db():
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
-    session = sessionmaker(bind=engine)()
+    session = sessionmaker(bind=engine, autocommit=False, autoflush=False)()
     yield session
     session.close()
 

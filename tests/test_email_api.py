@@ -20,7 +20,7 @@ from backend.services.auth import ClerkUser, get_admin_user, get_approved_user
 def env(monkeypatch):
     engine = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
     Base.metadata.create_all(engine)
-    Session = sessionmaker(bind=engine)
+    Session = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     monkeypatch.setattr(main, "SessionLocal", Session)
 
     def db_override():

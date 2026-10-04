@@ -19,7 +19,7 @@ from backend.models.email import ProductClassification
 def db():
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine, tables=[ProductClassification.__table__])
-    session = sessionmaker(bind=engine)()
+    session = sessionmaker(bind=engine, autocommit=False, autoflush=False)()
     yield session
     session.close()
 

@@ -16,7 +16,7 @@ from backend.models.email import TeamContact
 def db():
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine, tables=[TeamContact.__table__])
-    session = sessionmaker(bind=engine)()
+    session = sessionmaker(bind=engine, autocommit=False, autoflush=False)()
     T.seed_team(session)
     yield session
     session.close()

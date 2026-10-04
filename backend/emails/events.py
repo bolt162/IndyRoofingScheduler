@@ -25,10 +25,16 @@ DONE_BUCKETS = {"other_trades", "primary_completed", "completed"}
 def states_for(db: Session, job_id: int) -> dict[str, EmailState]:
     """The job's test and live email state rows, created if missing."""
     rows = {r.mode: r for r in db.query(EmailState).filter(EmailState.job_id == job_id).all()}
+    created = False
     for mode in MODES:
         if mode not in rows:
             rows[mode] = S.new_state(job_id, mode)
             db.add(rows[mode])
+            created = True
+    if created:
+        # Production sessions don't autoflush: write the new rows now so the next lookup
+        # for this job finds them instead of creating duplicates
+        db.flush()
     return rows
 
 
