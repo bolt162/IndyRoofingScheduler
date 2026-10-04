@@ -18,6 +18,9 @@ Safety:
 """
 import logging
 import os
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 
@@ -70,6 +73,25 @@ class Planned:
 # Shared setup
 # ---------------------------------------------------------------------------
 
+# JobNimbus lookups are cached briefly across runs so the office page refreshes instantly
+_DETAILS_TTL = 300
+_details_cache: dict[str, tuple[float, JobDetails]] = {}
+_cache_lock = threading.Lock()
+
+
+def _cached_details(jnid: str) -> JobDetails:
+    now = time.time()
+    with _cache_lock:
+        hit = _details_cache.get(jnid)
+        if hit and now - hit[0] < _DETAILS_TTL:
+            return hit[1]
+    d = fetch_job_details(jnid)
+    if not d.errors:
+        with _cache_lock:
+            _details_cache[jnid] = (now, d)
+    return d
+
+
 class RunContext:
     """Per-run caches so each JobNimbus job is fetched once."""
 
@@ -85,15 +107,29 @@ class RunContext:
         if not job.jn_job_id:
             return JobDetails(jnid="")
         if job.jn_job_id not in self._details:
-            self._details[job.jn_job_id] = fetch_job_details(job.jn_job_id)
+            self._details[job.jn_job_id] = _cached_details(job.jn_job_id)
         return self._details[job.jn_job_id]
+
+    def prefetch(self, jobs: list[Job]) -> None:
+        """Look up many jobs in JobNimbus at once instead of one after another."""
+        todo = [j.jn_job_id for j in jobs if j.jn_job_id and j.jn_job_id not in self._details]
+        if not todo:
+            return
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for jnid, d in zip(todo, pool.map(_cached_details, todo)):
+                self._details[jnid] = d
 
     def state(self, job: Job) -> EmailState:
         return states_for(self.db, job.id)[self.smode]
 
 
+# Buckets a job can be waiting in (scheduled covers a reschedule still waiting on a new date)
+CANDIDATE_BUCKETS = ("to_schedule", "scheduled", "pending_confirmation", "not_built")
+
+
 def tracked_jobs(db: Session) -> list[Job]:
-    return [j for j in db.query(Job).filter(Job.bucket != "archived").all() if S.track_for(j.primary_trade)]
+    jobs = db.query(Job).filter(Job.bucket.in_(CANDIDATE_BUCKETS)).all()
+    return [j for j in jobs if S.track_for(j.primary_trade)]
 
 
 def _queue_order_key(job: Job, state: EmailState):
@@ -198,6 +234,7 @@ def plan_weekly(rc: RunContext) -> list[Planned]:
     jobs = tracked_jobs(rc.db)
     ahead = jobs_ahead_map(rc, jobs)
     wx = weather_on(rc.db, rc.now)
+    rc.prefetch([j for j in jobs if j.id in ahead])
     plans = []
     for job in jobs:
         st = rc.state(job)

@@ -62,7 +62,7 @@ export function EmailsPage() {
 
 function ThursdayTab() {
   const { data: status } = useEmailStatus();
-  const { data: preview, isLoading } = useEmailPreview();
+  const { data: preview, isLoading, isError, refetch } = useEmailPreview();
   const weather = useWeatherToggle();
   const pause = usePauseJob();
   const sendNow = useSendPreviewNow();
@@ -148,7 +148,17 @@ function ThursdayTab() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading && <TableRow><TableCell colSpan={6}>Building preview...</TableCell></TableRow>}
+              {isLoading && (
+                <TableRow><TableCell colSpan={6}>Looking up every queued customer in JobNimbus. This can take up to a minute...</TableCell></TableRow>
+              )}
+              {isError && (
+                <TableRow><TableCell colSpan={6} className="text-red-700">
+                  Couldn't build the preview. <Button size="sm" variant="outline" onClick={() => refetch()}>Try again</Button>
+                </TableCell></TableRow>
+              )}
+              {preview && preview.rows.length === 0 && (
+                <TableRow><TableCell colSpan={6}>No customers in the build queue yet. The JobNimbus sync runs every 15 minutes.</TableCell></TableRow>
+              )}
               {preview?.rows.map((r) => {
                 const paused = r.reason.startsWith('suppressed');
                 return (
