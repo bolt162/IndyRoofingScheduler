@@ -32,7 +32,7 @@ from backend.emails import markup, research, selector as S, team
 from backend.emails.compose import ComposedEmail, EmailContext, compose
 from backend.emails.config import email_mode, office_alert_recipient
 from backend.emails.events import DONE_BUCKETS, states_for
-from backend.emails.jn_data import JobDetails, contact_matches, fetch_job_details, jn_schedule_email_sent
+from backend.emails.jn_data import JobDetails, fetch_job_details, jn_schedule_email_sent
 from backend.emails.sender import send
 from backend.models.email import EmailLog, EmailState, JobEvent, TeamContact
 from backend.models.job import Job
@@ -188,7 +188,6 @@ def build_context(rc: RunContext, job: Job, state: EmailState, jobs_ahead: int |
         jobs_ahead=jobs_ahead or 0, jobs_ahead_last_week=state.last_jobs_ahead,
         builds_completed_week=builds_completed_week(rc.db, rc.now, job.primary_trade or ""),
         rescheduled_count=job.rescheduled_count or 0, scheduled_date=d.start_date,
-        contact_mismatch="" if contact_matches(job.customer_name, d.contact_name) else d.contact_name,
     )
     return ctx, notes
 
@@ -465,8 +464,7 @@ def build_preview(db: Session, thursday: datetime | None = None, mode: str | Non
             "notes": p.notes,
         })
     sending = [r for r in rows if r["template"]]
-    fix = [r for r in rows if r["reason"] in ("no customer email", "commercial/residential unknown")
-           or r["reason"].startswith("main contact on the job")]
+    fix = [r for r in rows if r["reason"] in ("no customer email", "commercial/residential unknown")]
     long_wait = []
     for job in tracked_jobs(db):
         st = rc.state(job)

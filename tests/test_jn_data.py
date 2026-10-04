@@ -116,15 +116,3 @@ def test_jn_schedule_email_detection(monkeypatch):
     assert not J.jn_schedule_email_sent("j1", since=datetime.fromtimestamp(1790000000 + 86400))
 
 
-
-@pytest.mark.parametrize("customer,contact,ok", [
-    ("David Huebner", "Desi Tunny", False),       # real case from the first test send
-    ("Paramijit Bhogal", "Cregg Fisher", False),  # real case from the first test send
-    ("Jane Smith", "Jane Smith", True),
-    ("John & Jane Smith", "Jane Smith", True),
-    ("Jacob Smith*", "Jacob Smith", True),
-    ("Smith Residence", "Bob Smith", True),
-    ("Jane Smith", "", True),                     # nothing to compare: don't block
-])
-def test_contact_matches(customer, contact, ok):
-    assert J.contact_matches(customer, contact) is ok

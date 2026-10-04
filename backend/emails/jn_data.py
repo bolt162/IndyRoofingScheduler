@@ -40,7 +40,9 @@ class JobDetails:
     is_commercial: bool | None = None
     start_date: date | None = None
     first_name: str = ""
-    contact_name: str = ""     # the job's main contact, "First Last"
+    # The job's main contact, "First Last". Emails go to this person even when it isn't the
+    # customer named on the job (realtors, family members): that's intentional (Aaron, 2026-10-04).
+    contact_name: str = ""
     customer_email: str = ""
     customer_phone: str = ""
     materials: Materials = field(default_factory=Materials)
@@ -129,20 +131,6 @@ def parse_materials(items: list[dict]) -> Materials:
 # ---------------------------------------------------------------------------
 # JobNimbus lookups
 # ---------------------------------------------------------------------------
-
-def contact_matches(customer_name: str, contact_name: str) -> bool:
-    """
-    Does the job's main contact look like the customer on the job? JobNimbus names jobs after
-    the contact when they're created, so a different person here usually means the job got
-    attached to the wrong contact. If either name is missing, don't block.
-    """
-    def words(s):
-        return {w for w in re.findall(r"[a-z]+", (s or "").lower()) if len(w) >= 2}
-    contact, customer = words(contact_name), words(customer_name)
-    if not contact or not customer:
-        return True
-    return bool(contact & customer)
-
 
 def _filter_related(jnid: str) -> str:
     return json.dumps({"must": [{"term": {"related.id": jnid}}]})
