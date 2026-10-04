@@ -330,3 +330,16 @@ def test_preview_works_when_no_progress_records_exist_yet(db, jn, outbox):
     preview = R.build_preview(db, THU, mode="test")
     assert len(preview["rows"]) == 3
     assert db.query(EmailState).count() == 6  # one test + one live row per job, no duplicates
+
+
+
+def test_wrong_contact_on_job_is_skipped_and_listed_to_fix(db, jn, outbox):
+    job = add_job(db, jn, "David Huebner", entered=THU - timedelta(days=30))
+    jn["details"][job.jn_job_id].first_name = "Desi"
+    jn["details"][job.jn_job_id].contact_name = "Desi Tunny"
+    preview = R.build_preview(db, THU, mode="test")
+    assert preview["rows"][0]["template"] is None
+    assert [r["customer"] for r in preview["fix"]] == ["David Huebner"]
+    assert "Desi Tunny" in preview["fix"][0]["reason"]
+    R.run_weekly(db, THU, mode="test")
+    assert outbox == []

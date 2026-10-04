@@ -171,6 +171,14 @@ def test_all_email_timers_are_registered():
     assert "day_of_week='wed'" in s.jobs["email_send_preview"][1]
 
 
+def test_every_timer_runs_on_indianapolis_time():
+    """CronTrigger ignores the scheduler's timezone; each one must name it (server runs UTC)."""
+    src = open(main.__file__, encoding="utf-8").read().splitlines()
+    lines = [l for l in src if "CronTrigger(" in l and "import" not in l and "def " not in l]
+    assert len(lines) >= 11
+    assert all("timezone=SCHEDULER_TZ" in l for l in lines), [l for l in lines if "SCHEDULER_TZ" not in l]
+
+
 def test_timers_do_nothing_when_mode_is_off(monkeypatch):
     monkeypatch.delenv("EMAIL_MODE", raising=False)
     called = []

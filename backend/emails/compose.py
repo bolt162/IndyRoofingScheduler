@@ -60,6 +60,7 @@ class EmailContext:
     rescheduled_count: int = 0
     scheduled_date: date | None = None        # JobNimbus start date, for the scheduled email
     jn_schedule_email_sent: bool = True       # did JobNimbus's official email go out?
+    contact_mismatch: str = ""                # main contact's name when it isn't the customer
 
 
 @dataclass

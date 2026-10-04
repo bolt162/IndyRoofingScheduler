@@ -380,16 +380,21 @@ def _email_job(name):
     return run
 
 
+# CronTrigger ignores the scheduler's timezone and falls back to the server's (UTC on
+# Railway), so every trigger must name Indianapolis explicitly.
+SCHEDULER_TZ = "America/Indiana/Indianapolis"
+
+
 def _add_email_jobs(scheduler, CronTrigger):
     """Build queue customer emails (all times America/Indiana/Indianapolis)."""
     jobs = [
-        ("run_research", CronTrigger(hour=9, minute=0), "Email: research new shingle products"),
-        ("run_long_wait_alerts", CronTrigger(day_of_week="mon-fri", hour=9, minute=15), "Email: long-wait alerts"),
-        ("run_weekly", CronTrigger(day_of_week="thu", hour=10, minute=0), "Email: Thursday weekly update"),
-        ("run_welcomes", CronTrigger(day_of_week="mon-wed,fri-sun", hour=10, minute=0), "Email: welcomes"),
-        ("send_preview", CronTrigger(day_of_week="wed", hour=14, minute=0), "Email: Wednesday preview"),
-        ("run_reschedule_checks", CronTrigger(hour=17, minute=0), "Email: same-day reschedule check"),
-        ("run_scheduled_emails", CronTrigger(hour="8-19", minute="*/30"), "Email: you're on the calendar"),
+        ("run_research", CronTrigger(hour=9, minute=0, timezone=SCHEDULER_TZ), "Email: research new shingle products"),
+        ("run_long_wait_alerts", CronTrigger(day_of_week="mon-fri", hour=9, minute=15, timezone=SCHEDULER_TZ), "Email: long-wait alerts"),
+        ("run_weekly", CronTrigger(day_of_week="thu", hour=10, minute=0, timezone=SCHEDULER_TZ), "Email: Thursday weekly update"),
+        ("run_welcomes", CronTrigger(day_of_week="mon-wed,fri-sun", hour=10, minute=0, timezone=SCHEDULER_TZ), "Email: welcomes"),
+        ("send_preview", CronTrigger(day_of_week="wed", hour=14, minute=0, timezone=SCHEDULER_TZ), "Email: Wednesday preview"),
+        ("run_reschedule_checks", CronTrigger(hour=17, minute=0, timezone=SCHEDULER_TZ), "Email: same-day reschedule check"),
+        ("run_scheduled_emails", CronTrigger(hour="8-19", minute="*/30", timezone=SCHEDULER_TZ), "Email: you're on the calendar"),
     ]
     for name, trigger, label in jobs:
         scheduler.add_job(_email_job(name), trigger, id=f"email_{name}", name=label, misfire_grace_time=3600)
@@ -427,7 +432,7 @@ def _start_scheduler():
         morning_h, morning_m = morning_time.split(":")
         night_h, night_m = night_time.split(":")
 
-        scheduler = AsyncIOScheduler(timezone="America/Indiana/Indianapolis")
+        scheduler = AsyncIOScheduler(timezone=SCHEDULER_TZ)
 
         # --- JN Sync (interval-based) ---
         scheduler.add_job(
@@ -440,19 +445,19 @@ def _start_scheduler():
         # --- Weather checks (cron-based) ---
         # Morning check (default 6:00 AM)
         scheduler.add_job(
-            morning_weather_check, CronTrigger(hour=int(morning_h), minute=int(morning_m)),
+            morning_weather_check, CronTrigger(hour=int(morning_h), minute=int(morning_m), timezone=SCHEDULER_TZ),
             id="morning_weather", name="Morning Weather Check",
             misfire_grace_time=3600,
         )
         # Night-before check (default 8:00 PM — spec §6.4)
         scheduler.add_job(
-            night_before_check, CronTrigger(hour=int(night_h), minute=int(night_m)),
+            night_before_check, CronTrigger(hour=int(night_h), minute=int(night_m), timezone=SCHEDULER_TZ),
             id="night_before_weather", name="Night-Before Weather Check",
             misfire_grace_time=3600,
         )
         # 5am spot check (spec §6.2 line 255)
         scheduler.add_job(
-            five_am_spot_check, CronTrigger(hour=5, minute=0),
+            five_am_spot_check, CronTrigger(hour=5, minute=0, timezone=SCHEDULER_TZ),
             id="five_am_weather", name="5am Spot Check",
             misfire_grace_time=3600,
         )
@@ -462,7 +467,7 @@ def _start_scheduler():
         # escalate higher at 10 days. Generates warning/escalation notes once per job per level.
         from backend.services.secondary_trade_escalation import run_daily_escalation_check
         scheduler.add_job(
-            run_daily_escalation_check, CronTrigger(hour=8, minute=0),
+            run_daily_escalation_check, CronTrigger(hour=8, minute=0, timezone=SCHEDULER_TZ),
             id="secondary_trade_escalation", name="Secondary Trade Escalation",
             misfire_grace_time=3600,
         )

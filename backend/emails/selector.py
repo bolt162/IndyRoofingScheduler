@@ -81,6 +81,8 @@ def _gate(ctx: EmailContext, state: EmailState) -> str | None:
         return "commercial"
     if not ctx.customer_email:
         return "no customer email"
+    if ctx.contact_mismatch:
+        return f"main contact on the job is {ctx.contact_mismatch}, not the customer"
     return None
 
 

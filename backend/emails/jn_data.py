@@ -40,6 +40,7 @@ class JobDetails:
     is_commercial: bool | None = None
     start_date: date | None = None
     first_name: str = ""
+    contact_name: str = ""     # the job's main contact, "First Last"
     customer_email: str = ""
     customer_phone: str = ""
     materials: Materials = field(default_factory=Materials)
@@ -129,6 +130,20 @@ def parse_materials(items: list[dict]) -> Materials:
 # JobNimbus lookups
 # ---------------------------------------------------------------------------
 
+def contact_matches(customer_name: str, contact_name: str) -> bool:
+    """
+    Does the job's main contact look like the customer on the job? JobNimbus names jobs after
+    the contact when they're created, so a different person here usually means the job got
+    attached to the wrong contact. If either name is missing, don't block.
+    """
+    def words(s):
+        return {w for w in re.findall(r"[a-z]+", (s or "").lower()) if len(w) >= 2}
+    contact, customer = words(contact_name), words(customer_name)
+    if not contact or not customer:
+        return True
+    return bool(contact & customer)
+
+
 def _filter_related(jnid: str) -> str:
     return json.dumps({"must": [{"term": {"related.id": jnid}}]})
 
@@ -171,6 +186,8 @@ def fetch_job_details(jnid: str, with_materials: bool = True) -> JobDetails:
             c = _jn_get(f"contacts/{contact_id}")
             d.first_name = (c.get("first_name") or "").strip().title() if (c.get("first_name") or "").isupper() \
                 else (c.get("first_name") or "").strip()
+            d.contact_name = " ".join(p for p in ((c.get("first_name") or "").strip(),
+                                                   (c.get("last_name") or "").strip()) if p)
             d.customer_email = (c.get("email") or "").strip()
             d.customer_phone = (c.get("mobile_phone") or c.get("home_phone") or c.get("work_phone") or "").strip()
     except Exception as e:  # noqa: BLE001
