@@ -17,7 +17,7 @@ from backend.emails.events import states_for
 from backend.models.email import EmailLog, ProductClassification, TeamContact
 from backend.models.job import Job
 from backend.models.settings import SystemSettings
-from backend.services.auth import ClerkUser, get_admin_user, get_approved_user
+from backend.services.auth import ClerkUser, get_approved_user, get_owner_or_admin
 
 router = APIRouter()
 
@@ -175,7 +175,7 @@ def review_product(row_id: int, body: ProductReview, db: Session = Depends(get_d
     return {"id": row.id, "status": row.status}
 
 
-# --- Run by hand (admin) ---------------------------------------------------
+# --- Run by hand (owner or admin) ---------------------------------------------------
 
 TASKS = {
     "weekly": runner.run_weekly,
@@ -190,7 +190,7 @@ TASKS = {
 
 
 @router.post("/run/{task}")
-def run_task(task: str, db: Session = Depends(get_db), user: ClerkUser = Depends(get_admin_user)):
+def run_task(task: str, db: Session = Depends(get_db), user: ClerkUser = Depends(get_owner_or_admin)):
     if task not in TASKS:
         raise HTTPException(404, f"Unknown task. Choose one of: {', '.join(TASKS)}")
     return {"task": task, "mode": email_mode(), "result": TASKS[task](db)}

@@ -23,7 +23,7 @@ from typing import Any
 
 import httpx
 import jwt
-from fastapi import HTTPException, Request, status
+from fastapi import Depends, HTTPException, Request, status
 from jwt import PyJWKClient
 
 from backend.config import settings
@@ -187,6 +187,29 @@ def get_approved_user(request: Request) -> ClerkUser:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Account pending approval. Please contact the administrator.",
         )
+    request.state.user = user
+    from backend import activity  # record who did what on this request's log row
+    run = activity.current_run()
+    if run is not None:
+        run.actor = user.email or user.sub
+    return user
+
+
+def owner_emails() -> set[str]:
+    """The business owner(s), who always have admin powers (OWNER_EMAILS, comma separated)."""
+    import os
+    raw = os.getenv("OWNER_EMAILS", "aaron@indyroofandrestoration.com")
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
+def is_owner_or_admin(user: ClerkUser) -> bool:
+    return user.admin or (user.email or "").lower() in owner_emails()
+
+
+def get_owner_or_admin(user: ClerkUser = Depends(get_approved_user)) -> ClerkUser:
+    """For the most sensitive things: the activity log, wiping data, sending by hand."""
+    if not is_owner_or_admin(user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Owner or admin access required")
     return user
 
 

@@ -70,14 +70,16 @@ Extract and return a JSON object with these fields:
 Return ONLY valid JSON. No explanation text."""
 
     try:
-        response = client.messages.create(
-            model=settings.ANTHROPIC_MODEL,
-            max_tokens=500,
-            # Sonnet 5+ runs adaptive thinking by default; keep it off so the
-            # response is a single text block and max_tokens isn't eaten by thinking.
-            thinking={"type": "disabled"},
-            messages=[{"role": "user", "content": prompt}],
-        )
+        from backend import activity
+        with activity.call("claude", "note scan"):
+            response = client.messages.create(
+                model=settings.ANTHROPIC_MODEL,
+                max_tokens=500,
+                # Sonnet 5+ runs adaptive thinking by default; keep it off so the
+                # response is a single text block and max_tokens isn't eaten by thinking.
+                thinking={"type": "disabled"},
+                messages=[{"role": "user", "content": prompt}],
+            )
 
         text = "".join(block.text for block in response.content if block.type == "text").strip()
         # Parse JSON, handling markdown code blocks

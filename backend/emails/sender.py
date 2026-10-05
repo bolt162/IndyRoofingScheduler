@@ -21,6 +21,10 @@ logger = logging.getLogger("emails")
 
 def _log(db: Session | None, job_id, email: ComposedEmail, recipient: str, mode: str,
          result: str, detail: str = "") -> None:
+    from backend import activity
+    activity.write("email", "smtp", f"{email.template}: {email.subject}",
+                   status={"sent": "ok", "failed": "error"}.get(result, "skipped"), job_id=job_id,
+                   detail=f"to {recipient or '(none)'} | mode {mode}" + (f" | {detail}" if detail else ""))
     if db is None:
         return
     db.add(EmailLog(job_id=job_id, template=email.template, recipient=recipient,
@@ -65,11 +69,13 @@ def send(db: Session | None, job_id: int | None, email: ComposedEmail, to: list[
     msg.set_content(email.text)
     msg.add_alternative(email.html, subtype="html")
 
+    from backend import activity
     try:
-        with smtplib.SMTP(cfg["host"], cfg["port"], timeout=30) as smtp:
-            smtp.starttls()
-            smtp.login(cfg["user"], cfg["password"])
-            smtp.send_message(msg)
+        with activity.call("smtp", "send"):
+            with smtplib.SMTP(cfg["host"], cfg["port"], timeout=30) as smtp:
+                smtp.starttls()
+                smtp.login(cfg["user"], cfg["password"])
+                smtp.send_message(msg)
     except Exception as e:
         logger.error(f"Email send failed (job {job_id}, {email.template}): {e}")
         _log(db, job_id, email, ", ".join(recipients), mode, "failed", str(e)[:1000])

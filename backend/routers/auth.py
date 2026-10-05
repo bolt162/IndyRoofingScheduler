@@ -17,7 +17,7 @@ all of that on the frontend.
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from backend.services.auth import ClerkUser, get_current_user
+from backend.services.auth import ClerkUser, get_current_user, is_owner_or_admin
 
 
 router = APIRouter()
@@ -29,6 +29,7 @@ class UserMeResponse(BaseModel):
     name: str = ""
     approved: bool = False
     admin: bool = False
+    owner_or_admin: bool = False
 
 
 @router.get("/me", response_model=UserMeResponse)
@@ -44,4 +45,5 @@ def get_me(current_user: ClerkUser = Depends(get_current_user)):
         name=current_user.name,
         approved=current_user.approved,
         admin=current_user.admin,
+        owner_or_admin=current_user.approved and is_owner_or_admin(current_user),
     )

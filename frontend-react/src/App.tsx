@@ -9,6 +9,7 @@ import { WeeklyPlanPage } from '@/pages/WeeklyPlanPage';
 import { NotBuiltPage } from '@/pages/NotBuiltPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 import { EmailsPage } from '@/pages/EmailsPage';
+import { ActivityPage } from '@/pages/ActivityPage';
 import { LoginPage } from '@/pages/LoginPage';
 import { PendingApprovalPage } from '@/pages/PendingApprovalPage';
 import './App.css';
@@ -35,6 +36,7 @@ const queryClient = new QueryClient({
  *       /plan            — Weekly Plan
  *       /not-built       — Not Built workflow
  *       /emails          — Customer emails (Thursday preview, team, products, log)
+ *       /activity        — Activity log (owner/admin only)
  *       /settings        — Settings
  *
  * Deep-linking to /settings while signed-out lands on /login, then redirects
@@ -55,6 +57,7 @@ export default function App() {
                 <Route path="/plan" element={<WeeklyPlanPage />} />
                 <Route path="/not-built" element={<NotBuiltPage />} />
                 <Route path="/emails" element={<EmailsPage />} />
+                <Route path="/activity" element={<ActivityPage />} />
                 <Route path="/settings" element={<SettingsPage />} />
               </Route>
             </Route>

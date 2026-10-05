@@ -55,7 +55,16 @@ def push_note_to_jn(jn_job_id: str, note_text: str) -> dict:
         "record_type_name": "Note",
         "note": note_text,
     }
-    return _jn_post("activities", body)
+    from backend import activity
+    first_line = (note_text or "").strip().splitlines()[0][:120] if (note_text or "").strip() else ""
+    try:
+        result = _jn_post("activities", body)
+    except Exception as e:
+        activity.write("note", "jobnimbus", "Note to JobNimbus failed", status="error",
+                       detail=f"JN job {jn_job_id}: {type(e).__name__}: {e}")
+        raise
+    activity.write("note", "jobnimbus", "Note added to JobNimbus job", detail=f"JN job {jn_job_id}: {first_line}")
+    return result
 
 
 def fetch_jobs_at_status(status_label: str = "Schedule Job") -> list[dict]:

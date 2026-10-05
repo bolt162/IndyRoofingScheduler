@@ -16,6 +16,7 @@ export interface BackendMe {
   name: string;
   approved: boolean;
   admin: boolean;
+  owner_or_admin: boolean;
 }
 
 /**

@@ -144,10 +144,11 @@ def test_team_list_seeds_and_updates(env):
     assert r["phone"] == "(317) 555-0000"
 
 
-def test_running_a_send_by_hand_needs_admin(env):
+def test_running_a_send_by_hand_needs_owner_or_admin(env):
     client, _ = env
-    assert client.post("/api/emails/run/weekly").status_code in (401, 403)
-    main.app.dependency_overrides[get_admin_user] = lambda: ClerkUser({"approved": "true", "admin": "true"})
+    assert client.post("/api/emails/run/weekly").status_code == 403  # office user
+    main.app.dependency_overrides[get_approved_user] = lambda: ClerkUser(
+        {"approved": "true", "admin": "false", "email": "aaron@indyroofandrestoration.com"})
     r = client.post("/api/emails/run/preview")
     assert r.status_code == 200 and r.json()["task"] == "preview"
     assert client.post("/api/emails/run/nope").status_code == 404

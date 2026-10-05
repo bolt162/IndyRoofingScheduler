@@ -19,6 +19,8 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from backend import activity
+
 from backend.emails.products import (
     OXIDIZED, POLYMER_MODIFIED, ProductInfo, from_approved, lookup_shingle, product_key,
 )
@@ -123,14 +125,15 @@ def research_product(product_text: str, client=None) -> dict:
 
     response = None
     for _ in range(MAX_PAUSE_CONTINUATIONS):
-        response = client.beta.messages.create(
-            model=RESEARCH_MODEL,
-            max_tokens=16000,
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-            tools=WEB_TOOLS,
-            messages=messages,
-        )
+        with activity.call("claude", "product research"):
+            response = client.beta.messages.create(
+                model=RESEARCH_MODEL,
+                max_tokens=16000,
+                betas=["server-side-fallback-2026-07-01"],
+                fallbacks="default",
+                tools=WEB_TOOLS,
+                messages=messages,
+            )
         if response.stop_reason != "pause_turn":
             break
         # A long server-side tool turn paused; send it back to continue
@@ -144,12 +147,13 @@ def research_product(product_text: str, client=None) -> dict:
     if not notes:
         raise ResearchError("research returned no text")
 
-    extracted = client.messages.create(
-        model=RESEARCH_MODEL,
-        max_tokens=4000,
-        output_config={"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}},
-        messages=[{"role": "user", "content": EXTRACT_PROMPT.format(product=product_text, notes=notes)}],
-    )
+    with activity.call("claude", "product research extract"):
+        extracted = client.messages.create(
+            model=RESEARCH_MODEL,
+            max_tokens=4000,
+            output_config={"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}},
+            messages=[{"role": "user", "content": EXTRACT_PROMPT.format(product=product_text, notes=notes)}],
+        )
     if extracted.stop_reason == "refusal":
         raise ResearchError("extraction was declined")
     try:

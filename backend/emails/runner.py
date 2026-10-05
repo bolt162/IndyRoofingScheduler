@@ -115,8 +115,9 @@ class RunContext:
         todo = [j.jn_job_id for j in jobs if j.jn_job_id and j.jn_job_id not in self._details]
         if not todo:
             return
+        from backend import activity
         with ThreadPoolExecutor(max_workers=8) as pool:
-            for jnid, d in zip(todo, pool.map(_cached_details, todo)):
+            for jnid, d in zip(todo, pool.map(activity.bind_context(_cached_details), todo)):
                 self._details[jnid] = d
 
     def state(self, job: Job) -> EmailState:

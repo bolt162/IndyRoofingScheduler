@@ -706,14 +706,16 @@ Keep adjustments proportional (typically -10 to +10 range).
 Be factual and objective — these explanations may be referenced in court-admissible notes.
 """
 
-    response = client.messages.create(
-        model=settings.ANTHROPIC_MODEL,
-        max_tokens=2000,
-        # Sonnet 5+ runs adaptive thinking by default; keep it off so the
-        # response is a single text block and max_tokens isn't eaten by thinking.
-        thinking={"type": "disabled"},
-        messages=[{"role": "user", "content": prompt}],
-    )
+    from backend import activity
+    with activity.call("claude", "scoring"):
+        response = client.messages.create(
+            model=settings.ANTHROPIC_MODEL,
+            max_tokens=2000,
+            # Sonnet 5+ runs adaptive thinking by default; keep it off so the
+            # response is a single text block and max_tokens isn't eaten by thinking.
+            thinking={"type": "disabled"},
+            messages=[{"role": "user", "content": prompt}],
+        )
 
     text = "".join(block.text for block in response.content if block.type == "text")
     try:

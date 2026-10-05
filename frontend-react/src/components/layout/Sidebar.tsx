@@ -6,10 +6,12 @@ import {
   XCircle,
   Settings,
   Mail,
+  ScrollText,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
 import { useBucketCounts } from '@/api/jobs';
+import { useMe } from '@/api/auth';
 import { useUIStore } from '@/stores/ui-store';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -36,6 +38,11 @@ interface SidebarProps {
 export function Sidebar({ mobileCompact = false, onNavigate }: SidebarProps) {
   const { sidebarOpen, toggleSidebar } = useUIStore();
   const { data: counts } = useBucketCounts();
+  const { data: me } = useMe();
+  // The activity log link only shows for the owner and admins (the API enforces it too)
+  const items = me?.owner_or_admin
+    ? [...navItems.slice(0, -1), { to: '/activity', label: 'Activity Log', icon: ScrollText }, navItems[navItems.length - 1]]
+    : navItems;
 
   // On mobile inside the Sheet we always render expanded (regardless of store state)
   const expanded = mobileCompact ? true : sidebarOpen;
@@ -74,7 +81,7 @@ export function Sidebar({ mobileCompact = false, onNavigate }: SidebarProps) {
       {/* Navigation */}
       <ScrollArea className="flex-1 py-2">
         <nav className="flex flex-col gap-1 px-2">
-          {navItems.map(({ to, label, icon: Icon }) => (
+          {items.map(({ to, label, icon: Icon }) => (
             <NavLink
               key={to}
               to={to}

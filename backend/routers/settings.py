@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from backend.database import get_db, engine, Base
+from backend.services.auth import get_owner_or_admin
 from backend.models.settings import SystemSettings, DEFAULT_SETTINGS
 from backend.models.pm import PM, Crew
 from backend.models.job import Job
@@ -154,7 +155,7 @@ def delete_crew(crew_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/reset-db")
-def reset_database(db: Session = Depends(get_db)):
+def reset_database(db: Session = Depends(get_db), user=Depends(get_owner_or_admin)):
     """Reset the entire database — drops all jobs, PMs, crews, notes, plans, and re-seeds settings."""
     # Delete all data in order (foreign key safe)
     db.query(NoteLog).delete()

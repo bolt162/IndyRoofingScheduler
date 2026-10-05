@@ -1,4 +1,5 @@
 import logging
+import re
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -9,8 +10,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from backend.database import engine, Base, SessionLocal
-from backend.routers import jobs, scoring, schedule, settings, weather, emails, auth as auth_router
-from backend.services.auth import get_approved_user
+from backend.routers import jobs, scoring, schedule, settings, weather, emails, admin, auth as auth_router
+from backend.services.auth import get_approved_user, get_owner_or_admin
+from backend import activity
 from fastapi import Depends
 
 logger = logging.getLogger("scheduler")
@@ -26,6 +28,7 @@ async def lifespan(app: FastAPI):
     from backend.models.schedule import SchedulePlan  # noqa
     from backend.models.settings import SystemSettings  # noqa
     from backend.models.email import EmailState, EmailLog, JobEvent, ProductClassification, TeamContact  # noqa
+    from backend.activity import ActivityLog  # noqa
     # No User model — Clerk owns user identity & approval state
 
     Base.metadata.create_all(bind=engine)
@@ -35,6 +38,10 @@ async def lifespan(app: FastAPI):
     _migrate_crew_columns()
     _migrate_job_columns()
     _migrate_job_buckets()
+
+    # Count every outside HTTP call (JobNimbus, Google Maps, weather) into the activity log
+    activity.install_http_recorder()
+    activity.write("job", "app", "App started")
 
     # Start APScheduler for weather checks + JN sync polling
     scheduler = _start_scheduler()
@@ -71,6 +78,35 @@ app.include_router(schedule.router, prefix="/api/schedule", tags=["schedule"], d
 app.include_router(settings.router, prefix="/api/settings", tags=["settings"], dependencies=_protected)
 app.include_router(weather.router, prefix="/api/weather", tags=["weather"], dependencies=_protected)
 app.include_router(emails.router, prefix="/api/emails", tags=["emails"], dependencies=_protected)
+app.include_router(admin.router, prefix="/api/admin", tags=["admin"], dependencies=[Depends(get_owner_or_admin)])
+
+
+# Activity log for API requests: every change someone makes is one row; a read-only page
+# load is only logged if it made outside calls (e.g. the email preview hitting JobNimbus).
+_MUTATING = {"POST", "PUT", "PATCH", "DELETE"}
+_NOT_LOGGED = ("/api/health", "/api/auth/", "/api/admin/activity")
+_ID_SEGMENT = re.compile(r"/\d+(?=/|$)")
+_JOB_PATH = re.compile(r"/api/(?:jobs|weather|emails/jobs)/(\d+)(?=/|$)")
+
+
+@app.middleware("http")
+async def activity_middleware(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith("/api") or path.startswith(_NOT_LOGGED):
+        return await call_next(request)
+    mutating = request.method in _MUTATING
+    with activity.run("user", "api", f"{request.method} {path}", always=mutating) as r:
+        response = await call_next(request)
+        r.action = f"{request.method} {_ID_SEGMENT.sub('/{id}', path)}"
+        job = _JOB_PATH.search(path)
+        if job:
+            r.job_id = int(job.group(1))
+        if r.actor is None and path.startswith("/api/email/"):
+            r.actor = "public (customer link)"
+        if response.status_code >= 400:
+            r.force_error = True
+            r.action += f" -> {response.status_code}"
+    return response
 
 
 # Customer opt-out link from build queue emails. Public on purpose: customers aren't
@@ -363,17 +399,19 @@ def _jn_sync_job():
 
 def _email_job(name):
     """Wrap a build queue email task: own DB session, skipped when EMAIL_MODE=off, never raises."""
+    @activity.job_run(f"Email: {name.replace('run_', '').replace('_', ' ')}")
     def run():
         from backend.emails.config import email_mode
         from backend.emails import runner
         if email_mode() == "off":
-            return
+            return "skipped (EMAIL_MODE=off)"
         db = SessionLocal()
         try:
             result = getattr(runner, name)(db)
             logger.info(f"Email task {name}: {result}")
         except Exception as e:
             logger.error(f"Email task {name} failed: {e}")
+            raise
         finally:
             db.close()
     run.__name__ = f"email_{name}"
@@ -436,7 +474,7 @@ def _start_scheduler():
 
         # --- JN Sync (interval-based) ---
         scheduler.add_job(
-            _jn_sync_job,
+            activity.job_run("JobNimbus sync")(_jn_sync_job),
             IntervalTrigger(minutes=sync_interval),
             id="jn_sync", name="JN Auto-Sync",
             misfire_grace_time=300,  # Run if missed within 5 minutes
@@ -445,19 +483,19 @@ def _start_scheduler():
         # --- Weather checks (cron-based) ---
         # Morning check (default 6:00 AM)
         scheduler.add_job(
-            morning_weather_check, CronTrigger(hour=int(morning_h), minute=int(morning_m), timezone=SCHEDULER_TZ),
+            activity.job_run("Morning weather check")(morning_weather_check), CronTrigger(hour=int(morning_h), minute=int(morning_m), timezone=SCHEDULER_TZ),
             id="morning_weather", name="Morning Weather Check",
             misfire_grace_time=3600,
         )
         # Night-before check (default 8:00 PM — spec §6.4)
         scheduler.add_job(
-            night_before_check, CronTrigger(hour=int(night_h), minute=int(night_m), timezone=SCHEDULER_TZ),
+            activity.job_run("Night-before weather check")(night_before_check), CronTrigger(hour=int(night_h), minute=int(night_m), timezone=SCHEDULER_TZ),
             id="night_before_weather", name="Night-Before Weather Check",
             misfire_grace_time=3600,
         )
         # 5am spot check (spec §6.2 line 255)
         scheduler.add_job(
-            five_am_spot_check, CronTrigger(hour=5, minute=0, timezone=SCHEDULER_TZ),
+            activity.job_run("5am weather spot check")(five_am_spot_check), CronTrigger(hour=5, minute=0, timezone=SCHEDULER_TZ),
             id="five_am_weather", name="5am Spot Check",
             misfire_grace_time=3600,
         )
@@ -467,12 +505,16 @@ def _start_scheduler():
         # escalate higher at 10 days. Generates warning/escalation notes once per job per level.
         from backend.services.secondary_trade_escalation import run_daily_escalation_check
         scheduler.add_job(
-            run_daily_escalation_check, CronTrigger(hour=8, minute=0, timezone=SCHEDULER_TZ),
+            activity.job_run("Secondary trade escalation")(run_daily_escalation_check), CronTrigger(hour=8, minute=0, timezone=SCHEDULER_TZ),
             id="secondary_trade_escalation", name="Secondary Trade Escalation",
             misfire_grace_time=3600,
         )
 
         _add_email_jobs(scheduler, CronTrigger)
+        scheduler.add_job(
+            activity.job_run("Activity log cleanup")(activity.prune), CronTrigger(hour=3, minute=15, timezone=SCHEDULER_TZ),
+            id="activity_prune", name="Activity log cleanup", misfire_grace_time=3600,
+        )
 
         scheduler.start()
         logger.info(
