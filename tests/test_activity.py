@@ -220,3 +220,18 @@ def test_log_filters(Session, clear_overrides):
     owner = client_as(Session, email="aaron@indyroofandrestoration.com")
     assert [r["kind"] for r in owner.get("/api/admin/activity?status=error").json()["rows"]] == ["error"]
     assert [r["kind"] for r in owner.get("/api/admin/activity?kind=email").json()["rows"]] == ["email"]
+
+
+def test_overlapping_worker_threads_dont_crash(Session, fake_http):
+    """Real JobNimbus lookups overlap; sharing one copied context across threads raised
+    'cannot enter context' and broke the email preview in production."""
+    import time
+
+    def slow_lookup(i):
+        time.sleep(0.05)
+        return httpx.get(f"https://app.jobnimbus.com/api1/jobs/{i}")
+    with A.run("job", "scheduler", "Email: preview"):
+        with ThreadPoolExecutor(8) as pool:
+            list(pool.map(A.bind_context(slow_lookup), range(16)))
+    r = rows(Session)
+    assert len(r) == 1 and r[0].detail == "JobNimbus 16"

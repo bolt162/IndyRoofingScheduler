@@ -200,9 +200,20 @@ def call(source: str, action: str):
 
 
 def bind_context(fn):
-    """Carry the current run into a worker thread (ThreadPoolExecutor drops contextvars)."""
-    ctx = contextvars.copy_context()
-    return lambda *a, **k: ctx.run(fn, *a, **k)
+    """
+    Carry the current run into worker threads (ThreadPoolExecutor drops contextvars).
+    Each call sets the run itself; one shared copied Context can't be entered by two
+    threads at once, which crashed overlapping JobNimbus lookups.
+    """
+    parent = current_run()
+
+    def inner(*a, **k):
+        token = _current.set(parent)
+        try:
+            return fn(*a, **k)
+        finally:
+            _current.reset(token)
+    return inner
 
 
 # ---------------------------------------------------------------------------
