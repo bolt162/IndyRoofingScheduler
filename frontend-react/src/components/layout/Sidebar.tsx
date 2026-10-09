@@ -9,6 +9,7 @@ import {
   ScrollText,
   ChevronLeft,
   ChevronRight,
+  ExternalLink,
 } from 'lucide-react';
 import { useBucketCounts } from '@/api/jobs';
 import { useMe } from '@/api/auth';
@@ -20,6 +21,9 @@ import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import logoWhite from '@/assets/irr-logo-white.png';
 import markWhite from '@/assets/irr-mark-white.png';
+
+// Sister app; switch to https://dispatch.indyscheduler.top once that address is live
+const LEAD_DISPATCH_URL = 'https://dispatch-production-81e7.up.railway.app';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -107,6 +111,15 @@ export function Sidebar({ mobileCompact = false, onNavigate }: SidebarProps) {
             </NavLink>
           ))}
         </nav>
+
+        <Separator className="my-3 bg-sidebar-border" />
+        <a
+          href={LEAD_DISPATCH_URL}
+          className="mx-2 flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        >
+          <ExternalLink className="h-4 w-4 shrink-0" />
+          {expanded && <span className="truncate">Open Lead Dispatch</span>}
+        </a>
 
         {/* Bucket counts */}
         {expanded && counts && (
