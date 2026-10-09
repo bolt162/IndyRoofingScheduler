@@ -23,7 +23,7 @@ import logoWhite from '@/assets/irr-logo-white.png';
 import markWhite from '@/assets/irr-mark-white.png';
 
 // Sister app; switch to https://dispatch.indyscheduler.top once that address is live
-const LEAD_DISPATCH_URL = 'https://dispatch-production-81e7.up.railway.app';
+const LEAD_DISPATCH_URL = 'https://dispatch.indyscheduler.top';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
