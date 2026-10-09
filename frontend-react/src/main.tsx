@@ -34,7 +34,11 @@ function ClerkTokenBridge() {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY ?? ''}>
+    <ClerkProvider
+      publishableKey={CLERK_PUBLISHABLE_KEY ?? ''}
+      appearance={{ variables: { colorPrimary: '#003c58', colorTextOnPrimaryBackground: '#ffffff' } }}
+      localization={{ signIn: { start: { title: 'Sign in', subtitle: 'Use your Indy Roof account' } } }}
+    >
       <ClerkTokenBridge />
       <App />
     </ClerkProvider>

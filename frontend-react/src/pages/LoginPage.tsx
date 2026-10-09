@@ -1,5 +1,6 @@
 import { useAuth, SignIn } from '@clerk/clerk-react';
 import { Navigate, useLocation } from 'react-router-dom';
+import logoNavy from '@/assets/irr-logo-navy.png';
 
 /**
  * Login page — Clerk's hosted sign-in component.
@@ -32,7 +33,8 @@ export function LoginPage() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-muted/30 p-4 gap-6">
       <div className="text-center space-y-1">
-        <h1 className="text-2xl font-bold tracking-tight">Indy Roof Scheduler</h1>
+        <img src={logoNavy} alt="Indy Roof & Restoration" className="mx-auto h-14 w-auto" />
+        <h1 className="pt-3 text-2xl font-bold tracking-tight text-primary">Scheduler</h1>
         <p className="text-sm text-muted-foreground">Sign in to continue</p>
       </div>
       {/* Clerk renders its own card/styling — we just place it. */}

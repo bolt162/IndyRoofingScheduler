@@ -56,7 +56,7 @@
 }
 
 @theme inline {
-  --font-heading: var(--font-sans);
+  --font-heading: 'Roboto Slab', Rockwell, Georgia, serif;
   --font-sans: 'Geist Variable', sans-serif;
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -99,38 +99,39 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* Indy Roof brand: navy #003C58, sky #13B5E8, gray #BDBEC0. Neutrals lean slightly toward the navy. */
+  --background: #f4f7f9;
+  --foreground: #10242f;
+  --card: #ffffff;
+  --card-foreground: #10242f;
+  --popover: #ffffff;
+  --popover-foreground: #10242f;
+  --primary: #003c58;
+  --primary-foreground: #ffffff;
+  --secondary: #e7eef2;
+  --secondary-foreground: #003c58;
+  --muted: #edf2f5;
+  --muted-foreground: #5a6b76;
+  --accent: #e2f4fb;
+  --accent-foreground: #003c58;
+  --destructive: #c0392b;
+  --border: #d8e1e7;
+  --input: #cfd9e0;
+  --ring: #13b5e8;
+  --chart-1: #13b5e8;
+  --chart-2: #003c58;
+  --chart-3: #5a8fa8;
+  --chart-4: #bdbec0;
+  --chart-5: #0a7fa6;
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: #003c58;
+  --sidebar-foreground: #cfe3ee;
+  --sidebar-primary: #13b5e8;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #0b5276;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #12506f;
+  --sidebar-ring: #13b5e8;
 }
 
 .dark {
@@ -165,4 +166,11 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
+}
+/* Page titles use the slab face from the logo; everything else stays the plain sans for easy reading. */
+@layer base {
+  h1, h2 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.01em;
+  }
 }

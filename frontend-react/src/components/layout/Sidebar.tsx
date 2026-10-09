@@ -18,6 +18,8 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
+import logoWhite from '@/assets/irr-logo-white.png';
+import markWhite from '@/assets/irr-mark-white.png';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -59,18 +61,21 @@ export function Sidebar({ mobileCompact = false, onNavigate }: SidebarProps) {
       )}
     >
       {/* Header */}
-      <div className="flex h-14 items-center gap-2 border-b px-4 shrink-0">
-        {expanded && (
-          <h2 className="text-sm font-semibold tracking-tight truncate">
-            Indy Roof Scheduler
-          </h2>
+      <div className={cn('flex h-20 items-center gap-2 border-b border-sidebar-border shrink-0', expanded ? 'px-4' : 'px-2 flex-col justify-center gap-1')}>
+        {expanded ? (
+          <div className="min-w-0">
+            <img src={logoWhite} alt="Indy Roof & Restoration" className="h-10 w-auto" />
+            <p className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-sidebar-primary">Scheduler</p>
+          </div>
+        ) : (
+          <img src={markWhite} alt="Indy Roof" className="h-8 w-auto" />
         )}
         {/* Collapse toggle — only shown on desktop (not inside mobile Sheet) */}
         {!mobileCompact && (
           <Button
             variant="ghost"
             size="icon"
-            className="ml-auto h-7 w-7"
+            className={cn('h-7 w-7 text-sidebar-foreground hover:bg-sidebar-accent hover:text-white', expanded && 'ml-auto')}
             onClick={toggleSidebar}
           >
             {expanded ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
@@ -92,8 +97,8 @@ export function Sidebar({ mobileCompact = false, onNavigate }: SidebarProps) {
                   'flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors',
                   'hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
                   isActive
-                    ? 'bg-sidebar-accent text-sidebar-primary'
-                    : 'text-sidebar-foreground/70',
+                    ? 'bg-sidebar-accent text-white shadow-[inset_3px_0_0_var(--sidebar-primary)]'
+                    : 'text-sidebar-foreground/80',
                 )
               }
             >
@@ -106,9 +111,9 @@ export function Sidebar({ mobileCompact = false, onNavigate }: SidebarProps) {
         {/* Bucket counts */}
         {expanded && counts && (
           <>
-            <Separator className="my-3" />
+            <Separator className="my-3 bg-sidebar-border" />
             <div className="px-4 pb-2">
-              <p className="mb-2 text-xs font-semibold uppercase text-muted-foreground">
+              <p className="mb-2 text-xs font-semibold uppercase text-sidebar-foreground/70">
                 Job Buckets
               </p>
               <div className="space-y-1">
@@ -121,9 +126,9 @@ export function Sidebar({ mobileCompact = false, onNavigate }: SidebarProps) {
                   <div key={key} className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
                       <span className={cn('h-2 w-2 rounded-full', color)} />
-                      <span className="text-muted-foreground">{label}</span>
+                      <span className="text-sidebar-foreground/85">{label}</span>
                     </div>
-                    <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
+                    <Badge className="h-5 px-1.5 text-[10px] bg-sidebar-accent text-white">
                       {counts[key] ?? 0}
                     </Badge>
                   </div>

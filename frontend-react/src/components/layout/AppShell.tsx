@@ -31,7 +31,7 @@ export function AppShell() {
 
       <main className="flex-1 flex flex-col overflow-hidden">
         {/* Mobile top bar — hidden at md+ */}
-        <header className="md:hidden flex h-12 items-center gap-2 border-b px-3 bg-background shrink-0">
+        <header className="md:hidden flex h-12 items-center gap-2 border-b px-3 bg-card shrink-0">
           <Button
             variant="ghost"
             size="icon"
@@ -41,11 +41,11 @@ export function AppShell() {
           >
             <Menu className="h-5 w-5" />
           </Button>
-          <h1 className="text-sm font-semibold truncate flex-1">Indy Roof Scheduler</h1>
+          <h1 className="text-sm font-semibold truncate flex-1 text-primary">Scheduler</h1>
           <UserMenu />
         </header>
         {/* Desktop top bar — visible only at md+ to show the user menu */}
-        <header className="hidden md:flex h-12 items-center gap-2 border-b px-4 bg-background shrink-0">
+        <header className="hidden md:flex h-12 items-center gap-2 border-b px-4 bg-card shrink-0">
           <div className="flex-1" />
           <UserMenu />
         </header>
