@@ -22,8 +22,9 @@ import { cn } from '@/lib/utils';
 import logoWhite from '@/assets/irr-logo-white.png';
 import markWhite from '@/assets/irr-mark-white.png';
 
-// Sister app; switch to https://dispatch.indyscheduler.top once that address is live
+// Sister apps (same login)
 const LEAD_DISPATCH_URL = 'https://dispatch.indyscheduler.top';
+const CLOSEOUTS_URL = 'https://closeout.indyscheduler.top';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -119,6 +120,13 @@ export function Sidebar({ mobileCompact = false, onNavigate }: SidebarProps) {
         >
           <ExternalLink className="h-4 w-4 shrink-0" />
           {expanded && <span className="truncate">Open Lead Dispatch</span>}
+        </a>
+        <a
+          href={CLOSEOUTS_URL}
+          className="mx-2 flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+        >
+          <ExternalLink className="h-4 w-4 shrink-0" />
+          {expanded && <span className="truncate">Open Closeouts</span>}
         </a>
 
         {/* Bucket counts */}
