@@ -3,8 +3,9 @@ import { differenceInDays, parseISO, format } from 'date-fns';
 import {
   MapPin, Calendar, DollarSign, Layers, Users, Hash, Star, CheckCircle, Pencil,
   Upload, CheckCheck, Trophy, Medal, Award, AlertCircle, Clock, Flag, PackageCheck,
-  Sparkles,
+  Sparkles, Crosshair,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -20,7 +21,7 @@ import {
 import { MustBuildBadge } from './MustBuildBadge';
 import { DurationFlag } from './DurationFlag';
 import { WeatherBadge } from './WeatherBadge';
-import { useSetMustBuild, useClearMustBuild, useUpdateJob, useSetStandaloneOption, usePushNote, useMarkPrimaryComplete, useUpdateSecondaryTradeStatus, useReanalyzeJob } from '@/api/jobs';
+import { useSetMustBuild, useClearMustBuild, useUpdateJob, useSetStandaloneOption, usePushNote, useMarkPrimaryComplete, useUpdateSecondaryTradeStatus, useReanalyzeJob, closestTradeFor } from '@/api/jobs';
 import { toast } from 'sonner';
 import { MATERIAL_LABELS } from '@/types';
 import { cn } from '@/lib/utils';
@@ -92,6 +93,10 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
 
   // Edit dialog state
   const [editOpen, setEditOpen] = useState(false);
+
+  // "Closest jobs only" — opens the map in distance-only mode around this job
+  const navigate = useNavigate();
+  const closestTrade = job.latitude && job.longitude ? closestTradeFor(job) : null;
 
   const handleSetMustBuild = () => {
     if (!mbDeadline) return;
@@ -456,6 +461,22 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
                 disabled={setStandaloneOption.isPending}
               >
                 Sales Rep Managed
+              </Button>
+            </div>
+          )}
+
+          {/* Row 8a: Closest jobs only — distance-only view for roofing/siding, ignores score */}
+          {!compact && closestTrade && (
+            <div className="flex flex-wrap gap-1.5 pt-1 border-t" onClick={(e) => e.stopPropagation()}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-[10px] gap-1 text-blue-700 hover:bg-blue-50"
+                title="Show only the nearest jobs in this trade, by distance alone"
+                onClick={() => navigate(`/map?closest=${job.id}`)}
+              >
+                <Crosshair className="h-3 w-3" />
+                Closest {closestTrade} jobs only
               </Button>
             </div>
           )}

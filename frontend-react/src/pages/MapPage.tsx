@@ -5,7 +5,8 @@ import {
   AdvancedMarker,
   InfoWindow,
 } from '@vis.gl/react-google-maps';
-import { useJobs } from '@/api/jobs';
+import { useSearchParams } from 'react-router-dom';
+import { useJobs, useClosestJobs, type ClosestJobsResult } from '@/api/jobs';
 import { usePMs } from '@/api/settings';
 import { useUIStore } from '@/stores/ui-store';
 import { JobCard } from '@/components/jobs/JobCard';
@@ -21,7 +22,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Layers, Users, MapPin, ClipboardList, AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react';
+import { Layers, Users, MapPin, ClipboardList, AlertTriangle, ChevronDown, ChevronRight, Crosshair, X } from 'lucide-react';
 import type { Job, JobBucket, ClusterInfo, ScoringResult } from '@/types';
 
 const GOOGLE_MAPS_API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || '';
@@ -158,6 +159,21 @@ export function MapPage() {
   const { data: allJobs } = useJobs();
   const { data: pms } = usePMs();
 
+  // "Closest jobs only" view (/map?closest=<jobId>): distance-only, overrides the other modes
+  const [searchParams, setSearchParams] = useSearchParams();
+  const closestId = Number(searchParams.get('closest')) || null;
+  const closest = useClosestJobs(closestId);
+  const closestRank = useMemo(() => {
+    const m = new globalThis.Map<number, number>();
+    closest.data?.jobs.forEach((j, i) => m.set(j.job_id, i + 1));
+    return m;
+  }, [closest.data]);
+  const exitClosest = () => {
+    const next = new URLSearchParams(searchParams);
+    next.delete('closest');
+    setSearchParams(next);
+  };
+
   // Build PM index for color assignment
   const pmIndex = useMemo(() => {
     const m = new globalThis.Map<number, number>();
@@ -249,6 +265,9 @@ export function MapPage() {
   // Filter jobs with usable coordinates.
   const jobs = useMemo(() => {
     let result = allJobs?.filter(hasValidCoords) ?? [];
+    if (closestId) {
+      return result.filter((j) => j.id === closestId || closestRank.has(j.id));
+    }
     if (bucketFilter !== 'all') {
       result = result.filter((j) => j.bucket === bucketFilter);
     }
@@ -277,7 +296,7 @@ export function MapPage() {
       }
     }
     return result;
-  }, [allJobs, bucketFilter, mapMode, scoringPMMap, selectedPMFilter, planJobIds, selectedPlanPM, planPMs]);
+  }, [allJobs, bucketFilter, mapMode, scoringPMMap, selectedPMFilter, planJobIds, selectedPlanPM, planPMs, closestId, closestRank]);
 
   // Jobs the map can't plot — missing coords or null-island (0,0).
   // Only include buckets a scheduler cares about; hide archived/completed.
@@ -291,6 +310,7 @@ export function MapPage() {
 
   // Determine which jobs are "highlighted" (not dimmed)
   const highlightedJobIds = useMemo(() => {
+    if (closestId) return null;
     if (mapMode !== 'plan') return null; // no dimming in other modes
     if (!selectedClusterId && selectedPlanPM === null) return null; // no filter = all bright
 
@@ -309,15 +329,17 @@ export function MapPage() {
       }
     }
     return ids.size > 0 ? ids : null;
-  }, [mapMode, selectedClusterId, selectedPlanPM, planPMs]);
+  }, [mapMode, selectedClusterId, selectedPlanPM, planPMs, closestId]);
 
   // Center on Indianapolis by default
   const center = useMemo(() => {
+    const anchor = closest.data?.anchor;
+    if (closestId && anchor) return { lat: anchor.lat, lng: anchor.lng };
     if (jobs.length === 0) return { lat: 39.7684, lng: -86.1581 };
     const lat = jobs.reduce((s, j) => s + (j.latitude ?? 0), 0) / jobs.length;
     const lng = jobs.reduce((s, j) => s + (j.longitude ?? 0), 0) / jobs.length;
     return { lat, lng };
-  }, [jobs]);
+  }, [jobs, closestId, closest.data]);
 
   return (
     <div className="flex flex-col md:flex-row h-full">
@@ -349,6 +371,18 @@ export function MapPage() {
 
       {/* Sidebar — full-width on mobile (hidden when map selected), 320px on desktop */}
       <div className={`${mobileView === 'list' ? 'flex' : 'hidden'} md:flex w-full md:w-80 md:border-r flex-col overflow-hidden`}>
+        {closestId ? (
+          <ClosestPanel
+            loading={closest.isLoading}
+            error={closest.error ? ((closest.error as { response?: { data?: { detail?: string } } }).response?.data?.detail || 'Could not load closest jobs') : null}
+            result={closest.data}
+            onExit={exitClosest}
+            onPick={(jobId) => {
+              const job = allJobs?.find((j) => j.id === jobId);
+              if (job) { setSelectedJob(job); setMobileView('map'); }
+            }}
+          />
+        ) : (<>
         <div className="p-4 space-y-3 shrink-0">
           <h2 className="text-lg font-semibold">Map View</h2>
 
@@ -650,6 +684,7 @@ export function MapPage() {
             </ScrollArea>
           </>
         )}
+        </>)}
       </div>
 
       {/* Map — full-width on mobile (hidden when list selected), flex on desktop */}
@@ -657,6 +692,7 @@ export function MapPage() {
         {GOOGLE_MAPS_API_KEY ? (
           <APIProvider apiKey={GOOGLE_MAPS_API_KEY}>
             <Map
+              key={closestId ? `closest-${closestId}-${closest.data ? 'ready' : 'loading'}` : 'normal'}
               defaultCenter={center}
               defaultZoom={10}
               mapId="roofing-scheduler-map"
@@ -671,8 +707,16 @@ export function MapPage() {
                     onClick={() => setSelectedJob(job)}
                   >
                     <MarkerPin
-                      color={getMarkerColor(job, mapMode, pmIndex, scoringPMMap, clusterColorMap, jobClusterMap)}
-                      label={job.must_build ? '!' : job.score > 0 ? String(Math.round(job.score)) : '•'}
+                      color={
+                        closestId
+                          ? (job.id === closestId ? '#DC2626' : '#2563EB')
+                          : getMarkerColor(job, mapMode, pmIndex, scoringPMMap, clusterColorMap, jobClusterMap)
+                      }
+                      label={
+                        closestId
+                          ? (job.id === closestId ? '★' : String(closestRank.get(job.id) ?? '•'))
+                          : job.must_build ? '!' : job.score > 0 ? String(Math.round(job.score)) : '•'
+                      }
                       dimmed={isDimmed}
                     />
                   </AdvancedMarker>
@@ -705,6 +749,88 @@ export function MapPage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Sidebar for the "Closest jobs only" view: the chosen job plus its nearest
+ * same-trade jobs, ranked by distance alone (score and other factors ignored).
+ */
+function ClosestPanel({
+  loading, error, result, onExit, onPick,
+}: {
+  loading: boolean;
+  error: string | null;
+  result: ClosestJobsResult | undefined;
+  onExit: () => void;
+  onPick: (jobId: number) => void;
+}) {
+  return (
+    <div className="flex-1 min-h-0 flex flex-col">
+      <div className="p-4 space-y-2 shrink-0 border-b">
+        <div className="flex items-center gap-2">
+          <Crosshair className="h-4 w-4 text-blue-700" />
+          <h2 className="text-lg font-semibold">
+            Closest {result?.trade ?? ''} jobs
+          </h2>
+        </div>
+        {result && (
+          <button
+            type="button"
+            className="w-full text-left rounded border border-red-200 bg-red-50 px-2 py-1.5 hover:bg-red-100"
+            onClick={() => onPick(result.anchor.job_id)}
+          >
+            <div className="text-xs font-semibold text-red-800 truncate">★ {result.anchor.customer_name}</div>
+            <div className="text-[10px] text-red-800/80 truncate">{result.anchor.address}</div>
+          </button>
+        )}
+        <p className="text-[10px] text-muted-foreground leading-snug">
+          Sorted by distance only. Score, must-build, PM and other ranking factors are ignored.
+          {result?.distance_source === 'estimated' && ' Miles are estimated (straight line plus 30%).'}
+          {result?.distance_source === 'driving' && ' Miles are driving distance.'}
+        </p>
+        <Button variant="outline" size="sm" className="w-full h-7 text-xs gap-1" onClick={onExit}>
+          <X className="h-3 w-3" />
+          Back to normal view
+        </Button>
+      </div>
+      <ScrollArea className="flex-1 min-h-0">
+        <div className="p-3 space-y-1">
+          {loading && <p className="text-xs text-muted-foreground italic">Measuring distances…</p>}
+          {error && <p className="text-xs text-red-700">{error}</p>}
+          {result && result.jobs.length === 0 && (
+            <p className="text-xs text-muted-foreground italic">
+              No other {result.trade} jobs are waiting to be scheduled.
+            </p>
+          )}
+          {result?.jobs.map((j, i) => (
+            <button
+              key={j.job_id}
+              type="button"
+              className="w-full flex items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-muted"
+              onClick={() => onPick(j.job_id)}
+            >
+              <span className="w-5 h-5 shrink-0 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center">
+                {i + 1}
+              </span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-xs font-medium truncate">
+                  {j.customer_name}
+                  {j.must_build && <span className="ml-1 text-red-700">(Must-Build)</span>}
+                </span>
+                <span className="block text-[10px] text-muted-foreground truncate">{j.address}</span>
+              </span>
+              <span className="text-xs font-semibold tabular-nums shrink-0">{j.miles.toFixed(1)} mi</span>
+            </button>
+          ))}
+          {result && result.total_candidates > result.jobs.length && (
+            <p className="text-[10px] text-muted-foreground pt-1">
+              Showing the nearest {result.jobs.length} of {result.total_candidates} waiting {result.trade} jobs.
+            </p>
+          )}
+        </div>
+      </ScrollArea>
     </div>
   );
 }

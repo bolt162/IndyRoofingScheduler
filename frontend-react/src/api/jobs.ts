@@ -262,3 +262,49 @@ export function useReanalyzeJob() {
     },
   });
 }
+
+// "Closest jobs only" — nearest same-trade (roofing/siding) jobs, by distance alone.
+// Read-only: ignores score and every other ranking factor.
+export interface ClosestJob {
+  job_id: number;
+  customer_name: string;
+  address: string;
+  lat: number;
+  lng: number;
+  miles: number;
+  bucket: JobBucket;
+  score: number;
+  must_build: boolean;
+  standalone_rule: boolean;
+}
+
+export interface ClosestJobsResult {
+  anchor: ClosestJob;
+  trade: 'roofing' | 'siding';
+  distance_source: 'driving' | 'estimated';
+  total_candidates: number;
+  jobs: ClosestJob[];
+}
+
+export function useClosestJobs(id: number | null, limit = 10) {
+  return useQuery<ClosestJobsResult>({
+    queryKey: ['closestJobs', id, limit],
+    queryFn: async () => {
+      const { data } = await api.get(`/jobs/${id}/closest`, { params: { limit } });
+      return data;
+    },
+    enabled: !!id,
+    retry: false,
+  });
+}
+
+// Whether the "Closest jobs only" button applies: a roofing/siding job still waiting to be scheduled.
+export function closestTradeFor(job: Job): 'roofing' | 'siding' | null {
+  const open =
+    job.bucket === 'to_schedule' ? [job.primary_trade]
+    : job.bucket === 'other_trades' ? (job.open_secondary_trades ?? [])
+    : [];
+  if (open.includes('roofing')) return 'roofing';
+  if (open.includes('siding')) return 'siding';
+  return null;
+}

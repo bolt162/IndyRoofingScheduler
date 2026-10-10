@@ -172,6 +172,21 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
     return _enrich_with_latest_note(job, db)
 
 
+@router.get("/{job_id}/closest")
+def get_closest_jobs(job_id: int, limit: int = 10, db: Session = Depends(get_db)):
+    """Nearest same-trade (roofing or siding) jobs to this one, by distance only.
+    Read-only: ignores score and every other ranking factor, changes nothing."""
+    from backend.services.closest import find_closest_jobs
+
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    try:
+        return find_closest_jobs(db, job, limit=max(1, min(limit, 50)))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.patch("/{job_id}")
 def update_job(job_id: int, update: JobUpdate, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.id == job_id).first()
