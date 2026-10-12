@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from backend.models.email import TeamContact
 
-# Seeded once into an empty team_contacts table (Aaron, 2026-10-03).
+# Seeded once into an empty team_contacts table (Aaron, 2026-10-03). Luke Vollenweider left 2026-10-12.
 # (JobNimbus name, name customers see, role, email, phone)
 DEFAULT_TEAM = [
     ("AJ Gratz", "AJ Gratz", "rep", "aj.gratz@indyroofandrestoration.com", "(317) 964-1728"),
@@ -24,7 +24,6 @@ DEFAULT_TEAM = [
     ("Paul Sopke", "Paul Sopke", "rep", "paul.sopke@indyroofandrestoration.com", "(317) 752-1773"),
     ("Joe Venn", "Joe Venn", "rep", "joe.venn@indyroofandrestoration.com", "(317) 667-7119"),
     ("Sherilyn Nowak", "Sherilyn Nowak", "rep", "sherilyn.nowak@indyroofandrestoration.com", "(317) 457-9596"),
-    ("Luke Vollenweider", "Luke Vollenweider", "rep", "luke.vollenweider@indyroofandrestoration.com", "(816) 853-4550"),
     ("Lavell Chestnut", "Lavell Chestnut", "rep", "lavell.chestnut@indyroofandrestoration.com", "(317) 752-7003"),
     ("Luke Mroz", "Luke Mroz", "pm", "luke.mroz@indyroofandrestoration.com", None),
     # Not customer-facing: they get the full Wednesday preview of Thursday's send
