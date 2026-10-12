@@ -4,6 +4,7 @@ import { differenceInDays, parseISO } from 'date-fns';
 import { MapPin, Star, Clock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { WeatherBadge } from '@/components/jobs/WeatherBadge';
+import { NoBuildDatesBadge } from '@/components/jobs/NoBuildDatesBadge';
 import { cn } from '@/lib/utils';
 import type { Job } from '@/types';
 
@@ -68,6 +69,7 @@ export function UnassignedJobRow({ job }: { job: Job }) {
             Must-Build
           </Badge>
         )}
+        <NoBuildDatesBadge windows={job.no_build_dates} small />
         {daysInQueue !== null && (
           <Badge variant="outline" className="text-[9px] px-1 py-0 gap-0.5 text-muted-foreground">
             <Clock className="h-2.5 w-2.5" />

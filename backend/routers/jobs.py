@@ -5,9 +5,10 @@ from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.models.job import Job, JobBucket
 from backend.models.note_log import NoteLog
-from backend.schemas.job import JobResponse, JobCreate, JobUpdate, NotBuiltRequest
+from backend.schemas.job import JobResponse, JobCreate, JobUpdate, NotBuiltRequest, NoBuildDatesRequest
 from backend.services.jobnimbus import sync_jobs_from_jn, _classify_duration_tier
 from backend.services.geocoding import geocode_address
+from backend.services import no_build
 
 router = APIRouter()
 
@@ -64,6 +65,8 @@ def _compute_secondary_aging(job: Job, db: Session) -> dict:
 def _enrich_with_latest_note(job: Job, db: Session) -> dict:
     """Add latest_system_note + push status + secondary trade aging fields to job response."""
     job_dict = JobResponse.model_validate(job).model_dump()
+    # Only windows that haven't ended yet (past ones clear themselves)
+    job_dict["no_build_dates"] = no_build.active_windows(job.no_build_dates)
     latest = db.query(NoteLog).filter(
         NoteLog.job_id == job.id
     ).order_by(NoteLog.created_at.desc()).first()
@@ -196,6 +199,22 @@ def update_job(job_id: int, update: JobUpdate, db: Session = Depends(get_db)):
     old_bucket = job.bucket
     old_date = str(job.date_scheduled) if job.date_scheduled else None
     update_data = update.model_dump(exclude_unset=True)
+    override_no_build = update_data.pop("override_no_build", None)
+
+    # No-Build Dates: refuse to put the job on a day the customer asked us not to build,
+    # unless the scheduler already confirmed it. Only checked when the build date is set
+    # or changes, so editing other fields on an already-scheduled job still works.
+    new_bucket = update_data.get("bucket", job.bucket)
+    new_date = update_data.get("date_scheduled", job.date_scheduled)
+    if new_bucket == "scheduled" and new_date and not override_no_build and (
+        old_bucket != "scheduled" or str(new_date) != old_date
+    ):
+        hit = no_build.job_conflict(job, new_date, update_data.get("duration_days"))
+        if hit:
+            raise HTTPException(
+                status_code=409,
+                detail=f"{job.customer_name} has No-Build Dates {no_build.describe(hit)}.",
+            )
 
     # Handle 'notes' field mapping to jn_notes_raw
     if "notes" in update_data:
@@ -262,6 +281,33 @@ def clear_must_build(job_id: int, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(job)
     return _enrich_with_latest_note(job, db)
+
+
+@router.put("/{job_id}/no-build-dates")
+def set_no_build_dates(job_id: int, request: NoBuildDatesRequest, db: Session = Depends(get_db)):
+    """Replace the job's No-Build Dates (send an empty list to clear them).
+    If the job is already scheduled inside one of the new windows, it stays put but
+    the response says so, so the office can move it."""
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    try:
+        job.no_build_dates = no_build.clean_windows([w.model_dump(mode="json") for w in request.windows])
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    db.commit()
+    db.refresh(job)
+
+    result = _enrich_with_latest_note(job, db)
+    result["scheduled_conflict"] = None
+    if job.bucket == "scheduled" and job.date_scheduled:
+        hit = no_build.job_conflict(job, job.date_scheduled)
+        if hit:
+            result["scheduled_conflict"] = (
+                f"{job.customer_name} is already scheduled for {job.date_scheduled:%b %-d}, "
+                f"inside the No-Build Dates {no_build.describe(hit)}. Move it on the Weekly Plan."
+            )
+    return result
 
 
 @router.post("/{job_id}/not-built")

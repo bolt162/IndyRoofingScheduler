@@ -3,7 +3,7 @@ import { differenceInDays, parseISO, format } from 'date-fns';
 import {
   MapPin, Calendar, DollarSign, Layers, Users, Hash, Star, CheckCircle, Pencil,
   Upload, CheckCheck, Trophy, Medal, Award, AlertCircle, Clock, Flag, PackageCheck,
-  Sparkles, Crosshair,
+  Sparkles, Crosshair, CalendarX,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
@@ -21,6 +21,9 @@ import {
 import { MustBuildBadge } from './MustBuildBadge';
 import { DurationFlag } from './DurationFlag';
 import { WeatherBadge } from './WeatherBadge';
+import { NoBuildDatesBadge } from './NoBuildDatesBadge';
+import { NoBuildDatesDialog } from './NoBuildDatesDialog';
+import { describeNoBuild, mustBuildDeadlineClash } from '@/lib/no-build';
 import { useSetMustBuild, useClearMustBuild, useUpdateJob, useSetStandaloneOption, usePushNote, useMarkPrimaryComplete, useUpdateSecondaryTradeStatus, useReanalyzeJob, closestTradeFor } from '@/api/jobs';
 import { toast } from 'sonner';
 import { MATERIAL_LABELS } from '@/types';
@@ -97,6 +100,12 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
   // "Closest jobs only" — opens the map in distance-only mode around this job
   const navigate = useNavigate();
   const closestTrade = job.latitude && job.longitude ? closestTradeFor(job) : null;
+
+  // No-Build Dates — any job that still needs building can have them
+  const [noBuildOpen, setNoBuildOpen] = useState(false);
+  const canSetNoBuild = !['primary_completed', 'completed', 'archived'].includes(job.bucket);
+  const noBuildCount = job.no_build_dates?.length ?? 0;
+  const deadlineClash = mustBuildDeadlineClash(job);
 
   const handleSetMustBuild = () => {
     if (!mbDeadline) return;
@@ -235,6 +244,17 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
           <div className="flex flex-wrap gap-1.5">
             {job.must_build && (
               <MustBuildBadge deadline={job.must_build_deadline} reason={job.must_build_reason} />
+            )}
+            <NoBuildDatesBadge windows={job.no_build_dates} />
+            {deadlineClash && (
+              <Badge
+                variant="outline"
+                className="gap-1 text-[10px] bg-red-50 text-red-700 border-red-300"
+                title={`Must-Build deadline ${job.must_build_deadline} is inside No-Build Dates ${describeNoBuild(deadlineClash)}`}
+              >
+                <AlertCircle className="h-3 w-3" />
+                Deadline is a No-Build day
+              </Badge>
             )}
             {job.crew_requirement_flag && (
               <Badge variant="outline" className="gap-1 text-[10px] bg-orange-100 text-orange-800">
@@ -465,19 +485,34 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
             </div>
           )}
 
-          {/* Row 8a: Closest jobs only — distance-only view for roofing/siding, ignores score */}
-          {!compact && closestTrade && (
+          {/* Row 8a: Closest jobs only (distance-only view for roofing/siding, ignores score)
+              + No-Build Dates (days the customer asked us not to build) */}
+          {!compact && (closestTrade || canSetNoBuild) && (
             <div className="flex flex-wrap gap-1.5 pt-1 border-t" onClick={(e) => e.stopPropagation()}>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-6 text-[10px] gap-1 text-blue-700 hover:bg-blue-50"
-                title="Show only the nearest jobs in this trade, by distance alone"
-                onClick={() => navigate(`/map?closest=${job.id}`)}
-              >
-                <Crosshair className="h-3 w-3" />
-                Closest {closestTrade} jobs only
-              </Button>
+              {closestTrade && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 text-[10px] gap-1 text-blue-700 hover:bg-blue-50"
+                  title="Show only the nearest jobs in this trade, by distance alone"
+                  onClick={() => navigate(`/map?closest=${job.id}`)}
+                >
+                  <Crosshair className="h-3 w-3" />
+                  Closest {closestTrade} jobs only
+                </Button>
+              )}
+              {canSetNoBuild && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 text-[10px] gap-1 text-violet-700 hover:bg-violet-50"
+                  title="Dates the customer asked us not to build"
+                  onClick={() => setNoBuildOpen(true)}
+                >
+                  <CalendarX className="h-3 w-3" />
+                  {noBuildCount > 0 ? `No-Build Dates (${noBuildCount})` : 'Add No-Build Dates'}
+                </Button>
+              )}
             </div>
           )}
 
@@ -690,6 +725,8 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <NoBuildDatesDialog job={job} open={noBuildOpen} onOpenChange={setNoBuildOpen} />
 
       {/* Edit Job Dialog */}
       <JobFormDialog

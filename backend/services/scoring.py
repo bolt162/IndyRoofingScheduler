@@ -1,5 +1,6 @@
 """
 AI Scoring Engine — Hybrid approach.
+0. No-Build Dates: jobs the customer asked us not to build on that date are excluded
 1. Weather pre-filter: incompatible jobs excluded before scoring (spec 3.2)
 2. Proximity computation: nearby job counts via Google Maps driving distance
 3. Deterministic scoring: weighted numeric scores for each factor
@@ -8,7 +9,7 @@ AI Scoring Engine — Hybrid approach.
 6. Cost controls: top-N filtering, crew/weather/proximity data sent to Claude
 """
 import json
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 import anthropic
 from sqlalchemy.orm import Session
@@ -173,6 +174,40 @@ def _compute_nearby_counts(jobs: list[Job], db: Session) -> dict[int, int]:
 
 
 # ---------------------------------------------------------------------------
+# No-Build Dates pre-filter
+# ---------------------------------------------------------------------------
+
+def _no_build_prefilter(jobs: list[Job], build_date: date) -> tuple[list[Job], list[dict]]:
+    """
+    Drop jobs whose build (build_date + duration) would land inside the customer's
+    No-Build Dates. Returns (remaining_jobs, no_build_blocked_list).
+    Unlike weather, Must-Build jobs are blocked too: the customer asked, and the
+    office has to sort out the clash with the deadline.
+    """
+    from backend.services import no_build
+
+    remaining: list[Job] = []
+    blocked: list[dict] = []
+    for job in jobs:
+        hit = no_build.job_conflict(job, build_date)
+        if not hit:
+            remaining.append(job)
+            continue
+        blocked.append({
+            "job_id": job.id,
+            "customer_name": job.customer_name,
+            "address": job.address,
+            "must_build": job.must_build,
+            "must_build_deadline": str(job.must_build_deadline) if job.must_build_deadline else None,
+            "no_build_start": hit["start"],
+            "no_build_end": hit["end"],
+            "no_build_reason": hit["reason"],
+            "detail": f"No-Build Dates {no_build.describe(hit)}",
+        })
+    return remaining, blocked
+
+
+# ---------------------------------------------------------------------------
 # Weather pre-filter
 # ---------------------------------------------------------------------------
 
@@ -264,8 +299,13 @@ def _assign_pms_to_clusters(
     # Enrich clusters with score info and job_ids
     enriched = []
     for c in raw_clusters:
-        job_ids = [j["job_id"] for j in c["jobs"]]
-        has_must_build = any(j.get("must_build") for j in c["jobs"])
+        # Skip jobs filtered out before scoring (weather, No-Build Dates) so they
+        # don't take up a PM's capacity in the plan
+        members = [j for j in c["jobs"] if j["job_id"] in score_lookup]
+        if not members:
+            continue
+        job_ids = [j["job_id"] for j in members]
+        has_must_build = any(j.get("must_build") for j in members)
         total_score = sum(score_lookup.get(jid, {}).get("score", 0) for jid in job_ids)
         enriched.append({
             "cluster_id": c["cluster_id"],
@@ -408,6 +448,7 @@ def run_scoring_engine(db: Session, pm_ids: list[int] | None = None, target_date
             "recommendations": [], "clusters": [],
             "ai_explanation": "No jobs eligible for scheduling (To Schedule / Other Trades).",
             "weather_blocked": [], "weather_blocked_count": 0,
+            "no_build_blocked": [], "no_build_blocked_count": 0,
         }
 
     # Get available PMs
@@ -418,6 +459,15 @@ def run_scoring_engine(db: Session, pm_ids: list[int] | None = None, target_date
 
     # Get available crews
     crews = db.query(Crew).filter(Crew.is_active == True).all()
+
+    # --- Step 0: No-Build Dates (customer asked us not to build then). Checked against the
+    # target date, or tomorrow (Indianapolis) when the run has no date — the next build day.
+    from backend.services.no_build import local_today, active_windows
+    try:
+        build_date = date.fromisoformat(target_date[:10]) if target_date else None
+    except ValueError:
+        build_date = None
+    jobs, no_build_blocked = _no_build_prefilter(jobs, build_date or local_today() + timedelta(days=1))
 
     # --- Step 1: Weather pre-filter (spec 3.2: "Incompatible jobs are filtered before scoring") ---
     weather_blocked: list[dict] = []
@@ -430,9 +480,11 @@ def run_scoring_engine(db: Session, pm_ids: list[int] | None = None, target_date
         return {
             "recommendations": [],
             "clusters": [],
-            "ai_explanation": "All jobs filtered out by weather. No buildable jobs for this date.",
+            "ai_explanation": "All jobs filtered out by weather or No-Build Dates. No buildable jobs for this date.",
             "weather_blocked": weather_blocked,
             "weather_blocked_count": len(weather_blocked),
+            "no_build_blocked": no_build_blocked,
+            "no_build_blocked_count": len(no_build_blocked),
             "pm_count": len(pms),
             "job_count": 0,
         }
@@ -475,6 +527,9 @@ def run_scoring_engine(db: Session, pm_ids: list[int] | None = None, target_date
             "weather_status": job.weather_status,
             "weather_detail": job.weather_detail,
         })
+        upcoming_no_build = active_windows(job.no_build_dates)
+        if upcoming_no_build:
+            scored_jobs[-1]["no_build_dates"] = upcoming_no_build
 
     scored_jobs.sort(key=lambda x: x["score"], reverse=True)
 
@@ -560,6 +615,8 @@ def run_scoring_engine(db: Session, pm_ids: list[int] | None = None, target_date
         "ai_explanation": ai_explanation,
         "weather_blocked": weather_blocked,
         "weather_blocked_count": len(weather_blocked),
+        "no_build_blocked": no_build_blocked,
+        "no_build_blocked_count": len(no_build_blocked),
         "pm_count": len(pms),
         "job_count": len(scored_jobs),
     }
@@ -692,6 +749,8 @@ INSTRUCTIONS:
 2. If custom rules are configured, apply them and note any adjustments
 3. Consider proximity — jobs near each other should be scheduled on the same day for PM efficiency
 4. Note any jobs that seem risky to schedule (unconfirmed Tier 3, weather marginal)
+5. Jobs with "no_build_dates" must NOT be built on those dates (the customer asked).
+   Mention any that fall in the coming week so the scheduler plans around them.
 
 Return a JSON object with:
 - "explanation": A 3-5 sentence executive summary covering: scoring strategy, clusters found,

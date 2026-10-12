@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from './client';
-import type { Job, JobCreate, JobUpdate, JobNote, NotBuiltRequest, BucketCounts, JobBucket, TradeType } from '@/types';
+import type { Job, JobCreate, JobUpdate, JobNote, NotBuiltRequest, BucketCounts, JobBucket, TradeType, NoBuildWindow } from '@/types';
 
 // List jobs, optionally filtered by bucket and/or primary trade.
 // `trade` is a display-only filter (does not affect scoring).
@@ -85,6 +85,21 @@ export function useClearMustBuild() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['jobs'] });
       qc.invalidateQueries({ queryKey: ['bucketCounts'] });
+    },
+  });
+}
+
+// Replace a job's No-Build Dates (empty list clears them). `scheduled_conflict` is set
+// when the job is already on the calendar inside one of the new windows.
+export function useSetNoBuildDates() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, windows }: { id: number; windows: NoBuildWindow[] }) => {
+      const { data } = await api.put(`/jobs/${id}/no-build-dates`, { windows });
+      return data as Job & { scheduled_conflict: string | null };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['jobs'] });
     },
   });
 }

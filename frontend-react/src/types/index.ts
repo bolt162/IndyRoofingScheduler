@@ -65,6 +65,13 @@ export const MATERIAL_LABELS: Record<MaterialType, string> = {
   other: 'Other',
 };
 
+// A date range the customer asked us not to build (ISO yyyy-MM-dd, both ends inclusive)
+export interface NoBuildWindow {
+  start: string;
+  end: string;
+  reason: string | null;
+}
+
 // Main data types
 export interface Job {
   id: number;
@@ -96,6 +103,8 @@ export interface Job {
   crew_requirement_note: string | null;
   standalone_rule: boolean;
   standalone_option: StandaloneOption | null;
+  // Only windows that haven't ended yet
+  no_build_dates: NoBuildWindow[];
   bucket: JobBucket;
   rescheduled_count: number;
   not_built_reason: string | null;
@@ -177,6 +186,8 @@ export interface JobUpdate {
   notes?: string | null;
   permit_confirmed?: boolean;
   crew_requirement_flag?: boolean;
+  // Scheduler confirmed it's OK to build inside the job's No-Build Dates
+  override_no_build?: boolean;
 }
 
 export interface NotBuiltRequest {
@@ -254,6 +265,7 @@ export interface ScoringResult {
   must_build?: boolean;
   duration_days?: number;
   duration_confirmed?: boolean;
+  no_build_dates?: NoBuildWindow[];
 }
 
 export interface WeatherBlockedJob {
@@ -263,6 +275,18 @@ export interface WeatherBlockedJob {
   material_type: MaterialType | null;
   weather_status: 'do_not_build';
   weather_detail: string;
+}
+
+export interface NoBuildBlockedJob {
+  job_id: number;
+  customer_name: string;
+  address: string;
+  must_build: boolean;
+  must_build_deadline: string | null;
+  no_build_start: string;
+  no_build_end: string;
+  no_build_reason: string | null;
+  detail: string;
 }
 
 export interface ClusterDistance {
@@ -305,6 +329,8 @@ export interface ScoringResponse {
   ai_explanation: string;
   weather_blocked?: WeatherBlockedJob[];
   weather_blocked_count?: number;
+  no_build_blocked?: NoBuildBlockedJob[];
+  no_build_blocked_count?: number;
 }
 
 export interface SystemSetting {

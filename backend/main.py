@@ -243,7 +243,7 @@ def _migrate_job_buckets():
 
 
 def _migrate_job_columns():
-    """Add last_ai_analyzed_at column to jobs table if missing.
+    """Add newer columns to the jobs table if missing.
     Safe to run on every startup."""
     from sqlalchemy import inspect, text
     db = SessionLocal()
@@ -252,13 +252,22 @@ def _migrate_job_columns():
         if "jobs" not in insp.get_table_names():
             return
         existing = {col["name"] for col in insp.get_columns("jobs")}
-        if "last_ai_analyzed_at" not in existing:
+        is_postgres = "postgres" in str(engine.url).lower()
+        columns = {
+            "last_ai_analyzed_at": "TIMESTAMP",
+            # JSON on Postgres so the list round-trips (SQLite stores JSON as TEXT)
+            "no_build_dates": "JSON" if is_postgres else "TEXT",
+        }
+        for name, col_type in columns.items():
+            if name in existing:
+                continue
+            stmt = f"ALTER TABLE jobs ADD COLUMN {name} {col_type}"
             try:
-                db.execute(text("ALTER TABLE jobs ADD COLUMN last_ai_analyzed_at TIMESTAMP"))
+                db.execute(text(stmt))
                 db.commit()
-                logger.info("Migration: ALTER TABLE jobs ADD COLUMN last_ai_analyzed_at TIMESTAMP")
+                logger.info(f"Migration: {stmt}")
             except Exception as e:
-                logger.warning(f"Migration skip (last_ai_analyzed_at): {e}")
+                logger.warning(f"Migration skip ({name}): {e}")
                 db.rollback()
     except Exception as e:
         logger.warning(f"Job column migration failed: {e}")

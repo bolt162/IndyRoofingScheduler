@@ -83,8 +83,13 @@ export function DashboardPage() {
       const result = await runScoring.mutateAsync({});
       setLatestScoringResult(result);
       const blockedCount = result.weather_blocked_count ?? 0;
-      const msg = blockedCount > 0
-        ? `Scored ${result.recommendations.length} jobs (${blockedCount} blocked by weather)`
+      const noBuildCount = result.no_build_blocked_count ?? 0;
+      const blockedParts = [
+        blockedCount > 0 && `${blockedCount} blocked by weather`,
+        noBuildCount > 0 && `${noBuildCount} on No-Build Dates`,
+      ].filter(Boolean);
+      const msg = blockedParts.length > 0
+        ? `Scored ${result.recommendations.length} jobs (${blockedParts.join(', ')})`
         : `Scored ${result.recommendations.length} jobs`;
       toast.success(msg);
     } catch {
@@ -344,6 +349,49 @@ export function DashboardPage() {
                     </Badge>
                     <span className="text-[10px] text-red-600 max-w-[200px] truncate" title={bj.weather_detail}>
                       {bj.weather_detail}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* No-Build Dates — customer asked us not to build on the date being planned */}
+      {scoringResult?.no_build_blocked && scoringResult.no_build_blocked.length > 0 && (
+        <Card className="border-violet-200 bg-violet-50/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm text-violet-800 flex items-center gap-2">
+              📅 No-Build Dates ({scoringResult.no_build_blocked.length})
+              <span className="text-xs font-normal text-violet-700">
+                — left out because the customer asked us not to build then
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1.5">
+              {scoringResult.no_build_blocked.map((bj) => (
+                <div
+                  key={bj.job_id}
+                  className="flex items-center justify-between text-xs bg-white rounded px-3 py-2 border border-violet-100"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className="font-medium truncate">{bj.customer_name}</span>
+                    <span className="text-muted-foreground truncate">{bj.address}</span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {bj.must_build && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] bg-red-50 text-red-700 border-red-300"
+                        title="Must-Build job: check the deadline against these dates"
+                      >
+                        Must-Build{bj.must_build_deadline ? ` · due ${bj.must_build_deadline}` : ''}
+                      </Badge>
+                    )}
+                    <span className="text-[10px] text-violet-800 max-w-[220px] truncate" title={bj.detail}>
+                      {bj.detail}
                     </span>
                   </div>
                 </div>

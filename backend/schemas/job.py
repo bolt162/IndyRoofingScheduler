@@ -35,6 +35,7 @@ class JobResponse(JobBase):
     crew_requirement_note: str | None = None
     standalone_rule: bool = False
     standalone_option: str | None = None
+    no_build_dates: list[dict] | None = None
     bucket: str = "to_schedule"
     rescheduled_count: int = 0
     not_built_reason: str | None = None
@@ -97,6 +98,18 @@ class JobUpdate(BaseModel):
     notes: str | None = None  # Maps to jn_notes_raw
     permit_confirmed: bool | None = None
     crew_requirement_flag: bool | None = None
+    # Scheduler already confirmed it's OK to build inside the job's No-Build Dates
+    override_no_build: bool | None = None
+
+
+class NoBuildWindow(BaseModel):
+    start: date
+    end: date
+    reason: str | None = None
+
+
+class NoBuildDatesRequest(BaseModel):
+    windows: list[NoBuildWindow]
 
 
 class NotBuiltRequest(BaseModel):

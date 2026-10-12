@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { addDays, format, isToday } from 'date-fns';
+import { addDays, format, isToday, parseISO } from 'date-fns';
 import {
   DndContext,
   type DragEndEvent,
@@ -23,6 +23,7 @@ import { useSchedulePlans, useConfirmPlan } from '@/api/schedule';
 import { usePMs } from '@/api/settings';
 import { useUIStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
+import { describeNoBuild, noBuildConflict } from '@/lib/no-build';
 import type { Job } from '@/types';
 
 export function WeeklyPlanPage() {
@@ -156,6 +157,18 @@ export function WeeklyPlanPage() {
     const assignedPmId = selectedPMIds[0];
     const pmName = activePMs.find((p) => p.id === assignedPmId)?.name ?? '';
 
+    // No-Build Dates: the customer asked us not to build then — make the scheduler confirm
+    const sameDay = job.bucket === 'scheduled' && job.date_scheduled === dayStr;
+    const clash = sameDay ? null : noBuildConflict(job, dayStr);
+    if (clash) {
+      const multiDay = job.duration_days > 1 ? ` (a ${job.duration_days}-day build)` : '';
+      const ok = confirm(
+        `${job.customer_name} asked us not to build ${describeNoBuild(clash)}.\n\n` +
+        `Schedule on ${format(parseISO(dayStr), 'EEE, MMM d')}${multiDay} anyway?`,
+      );
+      if (!ok) return;
+    }
+
     try {
       await updateJob.mutateAsync({
         id: job.id,
@@ -163,11 +176,17 @@ export function WeeklyPlanPage() {
           bucket: 'scheduled',
           date_scheduled: dayStr,
           assigned_pm_id: assignedPmId,
+          ...(clash ? { override_no_build: true } : {}),
         },
       });
       toast.success(`Scheduled ${job.customer_name} for ${dayStr} → ${pmName}`);
-    } catch {
-      toast.error('Failed to schedule job');
+    } catch (err: any) {
+      // 409 = No-Build Dates the page didn't know about yet (e.g. just added elsewhere)
+      toast.error(
+        err?.response?.status === 409
+          ? `Not scheduled: ${err.response.data.detail} Refresh and try again if you still want this day.`
+          : 'Failed to schedule job',
+      );
     }
   };
 

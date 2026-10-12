@@ -118,6 +118,8 @@ class Job(Base):
     crew_requirement_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     standalone_rule: Mapped[bool] = mapped_column(Boolean, default=False)
     standalone_option: Mapped[str | None] = mapped_column(String(50), nullable=True)  # saturday_build / sales_rep_managed
+    # Date ranges the customer asked us not to build: [{start, end, reason}] (see services/no_build.py)
+    no_build_dates: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
 
     # Scheduling state
     bucket: Mapped[str] = mapped_column(String(50), default=JobBucket.TO_SCHEDULE.value)
