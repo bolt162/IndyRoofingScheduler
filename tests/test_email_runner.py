@@ -364,3 +364,14 @@ def test_rep_preview_explains_what_customers_read(db, jn, outbox):
     assert "What your customers are reading" in nick["text"]
     assert "Never give a build date" in nick["text"]
     assert "What it says about their spot" in nick["html"]
+
+
+def test_corrected_preview_carries_apology_in_one_email(db, jn, outbox):
+    add_job(db, jn, "Jane Smith", rep="Nick Smith", entered=THU - timedelta(days=30))
+    R.send_corrected_preview(db, THU - timedelta(hours=20), mode="live")
+    nick = [s for s in outbox if s["to"] == ["nick.smith@indyroofandrestoration.com"]]
+    assert len(nick) == 1 and nick[0]["subject"].startswith("Corrected: ")
+    assert nick[0]["text"].startswith("Hi Nick,\n\nA quick apology from Claude")
+    assert "Nothing for you to send" in nick[0]["text"]
+    full = next(s for s in outbox if len(s["to"]) > 1)
+    assert "A quick apology from Claude" in full["text"]

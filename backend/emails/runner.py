@@ -600,9 +600,9 @@ def preview_html(preview: dict, rep_jn_name: str | None = None) -> str:
 
 
 def _preview_email(subject: str, preview: dict, rep_jn_name: str | None = None,
-                   greeting: str | None = None) -> ComposedEmail:
-    """Greeting, what this email is, the tables, then how to talk about it."""
-    top = (f"{greeting}\n\n" if greeting else "") + _preview_intro(rep_jn_name)
+                   greeting: str | None = None, note: str | None = None) -> ComposedEmail:
+    """Greeting, an optional one-time note, what this email is, the tables, then how to talk about it."""
+    top = (f"{greeting}\n\n" if greeting else "") + (f"{note}\n\n" if note else "") + _preview_intro(rep_jn_name)
     tips = "**If a customer asks you about it**\n\n" + C.PREVIEW_TALKING_POINTS
     html = (markup.to_html(top) + preview_html(preview, rep_jn_name)
             + '<div style="margin-top:24px;">' + markup.to_html(tips) + "</div>")
@@ -610,21 +610,30 @@ def _preview_email(subject: str, preview: dict, rep_jn_name: str | None = None,
     return ComposedEmail("internal", subject, K._wrap_html(html, None, []), text, is_customer=False)
 
 
-def send_preview(db: Session, now: datetime | None = None, mode: str | None = None) -> dict:
+def send_preview(db: Session, now: datetime | None = None, mode: str | None = None,
+                 note: str | None = None, subject_prefix: str = "") -> dict:
     rc = RunContext(db, now or datetime.utcnow(), mode)
     preview = build_preview(db, mode=rc.mode)
     full = team.full_preview_recipients(db)
-    deliver(rc, None, _preview_email(C.PREVIEW_SUBJECT.format(count=preview["sending"]), preview), full)
+    deliver(rc, None, _preview_email(subject_prefix + C.PREVIEW_SUBJECT.format(count=preview["sending"]),
+                                     preview, note=note), full)
     reps_sent = 0
     for rep in db.query(TeamContact).filter(TeamContact.is_active.is_(True), TeamContact.role == "rep").all():
         mine = [r for r in preview["rows"] if r["rep"] == rep.jn_name]
         if not mine or not rep.email:
             continue
         count = sum(1 for r in mine if r["template"])
-        deliver(rc, None, _preview_email(C.PREVIEW_REP_SUBJECT.format(count=count), preview, rep.jn_name,
-                                         greeting=f"Hi {rep.display_name.split()[0]},"), [rep.email])
+        deliver(rc, None, _preview_email(subject_prefix + C.PREVIEW_REP_SUBJECT.format(count=count), preview,
+                                         rep.jn_name, greeting=f"Hi {rep.display_name.split()[0]},", note=note),
+                [rep.email])
         reps_sent += 1
     return {"sending": preview["sending"], "reps": reps_sent}
+
+
+def send_corrected_preview(db: Session, now: datetime | None = None, mode: str | None = None) -> dict:
+    """One-time resend of the 2026-10-14 preview with Claude's apology on top."""
+    return send_preview(db, now, mode, note=C.PREVIEW_CORRECTION_NOTE,
+                        subject_prefix=C.PREVIEW_CORRECTION_SUBJECT_PREFIX)
 
 
 def send_samples(db: Session, now: datetime | None = None, mode: str | None = None) -> dict:

@@ -728,3 +728,11 @@ PREVIEW_GUIDE = {
     "weather_slowdown": "Weather kept crews off roofs this week, so the line moved slower. Their spot hasn't changed.",
     "front_of_line": "They're still at the top of the schedule while we set a new build date after a reschedule.",
 }
+
+# One-time resend of the 2026-10-14 preview (task "preview-corrected"), from Aaron's request
+PREVIEW_CORRECTION_SUBJECT_PREFIX = "Corrected: "
+PREVIEW_CORRECTION_NOTE = (
+    "**A quick apology from Claude, Aaron's AI assistant.** I built the preview email you got at "
+    "2pm today, and I'm sorry: it was hard to read and didn't explain what it was. Here is the "
+    "corrected data, and this is what the preview will look like every Wednesday moving forward."
+)
