@@ -683,11 +683,11 @@ RESEARCH_WHAT = (
 )
 RESEARCH_ACTION_APPROVED = (
     "**What to do:** nothing, unless something below looks wrong. It was approved automatically because "
-    "the research was thorough. To correct it, open the Customer Emails page in the Scheduler "
+    "the research was thorough. To correct it, open the Customer Email Alerts page in the Scheduler "
     "(Products tab)."
 )
 RESEARCH_ACTION_PENDING = (
-    "**What to do:** please review and approve it on the Customer Emails page in the Scheduler "
+    "**What to do:** please review and approve it on the Customer Email Alerts page in the Scheduler "
     "(Products tab). The research couldn't confirm everything. Until it's approved, customers "
     "with this shingle get the insurance tip without an impact rating."
 )

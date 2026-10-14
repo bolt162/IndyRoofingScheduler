@@ -227,4 +227,4 @@ def test_review_summary_for_office():
     email = R.review_email(row)
     assert "Impact rating: Class 4" in email.text and "Shingle type: Polymer modified" in email.text
     assert '<a href="https://gaf.com/as2"' in email.html
-    assert "Customer Emails page" in email.text and "Settings page" not in email.text
+    assert "Customer Email Alerts page" in email.text and "Settings page" not in email.text

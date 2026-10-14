@@ -37,7 +37,7 @@ export function EmailsPage() {
   return (
     <div className="space-y-4 p-4 md:p-6">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold">Customer Emails</h1>
+        <h1 className="text-2xl font-semibold">Customer Email Alerts</h1>
         {status && (
           <span className={`rounded-full px-3 py-1 text-xs font-medium ${MODE_STYLE[status.mode]}`}>
             {MODE_TEXT[status.mode]}
