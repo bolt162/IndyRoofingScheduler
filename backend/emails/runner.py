@@ -500,48 +500,92 @@ def next_thursday_10am(now: datetime | None = None) -> datetime:
     return target.astimezone(timezone.utc).replace(tzinfo=None)
 
 
-def preview_text(preview: dict, rep_jn_name: str | None = None) -> str:
-    rows = preview["rows"] if rep_jn_name is None else [r for r in preview["rows"] if r["rep"] == rep_jn_name]
-    lines = []
+def _preview_sections(preview: dict, rep_jn_name: str | None = None) -> list[tuple[str, list[str], list[list[str]]]]:
+    """The preview as (title, column headers, rows): one customer per row. Reps get only their
+    own customers and no rep column; the full version adds the office-only sections."""
+    full = rep_jn_name is None
+    rows = preview["rows"] if full else [r for r in preview["rows"] if r["rep"] == rep_jn_name]
+    rows = sorted(rows, key=lambda r: (r["customer"] or "").lower())
+    rep_col = ["Rep"] if full else []
+
+    def rep(r: dict) -> list[str]:
+        return [r["rep"] or "No rep"] if full else []
+
+    def who(r: dict) -> str:
+        trade = (r.get("trade") or "").replace("_", " ").capitalize()
+        return f"{r['customer']} ({trade})" if trade else r["customer"]
+
     going = [r for r in rows if r["template"]]
     skipped = [r for r in rows if not r["template"]]
-    lines.append(f"Going out Thursday ({len(going)}):")
-    lines += [f"- {r['customer']} ({r['trade']}): {r['label']}" for r in going] or ["- none"]
+    sections = [(f"Going out Thursday ({len(going)})", ["Customer", *rep_col, "Email"],
+                 [[who(r), *rep(r), f"{r['label']}: {r['subject']}" if r["subject"] else r["label"]]
+                  for r in going])]
     if skipped:
-        lines.append("")
-        lines.append(f"Not getting an email ({len(skipped)}):")
-        lines += [f"- {r['customer']}: {r['reason']}" for r in skipped]
-    if rep_jn_name is None:
+        sections.append((f"Not getting an email ({len(skipped)})", ["Customer", *rep_col, "Why"],
+                         [[who(r), *rep(r), r["reason"]] for r in skipped]))
+    if full:
         if preview["fix"]:
-            lines.append("")
-            lines.append("Please fix in JobNimbus:")
-            lines += [f"- {r['customer']}: {r['reason']}" for r in preview["fix"]]
+            sections.append(("Please fix in JobNimbus", ["Customer", "Rep", "Problem"],
+                             [[r["customer"], r["rep"] or "No rep", r["reason"]] for r in preview["fix"]]))
         if preview["long_wait"]:
-            lines.append("")
-            lines.append("Waiting 10+ weeks:")
-            lines += [f"- {r['customer']}: {r['weeks']} weeks ({r['rep'] or 'no rep'})" for r in preview["long_wait"]]
+            sections.append(("Waiting 10+ weeks", ["Customer", "Rep", "Weeks"],
+                             [[r["customer"], r["rep"] or "No rep", f"{r['weeks']} weeks"] for r in preview["long_wait"]]))
         flagged = [r for r in rows if r["notes"]]
         if flagged:
-            lines.append("")
-            lines.append("Heads up:")
-            lines += [f"- {r['customer']}: {'; '.join(r['notes'])}" for r in flagged]
-    return "\n".join(lines)
+            sections.append(("Heads up", ["Customer", "Note"],
+                             [[r["customer"], "; ".join(r["notes"])] for r in flagged]))
+    return sections
+
+
+def preview_text(preview: dict, rep_jn_name: str | None = None) -> str:
+    """Plain text: a heading, then one line per customer."""
+    out = []
+    for title, _cols, rows in _preview_sections(preview, rep_jn_name):
+        out.append(f"{title}:\n" + ("\n".join("- " + " | ".join(r) for r in rows) or "- none"))
+    return "\n\n".join(out)
+
+
+def preview_html(preview: dict, rep_jn_name: str | None = None, greeting: str | None = None) -> str:
+    """HTML: a heading and a table per section, one customer per row."""
+    import html as h
+    cell = "padding:8px 10px;border-bottom:1px solid #e5e7eb;vertical-align:top;font-size:14px;line-height:20px;"
+    head = cell + "text-align:left;background:#f3f4f6;color:#374151;font-weight:bold;"
+    parts = [f'<p style="margin:0 0 16px 0;">{h.escape(greeting)}</p>'] if greeting else []
+    for title, cols, rows in _preview_sections(preview, rep_jn_name):
+        parts.append(f'<h3 style="margin:24px 0 8px 0;font-size:17px;">{h.escape(title)}</h3>')
+        if not rows:
+            parts.append('<p style="margin:0 0 16px 0;color:#6b7280;">None this week.</p>')
+            continue
+        ths = "".join(f'<th style="{head}">{h.escape(c)}</th>' for c in cols)
+        trs = "".join("<tr>" + "".join(f'<td style="{cell}">{h.escape(v)}</td>' for v in r) + "</tr>"
+                      for r in rows)
+        parts.append(f'<table role="presentation" cellpadding="0" cellspacing="0" '
+                     f'style="width:100%;border-collapse:collapse;margin:0 0 8px 0;">'
+                     f"<tr>{ths}</tr>{trs}</table>")
+    return "".join(parts)
+
+
+def _preview_email(subject: str, preview: dict, rep_jn_name: str | None = None,
+                   greeting: str | None = None) -> ComposedEmail:
+    text = preview_text(preview, rep_jn_name)
+    return ComposedEmail("internal", subject,
+                         K._wrap_html(preview_html(preview, rep_jn_name, greeting), None, []),
+                         f"{greeting}\n\n{text}" if greeting else text, is_customer=False)
 
 
 def send_preview(db: Session, now: datetime | None = None, mode: str | None = None) -> dict:
     rc = RunContext(db, now or datetime.utcnow(), mode)
     preview = build_preview(db, mode=rc.mode)
     full = team.full_preview_recipients(db)
-    body = preview_text(preview)
-    deliver(rc, None, _internal(C.PREVIEW_SUBJECT.format(count=preview["sending"]), body), full)
+    deliver(rc, None, _preview_email(C.PREVIEW_SUBJECT.format(count=preview["sending"]), preview), full)
     reps_sent = 0
     for rep in db.query(TeamContact).filter(TeamContact.is_active.is_(True), TeamContact.role == "rep").all():
         mine = [r for r in preview["rows"] if r["rep"] == rep.jn_name]
         if not mine or not rep.email:
             continue
         count = sum(1 for r in mine if r["template"])
-        deliver(rc, None, _internal(C.PREVIEW_REP_SUBJECT.format(count=count),
-                                    f"Hi {rep.display_name.split()[0]},\n\n" + preview_text(preview, rep.jn_name)), [rep.email])
+        deliver(rc, None, _preview_email(C.PREVIEW_REP_SUBJECT.format(count=count), preview, rep.jn_name,
+                                         greeting=f"Hi {rep.display_name.split()[0]},"), [rep.email])
         reps_sent += 1
     return {"sending": preview["sending"], "reps": reps_sent}
 

@@ -46,7 +46,7 @@ def outbox(monkeypatch):
         if mode == "off":
             return False
         sent.append({"job_id": job_id, "template": email.template, "to": list(to), "subject": email.subject,
-                     "mode": mode, "customer": email.is_customer, "text": email.text})
+                     "mode": mode, "customer": email.is_customer, "text": email.text, "html": email.html})
         return True
     monkeypatch.setattr(R, "send", fake_send)
     return sent
@@ -339,3 +339,18 @@ def test_main_contact_gets_the_email_even_when_not_the_customer(db, jn, outbox):
     jn["details"][job.jn_job_id].contact_name = "Desi Tunny"
     R.run_weekly(db, THU, mode="live")
     assert outbox[0]["to"] == ["desi@example.com"] and "Hi Desi," in outbox[0]["text"]
+
+
+def test_preview_email_is_one_customer_per_row(db, jn, outbox):
+    add_job(db, jn, "Jane Smith", rep="Nick Smith", entered=THU - timedelta(days=30))
+    add_job(db, jn, "Bob Jones", rep="Joe Venn", entered=THU - timedelta(days=40))
+    R.send_preview(db, THU - timedelta(hours=20), mode="live")
+    full = next(s for s in outbox if len(s["to"]) > 1)
+    lines = full["text"].splitlines()
+    assert lines[0].startswith("Going out Thursday (2)")
+    # Each customer on their own line, alphabetical, with their rep
+    assert lines[1].startswith("- Bob Jones") and "Joe Venn" in lines[1]
+    assert lines[2].startswith("- Jane Smith") and "Nick Smith" in lines[2]
+    assert full["html"].count("<tr>") >= 3  # header + one row per customer
+    nick = next(s for s in outbox if s["to"] == ["nick.smith@indyroofandrestoration.com"])
+    assert nick["text"].startswith("Hi Nick,") and "Nick Smith" not in nick["text"].split("\n", 2)[2]
