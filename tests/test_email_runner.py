@@ -375,3 +375,28 @@ def test_corrected_preview_carries_apology_in_one_email(db, jn, outbox):
     assert "Nothing for you to send" in nick[0]["text"]
     full = next(s for s in outbox if len(s["to"]) > 1)
     assert "A quick apology from Claude" in full["text"]
+
+
+# --- Team emails all use the same readable layout ---
+
+def _team_layout_ok(email: dict) -> None:
+    assert email["text"].startswith("Automatic"), email["subject"]
+    assert "What to do:" in email["text"], email["subject"]
+    assert "Customer: Jane Smith" in email["text"], email["subject"]  # one fact per line
+    assert "<table" in email["html"], email["subject"]
+
+
+def test_every_team_email_explains_itself(db, jn, outbox):
+    add_job(db, jn, "Jane Smith", entered=THU - timedelta(weeks=10))
+    R.run_long_wait_alerts(db, THU, mode="live")
+    for e in outbox:
+        _team_layout_ok(e)
+    assert any(e["text"].split("\n\n")[1] == "Greg," for e in outbox)
+    assert any(e["text"].split("\n\n")[1] == "Hi Nick," for e in outbox)
+
+
+def test_second_reschedule_and_jn_missing_explain_themselves(db, jn, outbox):
+    resched_setup(db, jn, 2)
+    R.run_reschedule_checks(db, THU + timedelta(hours=8), mode="live")
+    _team_layout_ok(outbox[1])
+    assert "already been sent an automatic apology" in outbox[1]["text"]

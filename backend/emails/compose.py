@@ -442,10 +442,14 @@ def compose(key: str, ctx: EmailContext, rotation_index: int = 0,
     if key == INTERNAL_SECOND_RESCHEDULE:
         if not v["rep_name"]:
             v["rep_name"] = "Sales Rep"
-        subject = C.INTERNAL_SECOND_RESCHEDULE_SUBJECT.format_map(v)
-        body = C.INTERNAL_SECOND_RESCHEDULE_BODY.format_map(v)
-        html = _wrap_html(markup.to_html(body), None, [])
-        return ComposedEmail(key, subject, html, markup.to_text(body), is_customer=False)
+        from backend.emails.internal import team_email
+        return team_email(
+            key, C.INTERNAL_SECOND_RESCHEDULE_SUBJECT.format_map(v), C.INTERNAL_SECOND_RESCHEDULE_WHAT,
+            C.INTERNAL_SECOND_RESCHEDULE_ACTION,
+            [("Customer", v["customer_name"]), ("Address", v["job_address"]), ("Customer phone", v["customer_phone"]),
+             ("Project", v["project_word"].capitalize()), ("Times rescheduled", str(ctx.rescheduled_count or 2)),
+             ("Rep", v["rep_name"]), ("Project manager", v["pm_name"]), ("JobNimbus", v["job_link"])],
+            greeting=f"{v['pm_name']} and {v['rep_name']},")
 
     subject_t, body_t = _body_and_subject(key, ctx, v, flags)
     v["position_block"] = position_block(ctx)

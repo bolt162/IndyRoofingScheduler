@@ -31,6 +31,7 @@ from backend.emails import copy as C
 from backend.emails import markup, research, selector as S, team
 from backend.emails.compose import ComposedEmail, EmailContext, compose
 from backend.emails.config import email_mode, office_alert_recipient
+from backend.emails.internal import team_email
 from backend.emails.events import DONE_BUCKETS, states_for
 from backend.emails.jn_data import JobDetails, fetch_job_details, jn_schedule_email_sent
 from backend.emails.sender import send
@@ -362,8 +363,13 @@ def run_scheduled_emails(db: Session, now: datetime | None = None, mode: str | N
             st.scheduled_email_sent = True
             result["sent"] += 1
             if not jn_sent:
-                _office(rc, job, C.JN_EMAIL_MISSING_SUBJECT, C.JN_EMAIL_MISSING_BODY, ctx,
-                        date_note=f" (with their date, {K._format_date(ctx.scheduled_date)})" if ctx.scheduled_date else "")
+                date_note = f" (with their date, {K._format_date(ctx.scheduled_date)})" if ctx.scheduled_date else ""
+                _office(rc, job, team_email(
+                    "internal", C.JN_EMAIL_MISSING_SUBJECT.format(customer_name=job.customer_name),
+                    C.JN_EMAIL_MISSING_WHAT.format(date_note=date_note), C.JN_EMAIL_MISSING_ACTION,
+                    [("Customer", job.customer_name), ("Address", job.address), ("Customer phone", ctx.customer_phone),
+                     ("Scheduled for", K._format_date(ctx.scheduled_date) if ctx.scheduled_date else "No date on the job"),
+                     ("Rep", ctx.rep_name), ("JobNimbus", ctx.job_link)]))
                 result["flags"] += 1
         db.commit()
     return result
@@ -373,20 +379,17 @@ def run_scheduled_emails(db: Session, now: datetime | None = None, mode: str | N
 # Internal emails
 # ---------------------------------------------------------------------------
 
-def _internal(subject: str, body: str) -> ComposedEmail:
-    return ComposedEmail("internal", subject, K._wrap_html(markup.to_html(body), None, []),
-                         markup.to_text(body), is_customer=False)
-
-
 def _ops_emails(db: Session) -> list[str]:
     return [r.email for r in db.query(TeamContact).filter(TeamContact.is_active.is_(True),
                                                           TeamContact.role == "ops").all() if r.email]
 
 
-def _office(rc: RunContext, job: Job, subject_t: str, body_t: str, ctx: EmailContext, **extra) -> None:
-    v = {"customer_name": job.customer_name, "job_address": job.address, "job_link": ctx.job_link, **extra}
-    to = [office_alert_recipient()] if office_alert_recipient() else team.full_preview_recipients(rc.db)
-    deliver(rc, job, _internal(subject_t.format(**v), body_t.format(**v)), to)
+def _office_recipients(db: Session) -> list[str]:
+    return [office_alert_recipient()] if office_alert_recipient() else team.full_preview_recipients(db)
+
+
+def _office(rc: RunContext, job: Job, email: ComposedEmail) -> None:
+    deliver(rc, job, email, _office_recipients(rc.db))
 
 
 def run_long_wait_alerts(db: Session, now: datetime | None = None, mode: str | None = None) -> dict:
@@ -409,14 +412,21 @@ def run_long_wait_alerts(db: Session, now: datetime | None = None, mode: str | N
              "rep_name": rep["rep_name"], "rep_first": (rep["rep_name"] or "there").split()[0],
              "jn_rep": job.sales_rep or "none listed",
              "rep_label": rep["rep_name"] or "no active rep"}
-        v["rep_line"] = (C.LONG_WAIT_OPS_REP_LINE if rep["rep_name"] else C.LONG_WAIT_OPS_NO_REP_LINE).format(**v)
+        action = (C.LONG_WAIT_OPS_REP_LINE if rep["rep_name"] else C.LONG_WAIT_OPS_NO_REP_LINE).format(**v)
+        details = [("Customer", job.customer_name), ("Address", job.address), ("Customer phone", v["customer_phone"]),
+                   ("Project", v["project_word"].capitalize()), ("Weeks waiting", str(weeks)),
+                   ("Times rescheduled", str(v["rescheduled_count"])), ("Rep", v["rep_label"]),
+                   ("JobNimbus", d.job_link)]
         any_sent = False
         ops = _ops_emails(db)
         if ops:
-            any_sent |= deliver(rc, job, _internal(C.LONG_WAIT_OPS_SUBJECT.format(**v), C.LONG_WAIT_OPS_BODY.format(**v)), ops)
+            any_sent |= deliver(rc, job, team_email("internal", C.LONG_WAIT_OPS_SUBJECT.format(**v),
+                                                    C.LONG_WAIT_OPS_WHAT.format(**v), action, details,
+                                                    greeting="Greg,"), ops)
         if rep["rep_email"]:
-            any_sent |= deliver(rc, job, _internal(C.LONG_WAIT_REP_SUBJECT.format(**v), C.LONG_WAIT_REP_BODY.format(**v)),
-                                [rep["rep_email"]])
+            any_sent |= deliver(rc, job, team_email("internal", C.LONG_WAIT_REP_SUBJECT.format(**v),
+                                                    C.LONG_WAIT_REP_WHAT.format(**v), C.LONG_WAIT_REP_ACTION,
+                                                    details, greeting=f"Hi {v['rep_first']},"), [rep["rep_email"]])
         if any_sent:
             st.long_wait_alert_week = weeks
             result["jobs"] += 1
@@ -427,10 +437,9 @@ def run_long_wait_alerts(db: Session, now: datetime | None = None, mode: str | N
 def run_research(db: Session, now: datetime | None = None, mode: str | None = None, client=None) -> dict:
     rc = RunContext(db, now or datetime.utcnow(), mode)
     rows = research.run_pending_research(db, client=client)
-    to = [office_alert_recipient()] if office_alert_recipient() else team.full_preview_recipients(db)
+    to = _office_recipients(db)
     for row in rows:
-        body = research.review_summary(row)
-        deliver(rc, None, _internal(C.RESEARCH_SUBJECT.format(product=row.display_name or row.raw_text), body), to)
+        deliver(rc, None, research.review_email(row), to)
     return {"researched": len(rows)}
 
 

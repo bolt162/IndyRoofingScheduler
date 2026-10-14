@@ -583,17 +583,16 @@ The Indy Roof and Restoration Team
 """
 
 INTERNAL_SECOND_RESCHEDULE_SUBJECT = "Second reschedule: {customer_name}, {job_address}"
-INTERNAL_SECOND_RESCHEDULE_BODY = """
-{pm_name} and {rep_name},
-
-The build for {customer_name} at {job_address} has now been rescheduled twice. The customer has been sent an automated apology email.
-
-If you haven't already, please reach out to them personally today to check in and talk through next steps. A call from someone they know goes a long way at this point.
-
-Customer phone: {customer_phone}
-
-JobNimbus: {job_link}
-"""
+INTERNAL_SECOND_RESCHEDULE_WHAT = (
+    "**Automatic alert from the Indy Roof Scheduler.** This customer's build has now been moved twice. "
+    "It goes to the project manager and the rep on the job. The customer has already been sent an "
+    "automatic apology email from us."
+)
+INTERNAL_SECOND_RESCHEDULE_ACTION = (
+    "**What to do:** call the customer personally today to check in and talk through next steps. "
+    "A call from someone they know goes a long way at this point. Only give a new date if production "
+    "has set one."
+)
 
 # ---------------------------------------------------------------------------
 # YOU'RE SCHEDULED (fun one). Goes out about an hour after JobNimbus's official
@@ -644,43 +643,54 @@ JobNimbus: {job_link}
 # INTERNAL EMAILS (team only, never customers)
 # ---------------------------------------------------------------------------
 LONG_WAIT_OPS_SUBJECT = "{weeks} weeks in the queue: {customer_name} ({rep_label})"
-LONG_WAIT_OPS_BODY = """
-Greg,
-
-{customer_name} at {job_address} has been in the build queue for {weeks} weeks ({project_word}).
-
-{rep_line}
-
-Rescheduled: {rescheduled_count} times
-
-JobNimbus: {job_link}
-"""
-LONG_WAIT_OPS_REP_LINE = "{rep_name} has been asked to get an update from production and reach out to them personally."
-LONG_WAIT_OPS_NO_REP_LINE = "The rep on this job ({jn_rep}) is no longer with us, so this customer needs someone to reach out."
+LONG_WAIT_OPS_WHAT = (
+    "**Automatic alert from the Indy Roof Scheduler.** A customer has been waiting in the build queue "
+    "for {weeks} weeks. These go out at 10 weeks, then every 2 weeks while they keep waiting. The rep "
+    "gets their own copy asking them to call the customer."
+)
+LONG_WAIT_OPS_REP_LINE = "**What to do:** nothing unless you want to step in. {rep_name} has been asked to get an update from production and reach out to the customer personally."
+LONG_WAIT_OPS_NO_REP_LINE = "**What to do:** the rep on this job ({jn_rep}) is no longer with us, so please have someone reach out to the customer personally."
 
 LONG_WAIT_REP_SUBJECT = "Personal touch needed: {customer_name}, {weeks} weeks waiting"
-LONG_WAIT_REP_BODY = """
-Hi {rep_first},
-
-{customer_name} at {job_address} has been waiting {weeks} weeks for their {project_word}.
-
-Please check with production on where the job stands, then give them a personal call or text to let them know what's going on. A quick check-in from you goes a long way.
-
-Customer phone: {customer_phone}
-
-JobNimbus: {job_link}
-"""
+LONG_WAIT_REP_WHAT = (
+    "**Automatic alert from the Indy Roof Scheduler.** One of your customers has been waiting in the "
+    "build queue for {weeks} weeks. They've been getting our automatic Thursday update emails, but a "
+    "personal touch from you matters most now. Greg gets a copy of this alert."
+)
+LONG_WAIT_REP_ACTION = (
+    "**What to do:** check with production (Greg) on where the job stands, then call or text the "
+    "customer personally to let them know what's going on. Don't promise a date unless production gives you one."
+)
 
 JN_EMAIL_MISSING_SUBJECT = "No scheduling email from JobNimbus: {customer_name}"
-JN_EMAIL_MISSING_BODY = """
-{customer_name} at {job_address} was scheduled, but JobNimbus's "Project Update" scheduling email doesn't show on the job.
-
-Please make sure they get their project date and details. Our fun "you're on the calendar" email still went out{date_note}.
-
-JobNimbus: {job_link}
-"""
+JN_EMAIL_MISSING_WHAT = (
+    "**Automatic check from the Indy Roof Scheduler.** When a job is scheduled, JobNimbus should send "
+    "the customer its official \"Project Update\" email with their date and build day details. We "
+    "couldn't find that email on this job. Our own fun \"you're on the calendar\" email still went out{date_note}."
+)
+JN_EMAIL_MISSING_ACTION = (
+    "**What to do:** make sure the customer gets their date and build day details. To resend from "
+    "JobNimbus: check the work order's start date, save, then move the work order off Pending Start "
+    "and back to Pending Start."
+)
 
 RESEARCH_SUBJECT = "New shingle product researched: {product}"
+RESEARCH_SUBJECT_PENDING = "Please review: new shingle product {product}"
+RESEARCH_WHAT = (
+    "**Automatic update from the Indy Roof Scheduler.** A material order had a shingle product that "
+    "wasn't on our list, so the Scheduler looked it up on the manufacturer's website. Its impact rating "
+    "decides which insurance tip customers with this shingle get in their Week 2 email."
+)
+RESEARCH_ACTION_APPROVED = (
+    "**What to do:** nothing, unless something below looks wrong. It was approved automatically because "
+    "the research was thorough. To correct it, open the Customer Emails page in the Scheduler "
+    "(Products tab)."
+)
+RESEARCH_ACTION_PENDING = (
+    "**What to do:** please review and approve it on the Customer Emails page in the Scheduler "
+    "(Products tab). The research couldn't confirm everything. Until it's approved, customers "
+    "with this shingle get the insurance tip without an impact rating."
+)
 
 PREVIEW_SUBJECT = "Thursday build queue emails: {count} going out"
 PREVIEW_REP_SUBJECT = "Your customers' Thursday emails: {count} going out"

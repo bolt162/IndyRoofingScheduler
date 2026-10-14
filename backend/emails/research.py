@@ -293,26 +293,21 @@ def review(db: Session, row_id: int, approve: bool, reviewer: str,
     return row
 
 
-def review_summary(row: ProductClassification) -> str:
-    """Plain text for the office alert email."""
-    cls = {4: "Class 4", 3: "Class 3"}.get(row.impact_class, "No impact rating")
-    comp = {OXIDIZED: "oxidized asphalt", POLYMER_MODIFIED: "polymer modified"}.get(row.composition, "composition unknown")
-    srcs = json.loads(row.sources or "[]")
+def review_email(row: ProductClassification):
+    """The office email for a newly researched product, in the standard team layout."""
+    from backend.emails import copy as C
+    from backend.emails.internal import team_email
+    approved = row.status == "approved"
+    cls = {4: "Class 4", 3: "Class 3"}.get(row.impact_class, "No impact rating" if approved else "Not confirmed")
+    comp = {OXIDIZED: "Oxidized asphalt", POLYMER_MODIFIED: "Polymer modified"}.get(row.composition, "Not confirmed")
+    srcs = [s.get("url", "") for s in json.loads(row.sources or "[]") if s.get("url")]
     name = row.display_name or row.raw_text
-    if row.status == "approved":
-        head = (f"New shingle product researched and approved automatically: {name}. "
-                "If anything below is wrong, correct it on the Settings page.")
-        tail = "Customers with this product now get the matching insurance tip."
-    else:
-        head = (f"New shingle product researched and waiting for approval: {name}. "
-                "The research couldn't confirm everything, so please review it on the Settings page.")
-        tail = "Until it's approved, customers get the insurance tip without an impact rating."
-    lines = [
-        head,
-        f"As ordered: {row.raw_text}",
-        f"Finding: {cls}, {comp} (confidence: {row.confidence or 'unknown'})",
-        row.summary or "",
-        "Sources: " + ("; ".join(s.get("url", "") for s in srcs) or "none"),
-        tail,
-    ]
-    return "\n\n".join(l for l in lines if l)
+    details = [("Product", name), ("As written on the order", row.raw_text),
+               ("Status", "Approved automatically" if approved else "Waiting for your approval"),
+               ("Impact rating", cls), ("Shingle type", comp), ("Confidence", row.confidence or "unknown")]
+    details += [(f"Source {i}", u) for i, u in enumerate(srcs, 1)] or [("Sources", "none found")]
+    subject = (C.RESEARCH_SUBJECT if approved else C.RESEARCH_SUBJECT_PENDING).format(product=name)
+    return team_email("internal", subject, C.RESEARCH_WHAT,
+                      C.RESEARCH_ACTION_APPROVED if approved else C.RESEARCH_ACTION_PENDING, details,
+                      extra=[f"**What the research found:** {row.summary}"] if row.summary else None)
+

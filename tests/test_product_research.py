@@ -105,7 +105,7 @@ def test_thorough_research_is_approved_automatically(db):
     assert row.status == "approved" and row.reviewed_by == R.AUTO_REVIEWER
     info, flag = R.resolve_product(db, GAF_LINE)
     assert not flag and info.week2_version == "A"
-    assert "approved automatically" in R.review_summary(row)
+    assert "Approved automatically" in R.review_email(row).text
 
 
 @pytest.mark.parametrize("change", [
@@ -121,7 +121,7 @@ def test_anything_less_than_thorough_waits_for_review(db, change):
     row = R.run_pending_research(db, client=FakeClient(extracted=extracted))[0]
     assert row.status == "pending_review"
     assert R.resolve_product(db, GAF_LINE) == (None, True)
-    assert "waiting for approval" in R.review_summary(row)
+    assert "Waiting for your approval" in R.review_email(row).text
 
 
 def test_manufacturer_source_matching():
@@ -224,5 +224,7 @@ def test_review_summary_for_office():
     row = ProductClassification(raw_text=GAF_LINE, display_name="GAF Timberline AS II", impact_class=4,
                                 composition="polymer_modified", confidence="high", summary="Class 4.",
                                 sources=json.dumps([{"url": "https://gaf.com/as2", "title": "x"}]))
-    text = R.review_summary(row)
-    assert "Class 4, polymer modified" in text and "https://gaf.com/as2" in text
+    email = R.review_email(row)
+    assert "Impact rating: Class 4" in email.text and "Shingle type: Polymer modified" in email.text
+    assert '<a href="https://gaf.com/as2"' in email.html
+    assert "Customer Emails page" in email.text and "Settings page" not in email.text
