@@ -347,10 +347,20 @@ def test_preview_email_is_one_customer_per_row(db, jn, outbox):
     R.send_preview(db, THU - timedelta(hours=20), mode="live")
     full = next(s for s in outbox if len(s["to"]) > 1)
     lines = full["text"].splitlines()
-    assert lines[0].startswith("Going out Thursday (2)")
+    i = next(n for n, l in enumerate(lines) if l.startswith("Going out Thursday (2)"))
     # Each customer on their own line, alphabetical, with their rep
-    assert lines[1].startswith("- Bob Jones") and "Joe Venn" in lines[1]
-    assert lines[2].startswith("- Jane Smith") and "Nick Smith" in lines[2]
+    assert lines[i + 1].startswith("- Bob Jones") and "Joe Venn" in lines[i + 1]
+    assert lines[i + 2].startswith("- Jane Smith") and "Nick Smith" in lines[i + 2]
     assert full["html"].count("<tr>") >= 3  # header + one row per customer
     nick = next(s for s in outbox if s["to"] == ["nick.smith@indyroofandrestoration.com"])
-    assert nick["text"].startswith("Hi Nick,") and "Nick Smith" not in nick["text"].split("\n", 2)[2]
+    assert nick["text"].startswith("Hi Nick,") and "Bob Jones" not in nick["text"]
+
+
+def test_rep_preview_explains_what_customers_read(db, jn, outbox):
+    add_job(db, jn, "Jane Smith", rep="Nick Smith", entered=THU - timedelta(days=30))
+    R.send_preview(db, THU - timedelta(hours=20), mode="live")
+    nick = next(s for s in outbox if s["to"] == ["nick.smith@indyroofandrestoration.com"])
+    assert "Nothing for you to send" in nick["text"]
+    assert "What your customers are reading" in nick["text"]
+    assert "Never give a build date" in nick["text"]
+    assert "What it says about their spot" in nick["html"]

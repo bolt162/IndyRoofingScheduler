@@ -684,3 +684,47 @@ RESEARCH_SUBJECT = "New shingle product researched: {product}"
 
 PREVIEW_SUBJECT = "Thursday build queue emails: {count} going out"
 PREVIEW_REP_SUBJECT = "Your customers' Thursday emails: {count} going out"
+
+# ---------------------------------------------------------------------------
+# Wednesday preview: plain English guide for reps (internal only)
+# ---------------------------------------------------------------------------
+PREVIEW_REP_INTRO = (
+    "Tomorrow (Thursday) at 10am, each of your customers below gets an automatic email from "
+    "Indy Roof while they wait in the build queue. Nothing for you to send. This is so you know "
+    "what they're reading in case they call or text you. Each email gives an update on their spot "
+    "in line plus a helpful tip. It never promises a build date."
+)
+PREVIEW_FULL_INTRO = (
+    "Here's what goes out tomorrow (Thursday) at 10am, one customer per row. Each rep also gets "
+    "a copy with only their customers."
+)
+PREVIEW_TALKING_POINTS = """- **Never give a build date, and never share a number the email didn't.** The emails only show a count when 10 or more builds are ahead (7 for siding and gutters). Below that they say "your spot is locked in and you're moving toward the front," so say the same.
+- **If they ask when:** "Your spot is locked in and the line moves every week. Our scheduling team calls you to set the date as soon as you're near the front. Weather is the big wild card."
+- **If they're frustrated:** thank them for their patience, listen, and let Greg know. Don't guess at timing."""
+
+# What each email says, for the "What your customers are reading" section.
+# Keyed by template; a (template, track) key wins over the plain template key.
+PREVIEW_GUIDE = {
+    "welcome": "Welcome to the build queue. Explains the line moves every week, mostly by how long they've waited, and that they'll get an update every Thursday. No date promised.",
+    ("welcome", "roof_repair"): "Their repair is on our schedule. The list moves every week, updates come Thursdays, and if a leak starts they should call you for a tarp.",
+    ("welcome", "siding_repair"): "Their repair is on our schedule. The list moves every week and updates come Thursdays.",
+    "week_1": "What's happening behind the scenes: we confirm their materials and color, handle permits, and match a crew. Tip: now is the time to change their color if they want to.",
+    ("week_1", "gutters"): "How their seamless gutters are made on site, and what we confirm before install day (color, downspouts, guards).",
+    "week_2": "Insurance tip: after the install, call their agent and ask about a new roof discount (and an impact rated shingle discount if theirs qualify). We'll provide paperwork if the carrier needs it.",
+    ("week_2", "siding"): "Two tips: keep a few spare siding pieces for future repairs, and save the project paperwork for when they sell.",
+    ("week_2", "gutters"): "Walk the house and notice where water pools, so they can think about where downspouts should go.",
+    "week_3": "Five easy ways to get ready for build day (clear the driveway, move items near the house, and similar prep).",
+    "week_4": "Exactly what build day looks like, from tear off to cleanup and the final walkthrough. Most roofs are done in one day.",
+    ("week_4", "siding"): "What their siding install day will look like, step by step.",
+    ("week_4", "gutters"): "What gutter install day looks like, step by step.",
+    "week_5": "Why we never rush: we don't install in rain, snow, or bad cold, which is also why we can't give exact dates. Their spot is held.",
+    "week_6": "The warranty and protection that comes with their new project, and that they can just call us with any questions later.",
+    "week_7": "Referral offer: $200 for sending us a friend who needs a roof. Referrals go to you (their rep), so expect a call or text.",
+    "week_8": "A personal thank you note from Aaron for their patience after about two months in the queue.",
+    "rotation": "Short weekly check-in: their spot update plus a home care tip.",
+    ("rotation", "roof_repair"): "Short weekly check-in that their repair is moving up the list, a home care tip, and a reminder to call you for a tarp if a leak starts.",
+    ("rotation", "siding_repair"): "Short weekly check-in that their repair is moving up the list, plus a home care tip.",
+    "getting_close": "Big one: they're nearly at the front. Our scheduling team will reach out to set a date, and it includes a final prep checklist. Expect excited calls.",
+    "weather_slowdown": "Weather kept crews off roofs this week, so the line moved slower. Their spot hasn't changed.",
+    "front_of_line": "They're still at the top of the schedule while we set a new build date after a reschedule.",
+}

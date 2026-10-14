@@ -450,6 +450,26 @@ def _label(template: str | None) -> str:
     return LABELS.get(template, template.replace("_", " ").title())
 
 
+def _spot_line(template: str | None, ctx: EmailContext | None) -> str:
+    """What this customer's email says about their place in line, word for word where we can."""
+    if not template or ctx is None:
+        return ""
+    if K.is_repair(ctx.track):
+        return "No number (repairs never get one)"
+    if template == K.GETTING_CLOSE:
+        return "Nearly at the front"
+    if template == K.WELCOME:
+        return (f"{ctx.jobs_ahead} builds ahead" if K.shows_count(ctx)
+                else "Spot locked in, moving toward the front")
+    if template in K.WEEKS or template == K.ROTATION:
+        return K.position_block(ctx)
+    return ""
+
+
+def _guide(template: str, track: str) -> str:
+    return C.PREVIEW_GUIDE.get((template, track)) or C.PREVIEW_GUIDE.get(template, "")
+
+
 def build_preview(db: Session, thursday: datetime | None = None, mode: str | None = None) -> dict:
     """What Thursday's send will do, without sending or changing progress."""
     now = thursday or coming_thursday_10am()
@@ -462,7 +482,7 @@ def build_preview(db: Session, thursday: datetime | None = None, mode: str | Non
             "rep": p.job.sales_rep or "", "email": p.ctx.customer_email if p.ctx else "",
             "template": p.decision.template, "label": _label(p.decision.template), "reason": p.decision.reason,
             "subject": p.email.subject if p.email else "", "jobs_ahead": p.ctx.jobs_ahead if p.ctx else None,
-            "notes": p.notes,
+            "spot": _spot_line(p.decision.template, p.ctx), "notes": p.notes,
         })
     sending = [r for r in rows if r["template"]]
     fix = [r for r in rows if r["reason"] in ("no customer email", "commercial/residential unknown")]
@@ -517,12 +537,22 @@ def _preview_sections(preview: dict, rep_jn_name: str | None = None) -> list[tup
 
     going = [r for r in rows if r["template"]]
     skipped = [r for r in rows if not r["template"]]
-    sections = [(f"Going out Thursday ({len(going)})", ["Customer", *rep_col, "Email"],
-                 [[who(r), *rep(r), f"{r['label']}: {r['subject']}" if r["subject"] else r["label"]]
-                  for r in going])]
+    sections = [(f"Going out Thursday ({len(going)})", ["Customer", *rep_col, "Email", "What it says about their spot"],
+                 [[who(r), *rep(r), f"{r['label']}: {r['subject']}" if r["subject"] else r["label"],
+                   r.get("spot") or ""] for r in going])]
     if skipped:
         sections.append((f"Not getting an email ({len(skipped)})", ["Customer", *rep_col, "Why"],
                          [[who(r), *rep(r), r["reason"]] for r in skipped]))
+    seen, guide = set(), []
+    for r in going:
+        text = _guide(r["template"], r.get("trade") or "")
+        if text and (r["label"], text) not in seen:
+            seen.add((r["label"], text))
+            trade = (r.get("trade") or "").replace("_", " ").capitalize()
+            guide.append([f"{r['label']} ({trade})" if trade else r["label"], r["subject"], text])
+    guide.sort(key=lambda g: g[0])
+    if guide:
+        sections.append(("What your customers are reading", ["Email", "Subject line", "What it says"], guide))
     if full:
         if preview["fix"]:
             sections.append(("Please fix in JobNimbus", ["Customer", "Rep", "Problem"],
@@ -537,20 +567,24 @@ def _preview_sections(preview: dict, rep_jn_name: str | None = None) -> list[tup
     return sections
 
 
+def _preview_intro(rep_jn_name: str | None) -> str:
+    return C.PREVIEW_FULL_INTRO if rep_jn_name is None else C.PREVIEW_REP_INTRO
+
+
 def preview_text(preview: dict, rep_jn_name: str | None = None) -> str:
     """Plain text: a heading, then one line per customer."""
     out = []
     for title, _cols, rows in _preview_sections(preview, rep_jn_name):
-        out.append(f"{title}:\n" + ("\n".join("- " + " | ".join(r) for r in rows) or "- none"))
+        out.append(f"{title}:\n" + ("\n".join("- " + " | ".join(v for v in r if v) for r in rows) or "- none"))
     return "\n\n".join(out)
 
 
-def preview_html(preview: dict, rep_jn_name: str | None = None, greeting: str | None = None) -> str:
+def preview_html(preview: dict, rep_jn_name: str | None = None) -> str:
     """HTML: a heading and a table per section, one customer per row."""
     import html as h
     cell = "padding:8px 10px;border-bottom:1px solid #e5e7eb;vertical-align:top;font-size:14px;line-height:20px;"
     head = cell + "text-align:left;background:#f3f4f6;color:#374151;font-weight:bold;"
-    parts = [f'<p style="margin:0 0 16px 0;">{h.escape(greeting)}</p>'] if greeting else []
+    parts = []
     for title, cols, rows in _preview_sections(preview, rep_jn_name):
         parts.append(f'<h3 style="margin:24px 0 8px 0;font-size:17px;">{h.escape(title)}</h3>')
         if not rows:
@@ -567,10 +601,13 @@ def preview_html(preview: dict, rep_jn_name: str | None = None, greeting: str | 
 
 def _preview_email(subject: str, preview: dict, rep_jn_name: str | None = None,
                    greeting: str | None = None) -> ComposedEmail:
-    text = preview_text(preview, rep_jn_name)
-    return ComposedEmail("internal", subject,
-                         K._wrap_html(preview_html(preview, rep_jn_name, greeting), None, []),
-                         f"{greeting}\n\n{text}" if greeting else text, is_customer=False)
+    """Greeting, what this email is, the tables, then how to talk about it."""
+    top = (f"{greeting}\n\n" if greeting else "") + _preview_intro(rep_jn_name)
+    tips = "**If a customer asks you about it**\n\n" + C.PREVIEW_TALKING_POINTS
+    html = (markup.to_html(top) + preview_html(preview, rep_jn_name)
+            + '<div style="margin-top:24px;">' + markup.to_html(tips) + "</div>")
+    text = "\n\n".join([markup.to_text(top), preview_text(preview, rep_jn_name), markup.to_text(tips)])
+    return ComposedEmail("internal", subject, K._wrap_html(html, None, []), text, is_customer=False)
 
 
 def send_preview(db: Session, now: datetime | None = None, mode: str | None = None) -> dict:
