@@ -584,14 +584,10 @@ The Indy Roof and Restoration Team
 
 INTERNAL_SECOND_RESCHEDULE_SUBJECT = "Second reschedule: {customer_name}, {job_address}"
 INTERNAL_SECOND_RESCHEDULE_WHAT = (
-    "**Automatic alert from the Indy Roof Scheduler.** This customer's build has now been moved twice. "
-    "It goes to the project manager and the rep on the job. The customer has already been sent an "
-    "automatic apology email from us."
+    "{customer_name}'s build has now been moved twice. They already got our apology email."
 )
 INTERNAL_SECOND_RESCHEDULE_ACTION = (
-    "**What to do:** call the customer personally today to check in and talk through next steps. "
-    "A call from someone they know goes a long way at this point. Only give a new date if production "
-    "has set one."
+    "**What to do:** call the customer today. Only give a new date if production has set one."
 )
 
 # ---------------------------------------------------------------------------
@@ -643,53 +639,40 @@ JobNimbus: {job_link}
 # INTERNAL EMAILS (team only, never customers)
 # ---------------------------------------------------------------------------
 LONG_WAIT_OPS_SUBJECT = "{weeks} weeks in the queue: {customer_name} ({rep_label})"
-LONG_WAIT_OPS_WHAT = (
-    "**Automatic alert from the Indy Roof Scheduler.** A customer has been waiting in the build queue "
-    "for {weeks} weeks. These go out at 10 weeks, then every 2 weeks while they keep waiting. The rep "
-    "gets their own copy asking them to call the customer."
-)
-LONG_WAIT_OPS_REP_LINE = "**What to do:** nothing unless you want to step in. {rep_name} has been asked to get an update from production and reach out to the customer personally."
-LONG_WAIT_OPS_NO_REP_LINE = "**What to do:** the rep on this job ({jn_rep}) is no longer with us, so please have someone reach out to the customer personally."
+LONG_WAIT_OPS_WHAT = "{customer_name} has been in the build queue {weeks} weeks."
+LONG_WAIT_OPS_REP_LINE = "**What to do:** nothing unless you want to step in. {rep_name} has been asked to call them."
+LONG_WAIT_OPS_NO_REP_LINE = "**What to do:** the rep on this job ({jn_rep}) is no longer with us, so please have someone call the customer."
 
 LONG_WAIT_REP_SUBJECT = "Personal touch needed: {customer_name}, {weeks} weeks waiting"
-LONG_WAIT_REP_WHAT = (
-    "**Automatic alert from the Indy Roof Scheduler.** One of your customers has been waiting in the "
-    "build queue for {weeks} weeks. They've been getting our automatic Thursday update emails, but a "
-    "personal touch from you matters most now. Greg gets a copy of this alert."
-)
+LONG_WAIT_REP_WHAT = "{customer_name} has been in the build queue {weeks} weeks."
 LONG_WAIT_REP_ACTION = (
-    "**What to do:** check with production (Greg) on where the job stands, then call or text the "
-    "customer personally to let them know what's going on. Don't promise a date unless production gives you one."
+    "**What to do:** ask Greg where the job stands, then call or text the customer. "
+    "Don't promise a date unless Greg gives you one."
 )
 
 JN_EMAIL_MISSING_SUBJECT = "No scheduling email from JobNimbus: {customer_name}"
 JN_EMAIL_MISSING_WHAT = (
-    "**Automatic check from the Indy Roof Scheduler.** When a job is scheduled, JobNimbus should send "
-    "the customer its official \"Project Update\" email with their date and build day details. We "
-    "couldn't find that email on this job. Our own fun \"you're on the calendar\" email still went out{date_note}."
+    "JobNimbus didn't send {customer_name} its \"Project Update\" email with their date. "
+    "Our \"you're on the calendar\" email did go out{date_note}."
 )
-JN_EMAIL_MISSING_ACTION = (
-    "**What to do:** make sure the customer gets their date and build day details. To resend from "
-    "JobNimbus: check the work order's start date, save, then move the work order off Pending Start "
-    "and back to Pending Start."
-)
+JN_EMAIL_MISSING_ACTION = """**What to do:** make sure the customer gets their date and build day details. To resend from JobNimbus:
+
+1. Check the work order's start date and save.
+2. Move the work order off Pending Start, then back to Pending Start."""
 
 RESEARCH_SUBJECT = "New shingle product researched: {product}"
 RESEARCH_SUBJECT_PENDING = "Please review: new shingle product {product}"
 RESEARCH_WHAT = (
-    "**Automatic update from the Indy Roof Scheduler.** A material order had a shingle product that "
-    "wasn't on our list, so the Scheduler looked it up on the manufacturer's website. Its impact rating "
-    "decides which insurance tip customers with this shingle get in their Week 2 email."
+    "A material order had a shingle we didn't know, so the Scheduler looked it up. "
+    "Its impact rating picks the insurance tip in the customer's Week 2 email."
 )
 RESEARCH_ACTION_APPROVED = (
-    "**What to do:** nothing, unless something below looks wrong. It was approved automatically because "
-    "the research was thorough. To correct it, open the Customer Email Alerts page in the Scheduler "
-    "(Products tab)."
+    "**What to do:** nothing unless something below looks wrong. To fix it, open Customer Email Alerts "
+    "in the Scheduler (Products tab)."
 )
 RESEARCH_ACTION_PENDING = (
-    "**What to do:** please review and approve it on the Customer Email Alerts page in the Scheduler "
-    "(Products tab). The research couldn't confirm everything. Until it's approved, customers "
-    "with this shingle get the insurance tip without an impact rating."
+    "**What to do:** review and approve it in the Scheduler (Customer Email Alerts, Products tab). "
+    "Until then, customers with this shingle get the insurance tip without an impact rating."
 )
 
 PREVIEW_SUBJECT = "Thursday build queue emails: {count} going out"
@@ -699,44 +682,40 @@ PREVIEW_REP_SUBJECT = "Your customers' Thursday emails: {count} going out"
 # Wednesday preview: plain English guide for reps (internal only)
 # ---------------------------------------------------------------------------
 PREVIEW_REP_INTRO = (
-    "Tomorrow (Thursday) at 10am, each of your customers below gets an automatic email from "
-    "Indy Roof while they wait in the build queue. Nothing for you to send. This is so you know "
-    "what they're reading in case they call or text you. Each email gives an update on their spot "
-    "in line plus a helpful tip. It never promises a build date."
+    "Your customers below get their weekly update email tomorrow (Thursday) at 10 AM. Nothing for you to send."
 )
 PREVIEW_FULL_INTRO = (
-    "Here's what goes out tomorrow (Thursday) at 10am, one customer per row. Each rep also gets "
-    "a copy with only their customers."
+    "Here's what goes out tomorrow (Thursday) at 10 AM. Each rep gets a copy with just their customers."
 )
-PREVIEW_TALKING_POINTS = """- **Never give a build date, and never share a number the email didn't.** The emails only show a count when 10 or more builds are ahead (7 for siding and gutters). Below that they say "your spot is locked in and you're moving toward the front," so say the same.
-- **If they ask when:** "Your spot is locked in and the line moves every week. Our scheduling team calls you to set the date as soon as you're near the front. Weather is the big wild card."
-- **If they're frustrated:** thank them for their patience, listen, and let Greg know. Don't guess at timing."""
+PREVIEW_TALKING_POINTS_TITLE = "If a customer asks"
+PREVIEW_TALKING_POINTS = """- **Never give a build date or a number the email didn't.** If they ask when: "Your spot is locked in, the line moves every week, and scheduling calls you to set the date when you're near the front."
+- **If they're frustrated,** listen and let Greg know."""
 
 # What each email says, for the "What your customers are reading" section.
 # Keyed by template; a (template, track) key wins over the plain template key.
 PREVIEW_GUIDE = {
-    "welcome": "Welcome to the build queue. Explains the line moves every week, mostly by how long they've waited, and that they'll get an update every Thursday. No date promised.",
-    ("welcome", "roof_repair"): "Their repair is on our schedule. The list moves every week, updates come Thursdays, and if a leak starts they should call you for a tarp.",
-    ("welcome", "siding_repair"): "Their repair is on our schedule. The list moves every week and updates come Thursdays.",
-    "week_1": "What's happening behind the scenes: we confirm their materials and color, handle permits, and match a crew. Tip: now is the time to change their color if they want to.",
-    ("week_1", "gutters"): "How their seamless gutters are made on site, and what we confirm before install day (color, downspouts, guards).",
-    "week_2": "Insurance tip: after the install, call their agent and ask about a new roof discount (and an impact rated shingle discount if theirs qualify). We'll provide paperwork if the carrier needs it.",
-    ("week_2", "siding"): "Two tips: keep a few spare siding pieces for future repairs, and save the project paperwork for when they sell.",
-    ("week_2", "gutters"): "Walk the house and notice where water pools, so they can think about where downspouts should go.",
-    "week_3": "Five easy ways to get ready for build day (clear the driveway, move items near the house, and similar prep).",
-    "week_4": "Exactly what build day looks like, from tear off to cleanup and the final walkthrough. Most roofs are done in one day.",
-    ("week_4", "siding"): "What their siding install day will look like, step by step.",
+    "welcome": "Welcome to the queue. The line moves every week and updates come Thursdays. No date given.",
+    ("welcome", "roof_repair"): "Their repair is on the schedule, updates come Thursdays, and to call you for a tarp if it leaks.",
+    ("welcome", "siding_repair"): "Their repair is on the schedule and updates come Thursdays.",
+    "week_1": "Behind the scenes: materials, color, permits, crew. Now is the time to change color.",
+    ("week_1", "gutters"): "How seamless gutters are made on site, and what we confirm first (color, downspouts, guards).",
+    "week_2": "Insurance tip: ask their agent about a new roof discount (and impact rated, if theirs qualifies).",
+    ("week_2", "siding"): "Keep a few spare siding pieces, and save the paperwork for when they sell.",
+    ("week_2", "gutters"): "Notice where water pools, to plan where downspouts go.",
+    "week_3": "Five easy ways to get ready for build day, like clearing the driveway.",
+    "week_4": "What build day looks like, from tear off to final walkthrough. Most roofs take one day.",
+    ("week_4", "siding"): "What siding install day looks like, step by step.",
     ("week_4", "gutters"): "What gutter install day looks like, step by step.",
-    "week_5": "Why we never rush: we don't install in rain, snow, or bad cold, which is also why we can't give exact dates. Their spot is held.",
-    "week_6": "The warranty and protection that comes with their new project, and that they can just call us with any questions later.",
-    "week_7": "Referral offer: $200 for sending us a friend who needs a roof. Referrals go to you (their rep), so expect a call or text.",
-    "week_8": "A personal thank you note from Aaron for their patience after about two months in the queue.",
-    "rotation": "Short weekly check-in: their spot update plus a home care tip.",
-    ("rotation", "roof_repair"): "Short weekly check-in that their repair is moving up the list, a home care tip, and a reminder to call you for a tarp if a leak starts.",
-    ("rotation", "siding_repair"): "Short weekly check-in that their repair is moving up the list, plus a home care tip.",
-    "getting_close": "Big one: they're nearly at the front. Our scheduling team will reach out to set a date, and it includes a final prep checklist. Expect excited calls.",
-    "weather_slowdown": "Weather kept crews off roofs this week, so the line moved slower. Their spot hasn't changed.",
-    "front_of_line": "They're still at the top of the schedule while we set a new build date after a reschedule.",
+    "week_5": "We never install in bad weather, which is why we can't give exact dates. Their spot is held.",
+    "week_6": "Their warranty and protection, and to call us with questions anytime.",
+    "week_7": "$200 referral offer. Referrals come to you, so expect a call or text.",
+    "week_8": "A thank you note from Aaron after about two months of waiting.",
+    "rotation": "Spot update plus a home care tip.",
+    ("rotation", "roof_repair"): "Repair moving up the list, a home care tip, and to call you for a tarp if it leaks.",
+    ("rotation", "siding_repair"): "Repair moving up the list, plus a home care tip.",
+    "getting_close": "Nearly at the front. Scheduling calls soon to set a date. Includes a prep checklist.",
+    "weather_slowdown": "Weather slowed the line this week. Their spot hasn't changed.",
+    "front_of_line": "Still at the top of the schedule while we set a new date after a reschedule.",
 }
 
 # One-time resend of the 2026-10-14 preview (task "preview-corrected"), from Aaron's request

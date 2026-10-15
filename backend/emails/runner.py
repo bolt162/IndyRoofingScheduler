@@ -366,7 +366,7 @@ def run_scheduled_emails(db: Session, now: datetime | None = None, mode: str | N
                 date_note = f" (with their date, {K._format_date(ctx.scheduled_date)})" if ctx.scheduled_date else ""
                 _office(rc, job, team_email(
                     "internal", C.JN_EMAIL_MISSING_SUBJECT.format(customer_name=job.customer_name),
-                    C.JN_EMAIL_MISSING_WHAT.format(date_note=date_note), C.JN_EMAIL_MISSING_ACTION,
+                    C.JN_EMAIL_MISSING_WHAT.format(customer_name=job.customer_name, date_note=date_note), C.JN_EMAIL_MISSING_ACTION,
                     [("Customer", job.customer_name), ("Address", job.address), ("Customer phone", ctx.customer_phone),
                      ("Scheduled for", K._format_date(ctx.scheduled_date) if ctx.scheduled_date else "No date on the job"),
                      ("Rep", ctx.rep_name), ("JobNimbus", ctx.job_link)]))
@@ -546,7 +546,7 @@ def _preview_sections(preview: dict, rep_jn_name: str | None = None) -> list[tup
 
     going = [r for r in rows if r["template"]]
     skipped = [r for r in rows if not r["template"]]
-    sections = [(f"Going out Thursday ({len(going)})", ["Customer", *rep_col, "Email", "What it says about their spot"],
+    sections = [(f"Going out Thursday ({len(going)})", ["Customer", *rep_col, "Email", "Their spot"],
                  [[who(r), *rep(r), f"{r['label']}: {r['subject']}" if r["subject"] else r["label"],
                    r.get("spot") or ""] for r in going])]
     if skipped:
@@ -558,10 +558,10 @@ def _preview_sections(preview: dict, rep_jn_name: str | None = None) -> list[tup
         if text and (r["label"], text) not in seen:
             seen.add((r["label"], text))
             trade = (r.get("trade") or "").replace("_", " ").capitalize()
-            guide.append([f"{r['label']} ({trade})" if trade else r["label"], r["subject"], text])
+            guide.append([f"{r['label']} ({trade})" if trade else r["label"], text])
     guide.sort(key=lambda g: g[0])
     if guide:
-        sections.append(("What your customers are reading", ["Email", "Subject line", "What it says"], guide))
+        sections.append(("What your customers are reading", ["Email", "What it says"], guide))
     if full:
         if preview["fix"]:
             sections.append(("Please fix in JobNimbus", ["Customer", "Rep", "Problem"],
@@ -610,9 +610,9 @@ def preview_html(preview: dict, rep_jn_name: str | None = None) -> str:
 
 def _preview_email(subject: str, preview: dict, rep_jn_name: str | None = None,
                    greeting: str | None = None, note: str | None = None) -> ComposedEmail:
-    """Greeting, an optional one-time note, what this email is, the tables, then how to talk about it."""
+    """Greeting, an optional one-time note, a one line intro, the tables, then how to talk about it."""
     top = (f"{greeting}\n\n" if greeting else "") + (f"{note}\n\n" if note else "") + _preview_intro(rep_jn_name)
-    tips = "**If a customer asks you about it**\n\n" + C.PREVIEW_TALKING_POINTS
+    tips = f"**{C.PREVIEW_TALKING_POINTS_TITLE}**\n\n" + C.PREVIEW_TALKING_POINTS
     html = (markup.to_html(top) + preview_html(preview, rep_jn_name)
             + '<div style="margin-top:24px;">' + markup.to_html(tips) + "</div>")
     text = "\n\n".join([markup.to_text(top), preview_text(preview, rep_jn_name), markup.to_text(tips)])

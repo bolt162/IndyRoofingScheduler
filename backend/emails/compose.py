@@ -444,7 +444,7 @@ def compose(key: str, ctx: EmailContext, rotation_index: int = 0,
             v["rep_name"] = "Sales Rep"
         from backend.emails.internal import team_email
         return team_email(
-            key, C.INTERNAL_SECOND_RESCHEDULE_SUBJECT.format_map(v), C.INTERNAL_SECOND_RESCHEDULE_WHAT,
+            key, C.INTERNAL_SECOND_RESCHEDULE_SUBJECT.format_map(v), C.INTERNAL_SECOND_RESCHEDULE_WHAT.format_map(v),
             C.INTERNAL_SECOND_RESCHEDULE_ACTION,
             [("Customer", v["customer_name"]), ("Address", v["job_address"]), ("Customer phone", v["customer_phone"]),
              ("Project", v["project_word"].capitalize()), ("Times rescheduled", str(ctx.rescheduled_count or 2)),

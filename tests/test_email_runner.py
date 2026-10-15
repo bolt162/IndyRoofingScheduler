@@ -363,7 +363,10 @@ def test_rep_preview_explains_what_customers_read(db, jn, outbox):
     assert "Nothing for you to send" in nick["text"]
     assert "What your customers are reading" in nick["text"]
     assert "Never give a build date" in nick["text"]
-    assert "What it says about their spot" in nick["html"]
+    assert "Their spot" in nick["html"]
+    # Short: one line intro, no explainer paragraphs
+    assert "This is so you know" not in nick["text"] and "Automatic" not in nick["text"]
+    assert "scheduling calls you to set the date" in nick["text"] and "let Greg know" in nick["text"]
 
 
 def test_corrected_preview_carries_apology_in_one_email(db, jn, outbox):
@@ -380,7 +383,8 @@ def test_corrected_preview_carries_apology_in_one_email(db, jn, outbox):
 # --- Team emails all use the same readable layout ---
 
 def _team_layout_ok(email: dict) -> None:
-    assert email["text"].startswith("Automatic"), email["subject"]
+    assert "Automatic" not in email["text"], email["subject"]  # no explainer opener
+    assert "Jane Smith" in email["text"].split("\n\n")[1], email["subject"]  # leads with the customer
     assert "What to do:" in email["text"], email["subject"]
     assert "Customer: Jane Smith" in email["text"], email["subject"]  # one fact per line
     assert "<table" in email["html"], email["subject"]
@@ -391,12 +395,12 @@ def test_every_team_email_explains_itself(db, jn, outbox):
     R.run_long_wait_alerts(db, THU, mode="live")
     for e in outbox:
         _team_layout_ok(e)
-    assert any(e["text"].split("\n\n")[1] == "Greg," for e in outbox)
-    assert any(e["text"].split("\n\n")[1] == "Hi Nick," for e in outbox)
+    assert any(e["text"].split("\n\n")[0] == "Greg," for e in outbox)
+    assert any(e["text"].split("\n\n")[0] == "Hi Nick," for e in outbox)
 
 
 def test_second_reschedule_and_jn_missing_explain_themselves(db, jn, outbox):
     resched_setup(db, jn, 2)
     R.run_reschedule_checks(db, THU + timedelta(hours=8), mode="live")
     _team_layout_ok(outbox[1])
-    assert "already been sent an automatic apology" in outbox[1]["text"]
+    assert "already got our apology email" in outbox[1]["text"]
