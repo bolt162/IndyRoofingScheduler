@@ -162,6 +162,27 @@ def _date(ts) -> date | None:
     return None
 
 
+@dataclass
+class BuildDates:
+    number: str = ""                       # J-26426
+    job_start: date | None = None
+    pending: list = field(default_factory=list)   # [(work order number, trade, start date)] still Pending Start
+
+
+def fetch_build_dates(jnid: str) -> BuildDates:
+    """The job's start date and every work order still sitting in Pending Start, with its date."""
+    b = BuildDates()
+    job = _jn_get(f"jobs/{jnid}")
+    b.number = (job.get("number") or "").strip()
+    b.job_start = _date(job.get("date_start"))
+    data = _jn_get("v2/workorders", params={"filter": _filter_related(jnid), "size": 50})
+    for wo in (data.get("results") or data.get("workorders") or []) if isinstance(data, dict) else []:
+        if (wo.get("status_name") or "").strip().lower() == "pending start":
+            b.pending.append(((wo.get("number") or "").strip(), (wo.get("record_type_name") or "").strip(),
+                              _date(wo.get("date_start"))))
+    return b
+
+
 def fetch_job_details(jnid: str, with_materials: bool = True) -> JobDetails:
     d = JobDetails(jnid=jnid, job_link=JN_JOB_URL.format(jnid=jnid))
     try:

@@ -404,3 +404,32 @@ def test_second_reschedule_and_jn_missing_explain_themselves(db, jn, outbox):
     R.run_reschedule_checks(db, THU + timedelta(hours=8), mode="live")
     _team_layout_ok(outbox[1])
     assert "already got our apology email" in outbox[1]["text"]
+
+
+# --- Build date passed but still Pending Start (Jenn Golding J-26426, 2026-10-19) ---
+
+def test_past_date_alert_lists_jobs_whose_date_passed(db, jn, outbox):
+    from backend.emails.jn_data import BuildDates
+    add_job(db, jn, "Jenn Golding", bucket="scheduled", jn_status="Pending Start Date")
+    add_job(db, jn, "Future Fred", bucket="scheduled", jn_status="Pending Start Date")
+    dates = {
+        "jn-Jenn Golding": BuildDates("J-26426", date(2026, 10, 14), [("WO-11791", "Roofing", date(2026, 10, 14)),
+                                                                     ("WO-11792", "Roofing", date(2026, 10, 14))]),
+        "jn-Future Fred": BuildDates("J-1", date(2026, 10, 14), [("WO-1", "Roofing", date(2026, 10, 30))]),
+    }
+    res = R.run_past_date_alerts(db, datetime(2026, 10, 19, 12, 0), mode="live", fetch=lambda jnid: dates[jnid])
+    assert res["jobs"] == 1
+    mail = outbox[0]
+    assert sorted(mail["to"]) == ["greg.russell@indyroofandrestoration.com", "luke.mroz@indyroofandrestoration.com"]
+    assert "Jenn Golding (J-26426): Mon Oct 14" not in mail["text"]  # weekday is Wednesday
+    assert "Jenn Golding (J-26426): Wed Oct 14, WO-11791, WO-11792 (Roofing)" in mail["text"]
+    assert "Future Fred" not in mail["text"]
+    assert "What to do:" in mail["text"]
+
+
+def test_past_date_alert_quiet_when_nothing_passed(db, jn, outbox):
+    from backend.emails.jn_data import BuildDates
+    add_job(db, jn, "Future Fred", bucket="scheduled", jn_status="Pending Start Date")
+    res = R.run_past_date_alerts(db, datetime(2026, 10, 19, 12, 0), mode="live",
+                                 fetch=lambda jnid: BuildDates("J-1", date(2026, 10, 30), []))
+    assert res == {"jobs": 0} and outbox == []

@@ -437,6 +437,7 @@ def _add_email_jobs(scheduler, CronTrigger):
     jobs = [
         ("run_research", CronTrigger(hour=9, minute=0, timezone=SCHEDULER_TZ), "Email: research new shingle products"),
         ("run_long_wait_alerts", CronTrigger(day_of_week="mon-fri", hour=9, minute=15, timezone=SCHEDULER_TZ), "Email: long-wait alerts"),
+        ("run_past_date_alerts", CronTrigger(day_of_week="mon-sat", hour=8, minute=0, timezone=SCHEDULER_TZ), "Email: build dates that passed"),
         ("run_weekly", CronTrigger(day_of_week="thu", hour=10, minute=0, timezone=SCHEDULER_TZ), "Email: Thursday weekly update"),
         ("run_welcomes", CronTrigger(day_of_week="mon-wed,fri-sun", hour=10, minute=0, timezone=SCHEDULER_TZ), "Email: welcomes"),
         ("send_preview", CronTrigger(day_of_week="wed", hour=14, minute=0, timezone=SCHEDULER_TZ), "Email: Wednesday preview"),

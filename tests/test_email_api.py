@@ -165,7 +165,7 @@ def test_all_email_timers_are_registered():
             self.jobs[id] = (fn, str(trigger))
     s = FakeScheduler()
     main._add_email_jobs(s, CronTrigger)
-    assert set(s.jobs) == {f"email_{n}" for n in ("run_research", "run_long_wait_alerts", "run_weekly",
+    assert set(s.jobs) == {f"email_{n}" for n in ("run_research", "run_long_wait_alerts", "run_past_date_alerts", "run_weekly",
                                                    "run_welcomes", "send_preview", "run_reschedule_checks",
                                                    "run_scheduled_emails")}
     assert "day_of_week='thu'" in s.jobs["email_run_weekly"][1] and "hour='10'" in s.jobs["email_run_weekly"][1]

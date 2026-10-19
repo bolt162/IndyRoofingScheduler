@@ -434,6 +434,43 @@ def run_long_wait_alerts(db: Session, now: datetime | None = None, mode: str | N
     return result
 
 
+def _indy_today(now: datetime):
+    from datetime import timezone
+    from zoneinfo import ZoneInfo
+    return now.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("America/Indiana/Indianapolis")).date()
+
+
+def run_past_date_alerts(db: Session, now: datetime | None = None, mode: str | None = None, fetch=None) -> dict:
+    """Greg and Luke: jobs still in Pending Start whose start date already passed (postponed, never re-dated)."""
+    from backend.emails.jn_data import fetch_build_dates
+    fetch = fetch or fetch_build_dates
+    rc = RunContext(db, now or datetime.utcnow(), mode)
+    today = _indy_today(rc.now)
+    rows = []
+    for job in db.query(Job).filter(Job.bucket == "scheduled", Job.jn_job_id.isnot(None)).all():
+        try:
+            b = fetch(job.jn_job_id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Build dates unavailable for job {job.id}: {e}")
+            continue
+        dated = [p for p in b.pending if p[2]]
+        dates = [p[2] for p in dated] or ([b.job_start] if b.job_start else [])
+        if not dates or max(dates) >= today:
+            continue
+        wos = ", ".join(sorted({p[0] for p in dated if p[0]}))
+        trades = ", ".join(sorted({p[1] for p in dated if p[1]}))
+        label = f"{job.customer_name} ({b.number})" if b.number else job.customer_name
+        when = max(dates).strftime("%a %b %-d")
+        rows.append((label, f"{when}" + (f", {wos}" if wos else "") + (f" ({trades})" if trades else "")))
+    if not rows:
+        return {"jobs": 0}
+    to = sorted(set(_ops_emails(db) + [r.email for r in team.active_pms(db) if r.email]))
+    if to:
+        deliver(rc, None, team_email("internal", C.PAST_DATE_SUBJECT.format(count=len(rows)), C.PAST_DATE_LEAD,
+                                     C.PAST_DATE_ACTION, sorted(rows)), to)
+    return {"jobs": len(rows), "to": to}
+
+
 def run_research(db: Session, now: datetime | None = None, mode: str | None = None, client=None) -> dict:
     rc = RunContext(db, now or datetime.utcnow(), mode)
     rows = research.run_pending_research(db, client=client)
