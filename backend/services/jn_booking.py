@@ -1,13 +1,13 @@
 """
 Push to JobNimbus: book the Weekly Plan's picks in JobNimbus the way Greg does by hand.
 
-Greg's steps (seen on J-26819 and J-26845, 2026-10-19), per job:
+Greg's steps (seen on two jobs he booked on 2026-10-19), per job:
   1. On the main trade's work order: start date (all day), the crew and Luke Mroz as subcontractors
      (Luke is also added as an owner of the work order). Save.
   2. Work order status -> Pending Start. This fires JobNimbus's Build Day email right away and the
      "you're on the calendar" text an hour later, so it must happen exactly once, after the date.
   3. Job status -> Pending Start Date, with the same start date and subcontractors.
-  4. Note to the rep: "@JamesClinger roof scheduled Tuesday 10/27".
+  4. Note to the rep: "@FirstLast roof scheduled Tuesday 10/27".
   5. Build Block task for the rep, 4:00 to 4:59pm on build day.
   6. Complete the open "Send Work Order & Add Job Date to Job File" and
      "Order Materials & begin trade prep" tasks.
@@ -43,6 +43,8 @@ JOB_PENDING = "pending start date"
 BUILD_BLOCK_TYPE = "Build Block"
 # Open tasks Greg completes once a build is booked (titles vary in case)
 TASKS_TO_COMPLETE = ("send work order & add job date to job file", "order materials & begin trade prep")
+# Work orders that are finished or dead are never the one to book
+CLOSED_WO_WORDS = ("complete", "cancel", "invoic", "paid", "closed", "lost", "void")
 STEPS = ("work_order", "work_order_status", "job_status", "rep_note", "build_block", "tasks")
 
 # The work order that carries each trade's build, best match first
@@ -61,6 +63,7 @@ TRADE_WORD = {"roofing": "roof", "roofing_repair": "repair", "siding": "siding",
               "gutters": "gutters", "windows": "windows", "paint": "paint", "interior": "interior"}
 
 _push_lock = threading.Lock()
+PG_LOCK_KEY = 726_19_2026  # any fixed number; names the Push to JobNimbus lock in Postgres
 
 
 class BookingError(Exception):
@@ -218,9 +221,12 @@ def pick_work_order(job: Job, work_orders: list[dict]) -> dict:
     trades = WO_TRADES.get(job.primary_trade or "", [])
     live = [w for w in work_orders or [] if isinstance(w, dict)
             and w.get("is_active") is not False and not w.get("is_archived")]
+    live = [w for w in live if not any(x in (w.get("status_name") or "").lower() for x in CLOSED_WO_WORDS)]
     for trade in trades:
-        hits = sorted((w for w in live if (w.get("record_type_name") or "").lower() == trade.lower()),
-                      key=lambda w: w.get("recid") or 0)
+        hits = [w for w in live if (w.get("record_type_name") or "").lower() == trade.lower()]
+        if len(hits) > 1:
+            nums = ", ".join(sorted(w.get("number") or "?" for w in hits))
+            raise BookingError(f"This job has more than one open {trade} work order ({nums}). Book it in JobNimbus.")
         if hits:
             return hits[0]
     names = " or ".join(trades) if trades else "a"
@@ -238,9 +244,15 @@ def _list(data, *keys) -> list[dict]:
 
 # --- what the Weekly Plan would send ---
 
+def in_progress(job: Job) -> bool:
+    """The customer was already told (work order is Pending Start) but later steps didn't finish."""
+    steps = job.jn_push_steps or {}
+    return bool(steps.get("work_order_status")) and not all(steps.get(s) for s in STEPS)
+
+
 def candidates(db: Session) -> list[Job]:
-    return (db.query(Job).filter(Job.planned_date.isnot(None), Job.bucket.in_(PLANNABLE_BUCKETS))
-            .order_by(Job.planned_date, Job.customer_name).all())
+    jobs = db.query(Job).filter(Job.planned_date.isnot(None)).order_by(Job.planned_date, Job.customer_name).all()
+    return [j for j in jobs if j.bucket in PLANNABLE_BUCKETS or in_progress(j)]
 
 
 def already_sent(job: Job) -> bool:
@@ -253,6 +265,9 @@ def preview_reason(job: Job, db: Session) -> str | None:
     """Why this planned job won't be sent, or None when it's ready to go. Uses only what the app has."""
     if already_sent(job):
         return "Already sent to JobNimbus. It shows as booked after the next sync."
+    if in_progress(job):
+        # The customer already has the date; only the rep note, Build Block or tasks are left
+        return None if allowed(job) else "Sending to JobNimbus is turned off."
     if job.ready_status == "hold":
         return "On hold: the office said not to schedule it yet."
     if job.ready_status == "flagged":
@@ -325,6 +340,8 @@ def book_job(db: Session, job: Job, who: str, jn: JN | None = None, lookups: Loo
     jn = jn or JN()
     lookups = lookups or Lookups(jn)
     d = job.planned_date
+    if in_progress(job) and (job.jn_push_steps or {}).get("date"):
+        d = date.fromisoformat(job.jn_push_steps["date"])
     try:
         reason = preview_reason(job, db)
         if reason:
@@ -351,7 +368,9 @@ def book_job(db: Session, job: Job, who: str, jn: JN | None = None, lookups: Loo
 
         jn_job = jn.get(f"jobs/{job.jn_job_id}") or {}
         filt = json.dumps({"must": [{"term": {"related.id": job.jn_job_id}}]})
-        wo = pick_work_order(job, _list(jn.get("v2/workorders", {"filter": filt, "size": 50}), "results", "workorders"))
+        all_wos = [w for w in _list(jn.get("v2/workorders", {"filter": filt, "size": 50}), "results", "workorders")
+                   if isinstance(w, dict) and w.get("is_active") is not False and not w.get("is_archived")]
+        wo = pick_work_order(job, all_wos)
         wo_id = wo.get("jnid")
         wo_type = wo.get("record_type_name") or ""
         start = local_midnight(d)
@@ -359,8 +378,18 @@ def book_job(db: Session, job: Job, who: str, jn: JN | None = None, lookups: Loo
         mmddyyyy = lambda x: f"{x.month:02d}/{x.day:02d}/{x.year}"  # noqa: E731
         st = job.jn_push_steps or {}
 
-        if not st.get("work_order_status") and (wo.get("status_name") or "").strip().lower() == WO_PENDING:
-            raise BookingError(f"{wo.get('number')} is already Pending Start in JobNimbus. Change it there.")
+        if not st.get("work_order_status"):
+            wo_pending = (wo.get("status_name") or "").strip().lower() == WO_PENDING
+            if wo_pending and st.get("work_order") and wo.get("date_start") == start:
+                # Our status change reached JobNimbus but the answer didn't reach us (timeout, restart).
+                # The customer already got the text: count it as done, never send it again.
+                _done(db, job, "work_order_status", "found already Pending Start")
+                st = job.jn_push_steps or {}
+            elif wo_pending or any((w.get("status_name") or "").strip().lower() == WO_PENDING for w in all_wos):
+                raise BookingError("JobNimbus already has a work order on this job at Pending Start. "
+                                   "Someone may have booked it by hand; check JobNimbus before doing anything.")
+            elif (jn_job.get("status_name") or "").strip().lower() == JOB_PENDING:
+                raise BookingError("This job is already Pending Start Date in JobNimbus. Check it there.")
 
         if not st.get("work_order"):
             jn.put(f"v2/workorders/{wo_id}", {
@@ -425,7 +454,8 @@ def book_job(db: Session, job: Job, who: str, jn: JN | None = None, lookups: Loo
         return _failed(db, job, str(e))
     except Exception as e:  # noqa: BLE001
         logger.exception(f"Push to JobNimbus failed for job {job.id}")
-        return _failed(db, job, f"JobNimbus didn't accept a change ({type(e).__name__}). Nothing after that step was sent.")
+        return {**_failed(db, job, f"JobNimbus didn't accept a change ({type(e).__name__}). Nothing after that "
+                                   f"step was sent. Push again to finish it."), "jn_error": True}
 
 
 def _failed(db: Session, job: Job, reason: str) -> dict:
@@ -443,15 +473,32 @@ def push(db: Session, who: str, job_ids: list[int] | None = None, jn: JN | None 
     """Book every planned job that's ready (or just job_ids). One push at a time."""
     if not _push_lock.acquire(blocking=False):
         return {"busy": True, "results": []}
+    pg = db.get_bind().dialect.name == "postgresql"
     try:
+        if pg:
+            from sqlalchemy import text
+            # Old and new containers overlap during a deploy: one push across all of them
+            if not db.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": PG_LOCK_KEY}).scalar():
+                return {"busy": True, "results": []}
         jn = jn or JN()
         lookups = Lookups(jn)
         jobs = candidates(db)
         if job_ids is not None:
             jobs = [j for j in jobs if j.id in set(job_ids)]
-        results = [book_job(db, j, who, jn=jn, lookups=lookups, ai_client=ai_client) for j in jobs]
+        results = []
+        for j in jobs:
+            results.append(book_job(db, j, who, jn=jn, lookups=lookups, ai_client=ai_client))
+            if results[-1].get("jn_error"):
+                break  # JobNimbus is struggling: stop instead of hitting it with the rest
         return {"busy": False, "results": results,
                 "booked": sum(1 for r in results if r["status"] == "booked"),
                 "failed": sum(1 for r in results if r["status"] == "failed")}
     finally:
+        if pg:
+            try:
+                from sqlalchemy import text
+                db.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": PG_LOCK_KEY})
+                db.commit()
+            except Exception:  # noqa: BLE001
+                db.rollback()
         _push_lock.release()

@@ -279,6 +279,7 @@ export interface PushPreview {
   mode: 'off' | 'test' | 'live';
   items: PushPreviewItem[];
   ready_count: number;
+  can_book: boolean;
 }
 
 export interface PushResult {
@@ -287,6 +288,7 @@ export interface PushResult {
   status: 'booked' | 'skipped' | 'failed';
   reason?: string;
   work_order?: string;
+  jn_error?: boolean;
 }
 
 export interface NoteLog {

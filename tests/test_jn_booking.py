@@ -18,11 +18,13 @@ JOB = "jobjn1"
 
 
 class FakeJN:
-    def __init__(self, wo_status="New", fail_on=None):
+    def __init__(self, wo_status="New", fail_on=None, wo_start=0, job_status="Schedule Job", extra_wos=()):
         self.calls = []
         self.fail_on = fail_on
+        self.job_status = job_status
+        self.extra_wos = list(extra_wos)
         self.wo = {"jnid": "wo1", "number": "WO-11853", "recid": 11853, "record_type_name": "Roofing",
-                   "status_name": wo_status, "is_active": True,
+                   "status_name": wo_status, "is_active": True, "date_start": wo_start,
                    "subcontractors": [], "owners": [{"id": "rep1"}]}
         self.notes = []
 
@@ -38,7 +40,7 @@ class FakeJN:
             ], "taskTypes": [{"TypeId": 23, "TypeName": "Build Block"}]}
         if endpoint == "account/users":
             return [{"id": "luke_user", "first_name": "Luke", "last_name": "Mroz", "is_active": True},
-                    {"id": "rep1", "first_name": "James", "last_name": "Clinger", "is_active": True}]
+                    {"id": "rep1", "first_name": "Pat", "last_name": "Rep", "is_active": True}]
         if endpoint == "contacts":
             return {"results": [
                 {"jnid": "dct", "display_name": "DCT Construction - Roof Crew"},
@@ -46,11 +48,12 @@ class FakeJN:
                 {"jnid": "luke_sub", "display_name": "Luke Mroz - Indy Roof and Restoration"},
             ]}
         if endpoint == f"jobs/{JOB}":
-            return {"jnid": JOB, "record_type_name": "Retail", "sales_rep": "rep1", "sales_rep_name": "James Clinger",
+            return {"jnid": JOB, "record_type_name": "Retail", "status_name": self.job_status, "sales_rep": "rep1", "sales_rep_name": "Pat Rep",
                     "subcontractors": [], "description": ""}
         if endpoint == "v2/workorders":
             return {"results": [self.wo, {"jnid": "wo2", "number": "WO-11854", "recid": 11854,
-                                          "record_type_name": "Gutters", "status_name": "New", "is_active": True}]}
+                                          "record_type_name": "Gutters", "status_name": "New", "is_active": True},
+                                *self.extra_wos]}
         if endpoint == "activities":
             return {"activity": self.notes}
         if endpoint == "tasks":
@@ -97,7 +100,7 @@ def planned_job(db, **kw):
     crew = Crew(name="DCT Construction", trades=["roofing"])
     db.add_all([pm, crew])
     db.flush()
-    job = Job(customer_name="Mike Bray", address="1 Main St", jn_job_id=JOB, bucket="to_schedule",
+    job = Job(customer_name="Test Customer", address="1 Main St", jn_job_id=JOB, bucket="to_schedule",
               primary_trade="roofing", planned_date=BUILD, planned_pm_id=pm.id, planned_crew_id=crew.id,
               ready_status="clear", ready_input="", ready_input_hash=None, duration_days=1)
     for k, v in kw.items():
@@ -129,7 +132,7 @@ def test_books_the_job_with_gregs_steps_in_order(db):
     assert w[2][2]["status"] == 447 and w[2][2]["date_start"] == midnight
     # 4. rep note
     assert w[3][:2] == ("POST", "activities")
-    assert w[3][2]["note"] == "@JamesClinger roof scheduled Tuesday 10/29"
+    assert w[3][2]["note"] == "@PatRep roof scheduled Tuesday 10/29"
     # 5. Build Block for the rep, 4:00 to 4:59pm build day
     assert w[4][:2] == ("POST", "tasks")
     bb = w[4][2]
@@ -153,6 +156,9 @@ def test_a_second_push_sends_nothing(db):
     assert result["results"][0]["status"] == "skipped" and jn.writes() == []
 
 
+MIDNIGHT = int(datetime(2030, 10, 29, tzinfo=TZ).timestamp())
+
+
 def test_a_push_that_stops_halfway_never_repeats_the_status_change(db):
     job = planned_job(db)
     jn = FakeJN(fail_on=lambda m, e, b: e == f"jobs/{JOB}")
@@ -162,7 +168,7 @@ def test_a_push_that_stops_halfway_never_repeats_the_status_change(db):
     assert "JobNimbus didn't accept" in job.jn_push_error
     assert job.jn_push_steps["work_order_status"] is True and not job.jn_push_steps.get("job_status")
 
-    jn2 = FakeJN(wo_status="Pending Start")  # JobNimbus now shows it Pending Start
+    jn2 = FakeJN(wo_status="Pending Start", wo_start=MIDNIGHT)  # JobNimbus now shows it Pending Start
     assert B.push(db, "Greg", jn=jn2)["booked"] == 1
     endpoints = [c[1] for c in jn2.writes()]
     assert "v2/workorders/wo1" not in endpoints  # neither the date nor the status sent again
@@ -184,7 +190,7 @@ def test_refuses_a_work_order_already_pending_start(db):
     jn = FakeJN(wo_status="Pending Start")
     result = B.push(db, "Greg", jn=jn)
     assert result["results"][0]["status"] == "failed"
-    assert "already Pending Start" in result["results"][0]["reason"] and jn.writes() == []
+    assert "booked it by hand" in result["results"][0]["reason"] and jn.writes() == []
 
 
 def test_new_notes_are_checked_before_anything_is_sent(db):
@@ -251,5 +257,78 @@ def test_unknown_crew_says_where_to_fix_it(db):
 
 
 def test_rep_note_reads_like_gregs():
-    assert B.rep_note_text("James Clinger", "roofing", date(2026, 10, 27)) == "@JamesClinger roof scheduled Tuesday 10/27"
+    assert B.rep_note_text("Pat Rep", "roofing", date(2026, 10, 27)) == "@PatRep roof scheduled Tuesday 10/27"
     assert B.rep_note_text(None, "gutters", date(2026, 11, 2)) == "gutters scheduled Monday 11/2"
+
+
+def test_a_status_change_that_reached_jobnimbus_but_timed_out_is_not_sent_again(db):
+    job = planned_job(db)
+    jn = FakeJN(fail_on=lambda m, e, b: b.get("status") == 472)  # timed out, but JobNimbus applied it
+    B.push(db, "Greg", jn=jn)
+    db.refresh(job)
+    assert job.jn_push_steps.get("work_order") and not job.jn_push_steps.get("work_order_status")
+
+    jn2 = FakeJN(wo_status="Pending Start", wo_start=MIDNIGHT)
+    assert B.push(db, "Greg", jn=jn2)["booked"] == 1
+    assert all(c[1] != "v2/workorders/wo1" for c in jn2.writes())
+
+
+def test_refuses_when_another_work_order_or_the_job_is_already_booked(db):
+    planned_job(db)
+    other = {"jnid": "wo3", "number": "WO-3", "record_type_name": "Siding", "status_name": "Pending Start",
+             "is_active": True}
+    jn = FakeJN(extra_wos=[other])
+    assert "booked it by hand" in B.push(db, "Greg", jn=jn)["results"][0]["reason"] and jn.writes() == []
+    jn = FakeJN(job_status="Pending Start Date")
+    assert "already Pending Start Date" in B.push(db, "Greg", jn=jn)["results"][0]["reason"] and jn.writes() == []
+
+
+def test_skips_closed_work_orders_and_refuses_two_open_ones(db):
+    planned_job(db)
+    old = {"jnid": "old", "number": "WO-1", "recid": 1, "record_type_name": "Roofing", "status_name": "Completed",
+           "is_active": True}
+    jn = FakeJN(extra_wos=[old])
+    assert B.push(db, "Greg", jn=jn)["booked"] == 1
+    assert jn.writes()[0][1] == "v2/workorders/wo1"
+
+    job2 = planned_job(db, jn_job_id=JOB + "x")
+    two = {"jnid": "wo9", "number": "WO-9", "record_type_name": "Roofing", "status_name": "New", "is_active": True}
+    with pytest.raises(B.BookingError, match="more than one open Roofing"):
+        B.pick_work_order(job2, [FakeJN().wo, two])
+
+
+def test_a_half_finished_push_survives_the_sync_and_finishes(db):
+    from backend.services import jobnimbus as jnapi
+    job = planned_job(db)
+    B.push(db, "Greg", jn=FakeJN(fail_on=lambda m, e, b: e == "activities"))
+    job.bucket = "scheduled"  # the sync saw Pending Start Date
+    jnapi._apply_calendar(job, {}, None, None, "")
+    db.commit()
+    assert job.planned_date == BUILD  # plan kept so the button can finish
+    jn = FakeJN(wo_status="Pending Start", wo_start=MIDNIGHT, job_status="Pending Start Date")
+    result = B.push(db, "Greg", jn=jn)
+    assert result["booked"] == 1
+    assert [c[1] for c in jn.writes()][0] == "activities"
+    jnapi._apply_calendar(job, {}, None, None, "")
+    assert job.planned_date is None and job.jn_push_steps is None  # done: plan and log cleared together
+
+
+def test_stops_the_whole_push_when_jobnimbus_errors(db):
+    planned_job(db)
+    planned_job(db, jn_job_id=JOB + "2")  # never reached
+    jn = FakeJN(fail_on=lambda m, e, b: True)
+    result = B.push(db, "Greg", jn=jn)
+    assert len(result["results"]) == 1 and result["results"][0]["jn_error"]
+
+
+def test_only_office_ops_and_owners_can_book(db, monkeypatch):
+    from backend.models.email import TeamContact
+    from backend.routers.schedule import can_book
+    from backend.services.auth import ClerkUser
+    db.add_all([TeamContact(jn_name="Pat Rep", display_name="Pat", role="rep", email="pat@x.com"),
+                TeamContact(jn_name="Nikka", display_name="Nikka", role="office", email="nikka@x.com")])
+    db.commit()
+    user = lambda email: ClerkUser({"sub": "u", "email": email, "approved": True})  # noqa: E731
+    assert not can_book(db, user("pat@x.com"))
+    assert can_book(db, user("NIKKA@x.com"))
+    assert not can_book(db, user("stranger@x.com"))

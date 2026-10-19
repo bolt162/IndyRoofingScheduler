@@ -42,8 +42,8 @@ export function usePushToJobNimbus() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (jobIds: number[]) => {
-      // Each job is several JobNimbus calls; give a full week's push time to finish
-      const { data } = await api.post('/schedule/push', { job_ids: jobIds }, { timeout: 300000 });
+      // The page sends one job at a time: about ten JobNimbus calls plus a notes recheck
+      const { data } = await api.post('/schedule/push', { job_ids: jobIds }, { timeout: 120000 });
       return data as { results: PushResult[]; booked: number; failed: number };
     },
     onSettled: () => {

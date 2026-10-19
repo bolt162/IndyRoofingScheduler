@@ -21,27 +21,49 @@ const day = (iso: string) => format(parseISO(iso), 'EEE, MMM d');
 export function PushToJobNimbus({ plannedCount }: { plannedCount: number }) {
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState<PushResult[] | null>(null);
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const { data: preview, isLoading } = usePushPreview(open);
   const push = usePushToJobNimbus();
 
   const ready = preview?.items.filter((i) => i.ready) ?? [];
   const skipped = preview?.items.filter((i) => !i.ready) ?? [];
 
+  const busy = progress !== null;
+
   const close = (next: boolean) => {
-    if (push.isPending) return;
+    if (busy) return;
     setOpen(next);
     if (!next) setResults(null);
   };
 
+  // One job per request: each answer arrives in seconds, so a big week never outlasts the browser,
+  // and the list shows exactly which ones made it if anything stops partway.
   const send = async () => {
-    try {
-      const out = await push.mutateAsync(ready.map((i) => i.job_id));
-      setResults(out.results);
-      if (out.failed) toast.error(`${out.failed} job${out.failed > 1 ? 's' : ''} didn't finish. See why below.`);
-      else toast.success(`Booked ${out.booked} job${out.booked === 1 ? '' : 's'} in JobNimbus`);
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail ?? "Couldn't reach JobNimbus. Nothing more was sent. Try again.");
+    const out: PushResult[] = [];
+    let stopped: string | null = null;
+    setProgress({ done: 0, total: ready.length });
+    for (const item of ready) {
+      try {
+        const res = await push.mutateAsync([item.job_id]);
+        out.push(...res.results);
+        if (res.results.some((r) => r.jn_error)) {
+          stopped = 'JobNimbus stopped answering, so the rest were not sent. Push again in a few minutes to finish.';
+          break;
+        }
+      } catch (err: any) {
+        stopped = err?.response?.data?.detail
+          ?? `Lost the connection while booking ${item.customer_name}. Push again to finish; nothing is sent twice.`;
+        break;
+      }
+      setProgress({ done: out.length, total: ready.length });
     }
+    setProgress(null);
+    setResults(out);
+    const booked = out.filter((r) => r.status === 'booked').length;
+    const failed = out.filter((r) => r.status === 'failed').length;
+    if (stopped) toast.error(stopped);
+    else if (failed) toast.error(`${failed} job${failed > 1 ? 's' : ''} didn't finish. See why below.`);
+    else toast.success(`Booked ${booked} job${booked === 1 ? '' : 's'} in JobNimbus`);
   };
 
   return (
@@ -52,7 +74,7 @@ export function PushToJobNimbus({ plannedCount }: { plannedCount: number }) {
       </Button>
 
       <Dialog open={open} onOpenChange={close}>
-        <DialogContent className="sm:max-w-lg" showCloseButton={!push.isPending}>
+        <DialogContent className="sm:max-w-lg" showCloseButton={!busy}>
           <DialogHeader>
             <DialogTitle>{results ? 'Sent to JobNimbus' : 'Book these jobs in JobNimbus?'}</DialogTitle>
             {!results && (
@@ -63,6 +85,11 @@ export function PushToJobNimbus({ plannedCount }: { plannedCount: number }) {
             )}
           </DialogHeader>
 
+          {preview && !preview.can_book && !results && (
+            <p className="rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+              Only the office, operations or owners can book jobs in JobNimbus. You can still see the list.
+            </p>
+          )}
           {preview?.mode === 'test' && !results && (
             <p className="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-900">
               Test mode: only the test job is sent. Everything else stays planned.
@@ -137,11 +164,11 @@ export function PushToJobNimbus({ plannedCount }: { plannedCount: number }) {
               <Button onClick={() => close(false)}>Done</Button>
             ) : (
               <>
-                <Button variant="outline" onClick={() => close(false)} disabled={push.isPending}>Cancel</Button>
-                <Button onClick={send} disabled={push.isPending || ready.length === 0}
-                        className={cn(push.isPending && 'cursor-wait')}>
-                  {push.isPending ? (
-                    <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Booking {ready.length}…</>
+                <Button variant="outline" onClick={() => close(false)} disabled={busy}>Cancel</Button>
+                <Button onClick={send} disabled={busy || ready.length === 0 || !preview?.can_book}
+                        className={cn(busy && 'cursor-wait')}>
+                  {progress ? (
+                    <><Loader2 className="mr-1 h-4 w-4 animate-spin" /> Booking {progress.done + 1} of {progress.total}…</>
                   ) : (
                     <>Book {ready.length} in JobNimbus</>
                   )}
