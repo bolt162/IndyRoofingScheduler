@@ -60,6 +60,9 @@ class JobResponse(JobBase):
     jn_work_orders: list[dict] | None = None
     planned_date: date | None = None
     planned_pm_id: int | None = None
+    planned_crew_id: int | None = None
+    jn_push_steps: dict | None = None
+    jn_push_error: str | None = None
     planned_by: str | None = None
     planned_at: datetime | None = None
     ready_status: str | None = None
@@ -118,6 +121,7 @@ class JobUpdate(BaseModel):
     # Weekly Plan pick (not sent to JobNimbus). planned_date null clears the plan.
     planned_date: date | None = None
     planned_pm_id: int | None = None
+    planned_crew_id: int | None = None
 
 
 class ReadyDecisionRequest(BaseModel):

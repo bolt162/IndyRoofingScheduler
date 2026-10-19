@@ -159,8 +159,13 @@ class Job(Base):
     # follow JobNimbus, don't treat a plan as a real booking.
     planned_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     planned_pm_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    planned_crew_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     planned_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     planned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Push to JobNimbus (services/jn_booking.py): {date, by, work_order, work_order_status, ...}, one key
+    # per finished step so a push that stopped halfway never repeats one. jn_push_error: why it stopped.
+    jn_push_steps: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    jn_push_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # Ready check: AI reads the notes for anything that would stop the build (services/ready_check.py).
     # ready_status: unchecked / clear / flagged (needs an answer) / ok (office said fine) / hold

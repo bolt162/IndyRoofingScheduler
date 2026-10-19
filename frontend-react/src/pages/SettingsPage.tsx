@@ -13,7 +13,7 @@ import { Slider } from '@/components/ui/slider';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useSettings, useUpdateSetting, usePMs, useAddPM, useUpdatePM, useDeletePM, useCrews, useAddCrew, useUpdateCrew, useDeleteCrew, useResetDB } from '@/api/settings';
+import { useSettings, useUpdateSetting, usePMs, useAddPM, useUpdatePM, useDeletePM, useCrews, useAddCrew, useUpdateCrew, useDeleteCrew, useResetDB, useJNSubcontractors } from '@/api/settings';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter,
 } from '@/components/ui/dialog';
@@ -87,6 +87,8 @@ export function SettingsPage() {
   const [editCrewSpecialties, setEditCrewSpecialties] = useState('');
   const [editCrewRank, setEditCrewRank] = useState('');
   const [editCrewNotes, setEditCrewNotes] = useState('');
+  const [editCrewJnName, setEditCrewJnName] = useState('');
+  const { data: jnSubs, isError: jnSubsError } = useJNSubcontractors(editingCrewId !== null);
 
   // New crew — rank/notes/trades extras
   const [newCrewTrades, setNewCrewTrades] = useState<string[]>(['roofing']);
@@ -487,6 +489,27 @@ export function SettingsPage() {
                         </p>
                       </div>
                       <div>
+                        <Label className="text-xs">Name in JobNimbus (for Push to JobNimbus)</Label>
+                        <select
+                          value={editCrewJnName}
+                          onChange={(e) => setEditCrewJnName(e.target.value)}
+                          className="mt-1 h-8 w-full rounded-md border border-input bg-background px-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+                        >
+                          <option value="">Match by the crew's name</option>
+                          {editCrewJnName && !(jnSubs ?? []).includes(editCrewJnName) && (
+                            <option value={editCrewJnName}>{editCrewJnName}</option>
+                          )}
+                          {(jnSubs ?? []).map((n) => (
+                            <option key={n} value={n}>{n}</option>
+                          ))}
+                        </select>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          {jnSubsError
+                            ? "Couldn't load the list from JobNimbus. Try again in a minute."
+                            : 'The subcontractor added to the work order, for example "DCT Construction - Roof Crew".'}
+                        </p>
+                      </div>
+                      <div>
                         <Label className="text-xs">Notes (strengths, warranties, history)</Label>
                         <Textarea
                           value={editCrewNotes}
@@ -512,6 +535,7 @@ export function SettingsPage() {
                                   : [],
                                 rank: parsedRank,
                                 notes: editCrewNotes || null,
+                                jn_name: editCrewJnName || null,
                               },
                             }, {
                               onSuccess: () => {
@@ -584,6 +608,9 @@ export function SettingsPage() {
                             </>
                           )}
                         </div>
+                        {crew.jn_name && (
+                          <p className="text-[11px] text-muted-foreground mt-1.5">JobNimbus: {crew.jn_name}</p>
+                        )}
                         {crew.notes && (
                           <p className="text-[11px] text-muted-foreground italic mt-1.5 whitespace-pre-wrap">
                             {crew.notes}
@@ -641,6 +668,7 @@ export function SettingsPage() {
                               setEditCrewSpecialties(crew.specialties?.join(', ') || '');
                               setEditCrewRank(String(crew.rank));
                               setEditCrewNotes(crew.notes || '');
+                              setEditCrewJnName(crew.jn_name || '');
                             }}
                           >
                             <Pencil className="h-3 w-3" />

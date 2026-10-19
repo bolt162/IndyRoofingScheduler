@@ -1,10 +1,66 @@
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
-import { MapPin, X } from 'lucide-react';
+import { toast } from 'sonner';
+import { AlertTriangle, HardHat, MapPin, Send, X } from 'lucide-react';
 import { ReadyCheckBadge } from '@/components/jobs/ReadyCheckBadge';
 import { NoBuildDatesBadge } from '@/components/jobs/NoBuildDatesBadge';
+import { useUpdateJob } from '@/api/jobs';
+import { useCrews } from '@/api/settings';
 import { cn } from '@/lib/utils';
-import type { Job } from '@/types';
+import type { Crew, Job } from '@/types';
+
+/** Active crews that do this job's trade (a roof repair is still roofing), best rank first. */
+function crewsForJob(crews: Crew[] | undefined, job: Job) {
+  const active = (crews ?? []).filter((c) => c.is_active);
+  const trade = (job.primary_trade ?? '').replace(/_repair$/, '');
+  const fit = active.filter((c) => !trade || c.trades.includes(trade) || c.trades.includes(job.primary_trade ?? ''));
+  return (fit.length ? fit : active).sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));
+}
+
+/** Sent to JobNimbus for the day it's planned on; the next sync turns it into a Booked card. */
+export function sentToJobNimbus(job: Job) {
+  const s = job.jn_push_steps;
+  return !!s && s.date === job.planned_date && !!s.tasks;
+}
+
+/** Crew for the build. Sits outside the drag handle so picking one never starts a drag. */
+function CrewPicker({ job }: { job: Job }) {
+  const { data: crews } = useCrews();
+  const updateJob = useUpdateJob();
+  const options = crewsForJob(crews, job);
+  const missing = !job.planned_crew_id;
+
+  return (
+    <label
+      className={cn(
+        'mt-1 flex items-center gap-1 text-[11px]',
+        missing ? 'text-amber-700' : 'text-slate-800',
+      )}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <HardHat className="h-3 w-3 shrink-0" />
+      <span className="sr-only">Crew for {job.customer_name}</span>
+      <select
+        value={job.planned_crew_id ?? ''}
+        disabled={updateJob.isPending}
+        onChange={async (e) => {
+          const id = e.target.value ? Number(e.target.value) : null;
+          try {
+            await updateJob.mutateAsync({ id: job.id, update: { planned_crew_id: id } });
+          } catch {
+            toast.error("Couldn't save the crew. Try again.");
+          }
+        }}
+        className="min-w-0 flex-1 cursor-pointer truncate rounded border border-transparent bg-transparent py-px pr-1 hover:border-input focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60"
+      >
+        <option value="">Pick a crew</option>
+        {options.map((c) => (
+          <option key={c.id} value={c.id}>{c.name}</option>
+        ))}
+      </select>
+    </label>
+  );
+}
 
 /**
  * A job planned on the Weekly Plan but not sent to JobNimbus yet. Dashed so it reads as a
@@ -51,7 +107,7 @@ export function DraggableJobCard({
       <div
         {...listeners}
         {...attributes}
-        className="touch-none select-none cursor-grab active:cursor-grabbing rounded-md border border-dashed border-primary/45 bg-card px-2.5 py-2 hover:border-primary/70"
+        className="touch-none select-none cursor-grab active:cursor-grabbing rounded-t-md border border-b-0 border-dashed border-primary/45 bg-card px-2.5 py-2 hover:border-primary/70"
         title="Planned here, not sent to JobNimbus yet. Drag to another day, or back to the list to remove."
       >
         <div className="flex items-center justify-between gap-2 pr-2">
@@ -66,6 +122,20 @@ export function DraggableJobCard({
           <ReadyCheckBadge job={job} small />
           <NoBuildDatesBadge windows={job.no_build_dates} small />
         </div>
+      </div>
+      <div className="rounded-b-md border border-t-0 border-dashed border-primary/45 bg-card px-2.5 pb-1.5 pt-1">
+        <CrewPicker job={job} />
+        {sentToJobNimbus(job) ? (
+          <p className="mt-0.5 flex items-center gap-1 text-[10px] text-emerald-700">
+            <Send className="h-2.5 w-2.5 shrink-0" />
+            Sent to JobNimbus · shows as Booked after the next sync
+          </p>
+        ) : job.jn_push_error ? (
+          <p className="mt-0.5 flex items-start gap-1 text-[10px] leading-snug text-red-700">
+            <AlertTriangle className="mt-px h-2.5 w-2.5 shrink-0" />
+            {job.jn_push_error}
+          </p>
+        ) : null}
       </div>
     </div>
   );

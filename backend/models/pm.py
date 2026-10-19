@@ -36,4 +36,6 @@ class Crew(Base):
     rank: Mapped[int] = mapped_column(Integer, default=999)
     # Free-form notes: "handles complex roofs, few warranties, steep pitch expert"
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The crew's subcontractor name in JobNimbus ("DCT Construction - Roof Crew"), for Push to JobNimbus
+    jn_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

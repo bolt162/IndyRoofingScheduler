@@ -1,8 +1,8 @@
 """
 JobNimbus API Client.
 Primarily READ-ONLY — fetches jobs and notes from JN.
-The ONLY write operation is push_note_to_jn() which creates a note activity
-on a JN job. This is triggered manually by the scheduler (never automatic).
+Writes: push_note_to_jn() (a note on a JN job), and Push to JobNimbus
+(services/jn_booking.py), which books Weekly Plan picks when someone presses the button.
 """
 import html
 import json
@@ -40,6 +40,14 @@ def _jn_post(endpoint: str, body: dict) -> dict:
     """POST to a JN endpoint. Used only for pushing notes (activities)."""
     url = f"{BASE_URL}/{endpoint}"
     resp = httpx.post(url, headers=HEADERS, json=body, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _jn_put(endpoint: str, body: dict) -> dict:
+    """PUT to a JN endpoint. Used only by Push to JobNimbus (services/jn_booking.py)."""
+    url = f"{BASE_URL}/{endpoint}"
+    resp = httpx.put(url, headers=HEADERS, json=body, timeout=30)
     resp.raise_for_status()
     return resp.json()
 
@@ -459,7 +467,7 @@ def _apply_calendar(job: Job, jn_data: dict, work_orders: list[dict] | None,
         job.jn_start_date = schedule_sync._date(jn_data.get("date_start"))
     # Once JobNimbus books it (or it moves on), the plan made in the app is done.
     if job.planned_date and job.bucket not in PLANNABLE_BUCKETS:
-        job.planned_date = job.planned_pm_id = job.planned_by = job.planned_at = None
+        job.planned_date = job.planned_pm_id = job.planned_crew_id = job.planned_by = job.planned_at = None
     if activities is not None:
         job.ready_input = schedule_sync.build_ready_input(description, activities, job.jn_work_orders or [])
 

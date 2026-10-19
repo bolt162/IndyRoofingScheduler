@@ -235,7 +235,7 @@ def update_job(job_id: int, update: JobUpdate, db: Session = Depends(get_db),
                 job.planned_at = datetime.utcnow()
                 job.planned_by = (user.name or user.email) if user else None
         else:
-            update_data["planned_pm_id"] = None
+            update_data["planned_pm_id"] = update_data["planned_crew_id"] = None
             job.planned_by = job.planned_at = None
 
     for field, value in update_data.items():

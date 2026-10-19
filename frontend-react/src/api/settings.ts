@@ -154,6 +154,7 @@ export function useUpdateCrew() {
         is_active?: boolean;
         rank?: number;
         notes?: string | null;
+        jn_name?: string | null;
       };
     }) => {
       const { data } = await api.patch(`/settings/crews/${id}`, update);
@@ -191,5 +192,18 @@ export function useResetDB() {
       // Invalidate everything
       qc.invalidateQueries();
     },
+  });
+}
+
+/** Crew names as JobNimbus has them ("DCT Construction - Roof Crew"), for matching crews. */
+export function useJNSubcontractors(enabled: boolean) {
+  return useQuery<string[]>({
+    queryKey: ['jnSubcontractors'],
+    queryFn: async () => {
+      const { data } = await api.get('/settings/jn-subcontractors');
+      return data;
+    },
+    enabled,
+    staleTime: 10 * 60 * 1000,
   });
 }

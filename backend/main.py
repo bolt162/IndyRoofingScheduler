@@ -266,6 +266,10 @@ def _migrate_job_columns():
             "planned_pm_id": "INTEGER",
             "planned_by": "VARCHAR(255)",
             "planned_at": "TIMESTAMP",
+            # Push to JobNimbus (2026-10-19)
+            "planned_crew_id": "INTEGER",
+            "jn_push_steps": "JSON" if is_postgres else "TEXT",
+            "jn_push_error": "TEXT",
             "ready_status": "VARCHAR(20)",
             "ready_flags": "JSON" if is_postgres else "TEXT",
             "ready_input": "TEXT",
@@ -314,6 +318,8 @@ def _migrate_crew_columns():
             additions.append("ADD COLUMN rank INTEGER DEFAULT 999")
         if "notes" not in existing:
             additions.append("ADD COLUMN notes TEXT")
+        if "jn_name" not in existing:
+            additions.append("ADD COLUMN jn_name VARCHAR(255)")
         # CRITICAL: trades must be JSON type on Postgres so SQLAlchemy round-trips
         # the list correctly. TEXT works on SQLite (its JSON is stored as TEXT).
         if "trades" not in existing:

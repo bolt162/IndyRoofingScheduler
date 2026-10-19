@@ -104,6 +104,7 @@ class CrewCreate(BaseModel):
     specialties: list[str] = []  # material specialties: slate, tpo, wood_shake, etc.
     rank: int = 999
     notes: str | None = None
+    jn_name: str | None = None
 
 
 @router.post("/crews")
@@ -114,6 +115,7 @@ def add_crew(data: CrewCreate, db: Session = Depends(get_db)):
         specialties=data.specialties or [],
         rank=data.rank,
         notes=data.notes,
+        jn_name=data.jn_name or None,
     )
     db.add(crew)
     db.commit()
@@ -128,6 +130,19 @@ class CrewUpdate(BaseModel):
     is_active: bool | None = None
     rank: int | None = None
     notes: str | None = None
+    jn_name: str | None = None
+
+
+@router.get("/jn-subcontractors")
+def list_jn_subcontractors():
+    """Crew names as JobNimbus has them, for matching each crew in Settings (read-only)."""
+    from fastapi import HTTPException
+    from backend.services.jn_booking import JN, Lookups
+    try:
+        subs = Lookups(JN()).subcontractors()
+    except Exception:
+        raise HTTPException(status_code=502, detail="Couldn't reach JobNimbus. Try again in a minute.")
+    return sorted({s["name"] for s in subs if "indy roof" not in s["name"].lower()})
 
 
 @router.patch("/crews/{crew_id}")

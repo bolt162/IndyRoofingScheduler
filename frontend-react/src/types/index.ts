@@ -141,6 +141,10 @@ export interface Job {
   // Day picked on the Weekly Plan, not sent to JobNimbus yet
   planned_date: string | null;
   planned_pm_id: number | null;
+  planned_crew_id: number | null;
+  // Push to JobNimbus: one key per finished step, plus why it last stopped
+  jn_push_steps: Record<string, unknown> | null;
+  jn_push_error: string | null;
   planned_by: string | null;
   planned_at: string | null;
   // Notes ready check
@@ -228,6 +232,7 @@ export interface JobUpdate {
   // Weekly Plan pick; null clears the plan
   planned_date?: string | null;
   planned_pm_id?: number | null;
+  planned_crew_id?: number | null;
 }
 
 export interface NotBuiltRequest {
@@ -255,7 +260,33 @@ export interface Crew {
   is_active: boolean;
   rank: number; // 1 = best ("Michael Jordan"), higher = bench. 999 = unranked
   notes: string | null;
+  // The crew's subcontractor name in JobNimbus, for Push to JobNimbus
+  jn_name: string | null;
   created_at: string;
+}
+
+export interface PushPreviewItem {
+  job_id: number;
+  customer_name: string;
+  planned_date: string;
+  crew: string | null;
+  pm: string | null;
+  ready: boolean;
+  reason: string | null;
+}
+
+export interface PushPreview {
+  mode: 'off' | 'test' | 'live';
+  items: PushPreviewItem[];
+  ready_count: number;
+}
+
+export interface PushResult {
+  job_id: number;
+  customer_name: string;
+  status: 'booked' | 'skipped' | 'failed';
+  reason?: string;
+  work_order?: string;
 }
 
 export interface NoteLog {

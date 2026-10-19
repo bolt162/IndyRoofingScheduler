@@ -18,6 +18,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { DayColumn } from '@/components/schedule/DayColumn';
 import { UnassignedJobRow } from '@/components/schedule/UnassignedJobRow';
+import { PushToJobNimbus } from '@/components/schedule/PushToJobNimbus';
 import { useJobs, useReadyOpen, useUpdateJob } from '@/api/jobs';
 import { useSchedulePlans, useConfirmPlan } from '@/api/schedule';
 import { usePMs } from '@/api/settings';
@@ -104,6 +105,12 @@ export function WeeklyPlanPage() {
       (allJobs ?? [])
         .filter((j) => j.bucket === 'to_schedule' && !j.planned_date)
         .sort((a, b) => b.score - a.score),
+    [allJobs]
+  );
+
+  // Every planned job on any week waits for Push to JobNimbus
+  const plannedCount = useMemo(
+    () => (allJobs ?? []).filter((j) => j.planned_date && isPlannable(j)).length,
     [allJobs]
   );
 
@@ -349,6 +356,8 @@ export function WeeklyPlanPage() {
               </div>
 
               <Separator orientation="vertical" className="h-6 hidden sm:block" />
+
+              <PushToJobNimbus plannedCount={plannedCount} />
 
               {weekDraftPlans.length > 0 && (
                 <Button
