@@ -144,14 +144,19 @@ def fetch_material_items(jnid: str) -> list[dict]:
     return [it for o in orders for it in (o.get("items") or []) if isinstance(it, dict)]
 
 
+# JobNimbus's own scheduling email. Since 2026-10-07 scheduling runs at the work order level, whose email is
+# "Build day is coming!"; the old job-level "Project Update" email is off but kept here for older jobs.
+JN_SCHEDULE_EMAIL_TITLES = ("Build day is coming", "Project Update from Indy Roof")
+
+
 def jn_schedule_email_sent(jnid: str, since: datetime | None = None) -> bool:
-    """Did JobNimbus's own 'Project Update' scheduling email go out (since `since`)?"""
+    """Did JobNimbus's own scheduling email (work order or job level) go out (since `since`)?"""
     data = _jn_get("activities", params={"filter": _filter_related(jnid), "size": 200})
     acts = data.get("activity", []) if isinstance(data, dict) else []
     cutoff = since.timestamp() if since else 0
     for a in acts:
         note = a.get("note") or ""
-        if "Project Update from Indy Roof" in note and (a.get("date_created") or 0) >= cutoff - 3600:
+        if any(t in note for t in JN_SCHEDULE_EMAIL_TITLES) and (a.get("date_created") or 0) >= cutoff - 3600:
             return True
     return False
 

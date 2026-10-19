@@ -116,3 +116,11 @@ def test_jn_schedule_email_detection(monkeypatch):
     assert not J.jn_schedule_email_sent("j1", since=datetime.fromtimestamp(1790000000 + 86400))
 
 
+
+
+def test_work_order_scheduling_email_counts(monkeypatch):
+    """Josh Pardue (J-26719) got the work order email on 10/19 but was flagged as missing it."""
+    from datetime import datetime
+    acts = [{"note": "<b>Build day is coming! 🛠️ Here's your game plan</b> Hi Josh, Big news!", "date_created": 1792441260}]
+    fake_jn(monkeypatch, {}, {}, activities=acts)
+    assert J.jn_schedule_email_sent("j1", since=datetime.fromtimestamp(1792441260 - 60))
