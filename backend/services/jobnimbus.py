@@ -52,18 +52,20 @@ def _jn_put(endpoint: str, body: dict) -> dict:
     return resp.json()
 
 
+def note_body(jn_job_id: str, note_text: str) -> dict:
+    """A note on a job. Checked 2026-10-19: JobNimbus refuses type "note" ("Unable to create record as
+    'note' instead of activity") and ignores "parent"; it must be an activity with the job as primary."""
+    return {"type": "activity", "record_type_name": "Note", "note": note_text,
+            "primary": {"id": jn_job_id}, "related": [{"id": jn_job_id, "type": "job"}]}
+
+
 def push_note_to_jn(jn_job_id: str, note_text: str) -> dict:
     """
     Create a note activity on a JN job.
     Returns the created activity dict with the new 'jnid'.
     Raises httpx.HTTPError on failure.
     """
-    body = {
-        "parent": jn_job_id,           # JN link to job
-        "type": "note",
-        "record_type_name": "Note",
-        "note": note_text,
-    }
+    body = note_body(jn_job_id, note_text)
     from backend import activity
     first_line = (note_text or "").strip().splitlines()[0][:120] if (note_text or "").strip() else ""
     try:

@@ -37,7 +37,7 @@ class FakeJN:
                 {"object_type": "workorder", "name": "Gutters", "status": [{"id": 481, "name": "Pending Start"}]},
                 {"object_type": "job", "name": "Retail", "status": [{"id": 446, "name": "Schedule Job"},
                                                                     {"id": 447, "name": "Pending Start Date"}]},
-            ], "taskTypes": [{"TypeId": 23, "TypeName": "Build Block"}]}
+            ], "taskTypes": [{"TaskTypeId": 23, "TypeName": "Build Block"}]}
         if endpoint == "account/users":
             return [{"id": "luke_user", "first_name": "Luke", "last_name": "Mroz", "is_active": True},
                     {"id": "rep1", "first_name": "Pat", "last_name": "Rep", "is_active": True}]

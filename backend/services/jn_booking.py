@@ -129,7 +129,7 @@ class Lookups:
     def task_type_id(self, name: str) -> int | None:
         for t in self.account_settings().get("taskTypes") or []:
             if (t.get("TypeName") or t.get("name") or "").strip().lower() == name.lower():
-                return t.get("TypeId") or t.get("id")
+                return t.get("TaskTypeId") or t.get("TypeId") or t.get("id")
         return None
 
     def status_id(self, object_type: str, workflow: str, status: str) -> int:
@@ -415,11 +415,8 @@ def book_job(db: Session, job: Job, who: str, jn: JN | None = None, lookups: Loo
 
         rep_id, rep_name = jn_job.get("sales_rep"), jn_job.get("sales_rep_name")
         if not st.get("rep_note"):
-            note = {"parent": job.jn_job_id, "type": "note", "record_type_name": "Note",
-                    "note": rep_note_text(rep_name, job.primary_trade, d)}
-            if rep_id:
-                note["owners"] = [{"id": rep_id}]
-            jn.post("activities", note)
+            from backend.services.jobnimbus import note_body
+            jn.post("activities", note_body(job.jn_job_id, rep_note_text(rep_name, job.primary_trade, d)))
             _done(db, job, "rep_note")
 
         if not st.get("build_block"):
