@@ -53,6 +53,21 @@ class JobResponse(JobBase):
     created_at: datetime
     updated_at: datetime
     last_ai_analyzed_at: datetime | None = None
+    # JobNimbus calendar, Weekly Plan plan, notes ready check
+    jn_start_date: date | None = None
+    jn_crews: list[str] | None = None
+    jn_pm: str | None = None
+    jn_work_orders: list[dict] | None = None
+    planned_date: date | None = None
+    planned_pm_id: int | None = None
+    planned_by: str | None = None
+    planned_at: datetime | None = None
+    ready_status: str | None = None
+    ready_flags: list[dict] | None = None
+    ready_checked_at: datetime | None = None
+    ready_decision_by: str | None = None
+    ready_decision_at: datetime | None = None
+    ready_decision_note: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -100,6 +115,14 @@ class JobUpdate(BaseModel):
     crew_requirement_flag: bool | None = None
     # Scheduler already confirmed it's OK to build inside the job's No-Build Dates
     override_no_build: bool | None = None
+    # Weekly Plan pick (not sent to JobNimbus). planned_date null clears the plan.
+    planned_date: date | None = None
+    planned_pm_id: int | None = None
+
+
+class ReadyDecisionRequest(BaseModel):
+    decision: str  # "ok" (fine to schedule) or "hold"
+    note: str | None = None
 
 
 class NoBuildWindow(BaseModel):

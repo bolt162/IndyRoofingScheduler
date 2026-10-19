@@ -218,7 +218,7 @@ function EmailDialog({ jobId, onClose }: { jobId: number | null; onClose: () => 
   );
 }
 
-const ROLE_LABEL: Record<string, string> = { rep: 'Sales rep', pm: 'Project manager', ops: 'Operations', owner: 'Owner' };
+const ROLE_LABEL: Record<string, string> = { rep: 'Sales rep', pm: 'Project manager', ops: 'Operations', office: 'Office', owner: 'Owner' };
 
 function TeamTab() {
   const { data: team } = useTeam();

@@ -125,8 +125,8 @@ def list_team(db: Session = Depends(get_db)):
 
 @router.post("/team")
 def add_team(body: TeamIn, db: Session = Depends(get_db)):
-    if body.role not in ("rep", "pm", "ops", "owner"):
-        raise HTTPException(400, "role must be rep, pm, ops, or owner")
+    if body.role not in team.ROLES:
+        raise HTTPException(400, "role must be rep, pm, ops, office, or owner")
     row = TeamContact(**body.model_dump())
     row.phone = team.normalize_phone(body.phone) or body.phone
     db.add(row)

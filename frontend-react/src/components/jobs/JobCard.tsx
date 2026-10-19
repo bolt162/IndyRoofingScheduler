@@ -22,6 +22,7 @@ import { MustBuildBadge } from './MustBuildBadge';
 import { DurationFlag } from './DurationFlag';
 import { WeatherBadge } from './WeatherBadge';
 import { NoBuildDatesBadge } from './NoBuildDatesBadge';
+import { ReadyCheckBadge } from './ReadyCheckBadge';
 import { NoBuildDatesDialog } from './NoBuildDatesDialog';
 import { describeNoBuild, mustBuildDeadlineClash } from '@/lib/no-build';
 import { useSetMustBuild, useClearMustBuild, useUpdateJob, useSetStandaloneOption, usePushNote, useMarkPrimaryComplete, useUpdateSecondaryTradeStatus, useReanalyzeJob, closestTradeFor } from '@/api/jobs';
@@ -242,6 +243,7 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
 
           {/* Row 2: Flags */}
           <div className="flex flex-wrap gap-1.5">
+            <ReadyCheckBadge job={job} small={compact} />
             {job.must_build && (
               <MustBuildBadge deadline={job.must_build_deadline} reason={job.must_build_reason} />
             )}

@@ -659,6 +659,15 @@ PAST_DATE_ACTION = (
     "with the old date."
 )
 
+# Morning list of ready check flags (Aaron, 2026-10-19). To Nikka, Ross and Greg.
+READY_SUBJECT = "Check before scheduling: {count}"
+READY_LEAD = "These jobs have something in their notes that could stop the build."
+READY_ACTION = (
+    "**What to do:** open each one in the Scheduler and pick OK to schedule (if a note is just missing) "
+    "or Keep on hold."
+)
+READY_ON_HOLD = "On hold: {issue}"
+
 JN_EMAIL_MISSING_SUBJECT = "No scheduling email from JobNimbus: {customer_name}"
 JN_EMAIL_MISSING_WHAT = (
     "JobNimbus didn't send {customer_name} its \"Project Update\" email with their date. "

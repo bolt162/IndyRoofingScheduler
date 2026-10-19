@@ -5,6 +5,7 @@ import { MapPin, Star, Clock } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { WeatherBadge } from '@/components/jobs/WeatherBadge';
 import { NoBuildDatesBadge } from '@/components/jobs/NoBuildDatesBadge';
+import { ReadyCheckBadge } from '@/components/jobs/ReadyCheckBadge';
 import { cn } from '@/lib/utils';
 import type { Job } from '@/types';
 
@@ -58,6 +59,7 @@ export function UnassignedJobRow({ job }: { job: Job }) {
 
       {/* Line 3: key flags */}
       <div className="flex flex-wrap items-center gap-1 mt-1">
+        <ReadyCheckBadge job={job} small />
         {job.primary_trade && (
           <Badge variant="secondary" className="text-[9px] px-1 py-0 capitalize">
             {job.primary_trade}

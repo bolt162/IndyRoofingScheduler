@@ -14,6 +14,7 @@ from datetime import datetime
 from sqlalchemy.orm import Session
 
 from backend.config import settings
+from backend.services import schedule_sync
 from backend.models.job import Job, JobBucket, LOW_SLOPE_MATERIALS, SPECIALTY_MATERIALS, MaterialType, TradeType
 
 
@@ -133,7 +134,7 @@ def fetch_contacts_for_job(jn_job_id: str) -> list[dict]:
 # automations, emails, task completions, payments) is noise for the note scanner.
 NOTE_ACTIVITY_TYPES = {"note", "phone call", "comment", "comment (migrated)"}
 # Notes the system writes itself; feeding them back to the AI would be circular.
-SYSTEM_NOTE_PREFIXES = ("[SCHEDULER SYSTEM", "[BUILD QUEUE EMAIL")
+SYSTEM_NOTE_PREFIXES = ("[SCHEDULER SYSTEM", "[BUILD QUEUE EMAIL", "SCHEDULING CHECK:")
 MAX_NOTES = 50
 MAX_NOTES_CHARS = 12000
 
@@ -145,9 +146,27 @@ def fetch_notes_for_job(jn_job_id: str) -> list[dict]:
     JN's activities endpoint ignores a parent_jnid param (it returns every activity in the
     account) and wraps results in "activity", not "results". Filter on related.id instead.
     """
+    return notes_from_activities(fetch_activities_for_job(jn_job_id))
+
+
+def fetch_activities_for_job(jn_job_id: str) -> list[dict]:
+    """Every activity on the job (notes, status changes, automations...), as JN returns them."""
     filt = json.dumps({"must": [{"term": {"related.id": jn_job_id}}]})
     data = _jn_get("activities", params={"filter": filt, "size": 200})
     items = data.get("activity", []) if isinstance(data, dict) else []
+    return [a for a in items if isinstance(a, dict)]
+
+
+def fetch_work_orders_for_job(jn_job_id: str) -> list[dict]:
+    filt = json.dumps({"must": [{"term": {"related.id": jn_job_id}}]})
+    data = _jn_get("v2/workorders", params={"filter": filt, "size": 50})
+    if not isinstance(data, dict):
+        return []
+    return data.get("results") or data.get("workorders") or []
+
+
+def notes_from_activities(items: list[dict]) -> list[dict]:
+    """The human-written notes, newest first."""
     notes = [
         a for a in items
         if isinstance(a, dict)
@@ -424,6 +443,27 @@ def map_jn_job_to_model(jn_data: dict) -> dict:
     }
 
 
+# Buckets whose work orders we read each sync (see services/schedule_sync.py)
+CALENDAR_BUCKETS = {"coming_soon", "to_schedule", "scheduled", "not_built"}
+# A Weekly Plan pick only means something while the job is still waiting to be booked
+PLANNABLE_BUCKETS = {"to_schedule", "not_built"}
+
+
+def _apply_calendar(job: Job, jn_data: dict, work_orders: list[dict] | None,
+                    activities: list[dict] | None, description: str) -> None:
+    """Copy JobNimbus's calendar onto the job and refresh the ready check's input. Never touches bucket."""
+    if work_orders is not None:
+        job.jn_work_orders = work_orders
+        job.jn_start_date, job.jn_crews, job.jn_pm = schedule_sync.calendar_from(jn_data, work_orders)
+    elif job.bucket not in CALENDAR_BUCKETS:
+        job.jn_start_date = schedule_sync._date(jn_data.get("date_start"))
+    # Once JobNimbus books it (or it moves on), the plan made in the app is done.
+    if job.planned_date and job.bucket not in PLANNABLE_BUCKETS:
+        job.planned_date = job.planned_pm_id = job.planned_by = job.planned_at = None
+    if activities is not None:
+        job.ready_input = schedule_sync.build_ready_input(description, activities, job.jn_work_orders or [])
+
+
 def sync_jobs_from_jn(db: Session) -> dict:
     """
     Sync jobs from JN into our database. READ-ONLY — only creates/updates local records.
@@ -443,10 +483,20 @@ def sync_jobs_from_jn(db: Session) -> dict:
             # Build jn_notes_raw: job description + the job's recent notes
             description = jn_data.get("description") or ""
             try:
-                notes = fetch_notes_for_job(jn_id)
+                activities = fetch_activities_for_job(jn_id)
             except Exception:
-                notes = []
+                activities = None
+            notes = notes_from_activities(activities or [])
             jn_notes_raw = build_notes_raw(description, notes)
+
+            # Work orders hold the real calendar (date, crew) and notes like "need colors".
+            # Only read them for jobs that are coming up or booked, to keep the sync light.
+            work_orders = None
+            if mapped["bucket"] in CALENDAR_BUCKETS:
+                try:
+                    work_orders = schedule_sync.summarize_work_orders(fetch_work_orders_for_job(jn_id))
+                except Exception:
+                    work_orders = None  # keep what we had; try again next sync
 
             existing = db.query(Job).filter(Job.jn_job_id == jn_id).first()
             if existing:
@@ -481,11 +531,13 @@ def sync_jobs_from_jn(db: Session) -> dict:
                     existing.ai_note_scan_result = None
                     existing.last_ai_analyzed_at = None
 
+                _apply_calendar(existing, jn_data, work_orders, activities, description)
                 existing.last_synced_at = datetime.utcnow()
                 updated += 1
             else:
                 mapped["jn_notes_raw"] = jn_notes_raw
                 job = Job(**mapped)
+                _apply_calendar(job, jn_data, work_orders, activities, description)
                 job.last_synced_at = datetime.utcnow()
                 db.add(job)
                 observed.append((job, None, jn_data))
@@ -561,6 +613,14 @@ def sync_jobs_from_jn(db: Session) -> dict:
     except Exception:
         pass  # Don't fail the sync if scanning fails
 
+    # Ready check: AI reads notes that changed since the last look for anything that stops the build
+    ready = {}
+    try:
+        from backend.services.ready_check import run_ready_checks
+        ready = run_ready_checks(db)
+    except Exception as e:
+        logger.warning(f"Ready check run failed: {e}")
+
     return {
         "synced_at": datetime.utcnow().isoformat(),
         "created": created,
@@ -568,6 +628,7 @@ def sync_jobs_from_jn(db: Session) -> dict:
         "archived": archived,
         "restored": restored,
         "scanned": scanned,
+        "ready_checked": ready.get("checked", 0),
         "errors": errors,
         "total_from_jn": len(jn_jobs),
     }

@@ -5,19 +5,23 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { PMCapacityBar } from './PMCapacityBar';
 import { DraggableJobCard } from './DraggableJobCard';
+import { BookedJobCard } from './BookedJobCard';
 import { cn } from '@/lib/utils';
 import type { Job, PM } from '@/types';
 
 interface DayColumnProps {
   date: Date;
+  // Planned here, not sent to JobNimbus yet (draggable)
   jobs: Job[];
+  // Already booked in JobNimbus (read-only)
+  booked?: Job[];
   pms: PM[];
   pmJobCounts: Record<number, number>;
   isToday?: boolean;
   onUnschedule?: (job: Job) => void;
 }
 
-export function DayColumn({ date, jobs, pms, pmJobCounts, isToday, onUnschedule }: DayColumnProps) {
+export function DayColumn({ date, jobs, booked = [], pms, pmJobCounts, isToday, onUnschedule }: DayColumnProps) {
   const dateStr = format(date, 'yyyy-MM-dd');
   const { setNodeRef, isOver } = useDroppable({
     id: `day-${dateStr}`,
@@ -65,18 +69,20 @@ export function DayColumn({ date, jobs, pms, pmJobCounts, isToday, onUnschedule 
         {/* Job cards — scrollable within the day column */}
         <ScrollArea className="flex-1 min-h-[80px] max-h-[calc(100vh-320px)]">
           <div className="space-y-2">
-            {jobs.length === 0 ? (
+            {booked.map((job) => (
+              <BookedJobCard key={job.id} job={job} />
+            ))}
+            {jobs.map((job) => (
+              <DraggableJobCard
+                key={job.id}
+                job={job}
+                onUnschedule={onUnschedule ? () => onUnschedule(job) : undefined}
+              />
+            ))}
+            {jobs.length === 0 && booked.length === 0 && (
               <p className="text-xs text-muted-foreground text-center py-4">
                 Drop jobs here
               </p>
-            ) : (
-              jobs.map((job) => (
-                <DraggableJobCard
-                  key={job.id}
-                  job={job}
-                  onUnschedule={onUnschedule ? () => onUnschedule(job) : undefined}
-                />
-              ))
             )}
           </div>
         </ScrollArea>

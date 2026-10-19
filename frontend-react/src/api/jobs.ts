@@ -323,3 +323,28 @@ export function closestTradeFor(job: Job): 'roofing' | 'siding' | null {
   if (open.includes('siding')) return 'siding';
   return null;
 }
+
+// Ready check: jobs whose notes may hold up the build (waiting for an answer, or on hold)
+export function useReadyOpen() {
+  return useQuery<Job[]>({
+    queryKey: ['jobs', 'ready-open'],
+    queryFn: async () => {
+      const { data } = await api.get('/jobs/ready/open');
+      return data;
+    },
+  });
+}
+
+// Answer a ready check flag: "ok" (fine to schedule) or "hold". Leaves a note in JobNimbus.
+export function useReadyDecision() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, decision, note }: { id: number; decision: 'ok' | 'hold'; note?: string }) => {
+      const { data } = await api.post(`/jobs/${id}/ready-decision`, { decision, note });
+      return data as { status: string; pushed_to_jn: boolean; job: Job };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['jobs'] });
+    },
+  });
+}

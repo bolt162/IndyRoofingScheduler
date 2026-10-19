@@ -471,6 +471,29 @@ def run_past_date_alerts(db: Session, now: datetime | None = None, mode: str | N
     return {"jobs": len(rows), "to": to}
 
 
+def run_ready_digest(db: Session, now: datetime | None = None, mode: str | None = None) -> dict:
+    """Nikka, Ross and Greg: jobs whose notes may stop the build, waiting for OK or Hold. Skips quiet days."""
+    from backend.emails.unsubscribe import _base_url as base_url
+    from backend.services import ready_check
+    rc = RunContext(db, now or datetime.utcnow(), mode)
+    jobs = ready_check.open_items(db)
+    waiting = [j for j in jobs if j.ready_status == "flagged"]
+    if not waiting:
+        return {"jobs": 0}
+    rows = []
+    for j in jobs:
+        street = (j.address or "").split(",")[0].strip()
+        label = f"{j.customer_name}, {street}" if street else j.customer_name
+        issue = ready_check._issues(j.ready_flags)
+        rows.append((label, C.READY_ON_HOLD.format(issue=issue) if j.ready_status == "hold" else issue))
+    rows.append(("Scheduler", f"{base_url()}/plan"))
+    to = team.ready_recipients(db)
+    if to:
+        deliver(rc, None, team_email("internal", C.READY_SUBJECT.format(count=len(waiting)), C.READY_LEAD,
+                                     C.READY_ACTION, rows), to)
+    return {"jobs": len(waiting), "on_hold": len(jobs) - len(waiting), "to": to}
+
+
 def run_research(db: Session, now: datetime | None = None, mode: str | None = None, client=None) -> dict:
     rc = RunContext(db, now or datetime.utcnow(), mode)
     rows = research.run_pending_research(db, client=client)

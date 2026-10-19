@@ -49,7 +49,7 @@ export interface TeamMember {
   id: number;
   jn_name: string;
   display_name: string;
-  role: 'rep' | 'pm' | 'ops' | 'owner';
+  role: 'rep' | 'pm' | 'ops' | 'office' | 'owner';
   email: string | null;
   phone: string | null;
   is_active: boolean;

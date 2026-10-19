@@ -27,12 +27,25 @@ def with_rep(db, jn_name, sample="roof_vista"):
 
 
 def test_seed_runs_once_and_keeps_edits(db):
-    assert db.query(TeamContact).count() == len(T.DEFAULT_TEAM)
+    assert db.query(TeamContact).count() == len(T.DEFAULT_TEAM) + len(T.ADDED_LATER)
     row = db.query(TeamContact).filter_by(jn_name="Nick Smith").one()
     row.phone = "(317) 000-0000"
     db.commit()
     assert T.seed_team(db) == 0
     assert db.query(TeamContact).filter_by(jn_name="Nick Smith").one().phone == "(317) 000-0000"
+
+
+def test_office_added_once_to_an_existing_team(db):
+    db.query(TeamContact).filter(TeamContact.role == "office").delete()
+    db.commit()
+    assert T.seed_team(db) == 2
+    nikka = db.query(TeamContact).filter_by(jn_name="Nikka Samson").one()
+    nikka.is_active = False
+    db.commit()
+    assert T.seed_team(db) == 0
+    assert "nikka.samson@indyroofandrestoration.com" not in T.ready_recipients(db)
+    assert T.ready_recipients(db) == ["greg.russell@indyroofandrestoration.com",
+                                      "ross.manlapaz@indyroofandrestoration.com"]
 
 
 def test_active_rep_appears_in_footer_and_referral(db):

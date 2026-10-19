@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -5,7 +7,9 @@ from sqlalchemy.orm import Session
 from backend.database import get_db
 from backend.models.job import Job, JobBucket
 from backend.models.note_log import NoteLog
-from backend.schemas.job import JobResponse, JobCreate, JobUpdate, NotBuiltRequest, NoBuildDatesRequest
+from backend.schemas.job import (JobResponse, JobCreate, JobUpdate, NotBuiltRequest, NoBuildDatesRequest,
+                                 ReadyDecisionRequest)
+from backend.services.auth import ClerkUser, get_approved_user
 from backend.services.jobnimbus import sync_jobs_from_jn, _classify_duration_tier
 from backend.services.geocoding import geocode_address
 from backend.services import no_build
@@ -191,7 +195,8 @@ def get_closest_jobs(job_id: int, limit: int = 10, db: Session = Depends(get_db)
 
 
 @router.patch("/{job_id}")
-def update_job(job_id: int, update: JobUpdate, db: Session = Depends(get_db)):
+def update_job(job_id: int, update: JobUpdate, db: Session = Depends(get_db),
+               user: ClerkUser = Depends(get_approved_user)):
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -206,10 +211,13 @@ def update_job(job_id: int, update: JobUpdate, db: Session = Depends(get_db)):
     # or changes, so editing other fields on an already-scheduled job still works.
     new_bucket = update_data.get("bucket", job.bucket)
     new_date = update_data.get("date_scheduled", job.date_scheduled)
-    if new_bucket == "scheduled" and new_date and not override_no_build and (
-        old_bucket != "scheduled" or str(new_date) != old_date
-    ):
-        hit = no_build.job_conflict(job, new_date, update_data.get("duration_days"))
+    check_date = None
+    if new_bucket == "scheduled" and new_date and (old_bucket != "scheduled" or str(new_date) != old_date):
+        check_date = new_date
+    if update_data.get("planned_date") and update_data["planned_date"] != job.planned_date:
+        check_date = update_data["planned_date"]
+    if check_date and not override_no_build:
+        hit = no_build.job_conflict(job, check_date, update_data.get("duration_days"))
         if hit:
             raise HTTPException(
                 status_code=409,
@@ -219,6 +227,16 @@ def update_job(job_id: int, update: JobUpdate, db: Session = Depends(get_db)):
     # Handle 'notes' field mapping to jn_notes_raw
     if "notes" in update_data:
         job.jn_notes_raw = update_data.pop("notes") or ""
+
+    # Weekly Plan pick: who planned it and when; clearing the date clears the whole plan
+    if "planned_date" in update_data:
+        if update_data["planned_date"]:
+            if update_data["planned_date"] != job.planned_date:
+                job.planned_at = datetime.utcnow()
+                job.planned_by = (user.name or user.email) if user else None
+        else:
+            update_data["planned_pm_id"] = None
+            job.planned_by = job.planned_at = None
 
     for field, value in update_data.items():
         setattr(job, field, value)
@@ -252,6 +270,38 @@ def update_job(job_id: int, update: JobUpdate, db: Session = Depends(get_db)):
             generate_scheduling_note(db, job)
 
     return _enrich_with_latest_note(job, db)
+
+
+def _person(db: Session, user: ClerkUser) -> str:
+    """The name to show in JobNimbus for whoever answered: their team name, else their sign-in."""
+    from backend.models.email import TeamContact
+    if user.email:
+        row = db.query(TeamContact).filter(TeamContact.email.ilike(user.email)).first()
+        if row:
+            return row.display_name
+    return user.name or user.email or "someone in the office"
+
+
+@router.post("/{job_id}/ready-decision")
+def ready_decision(job_id: int, request: ReadyDecisionRequest, db: Session = Depends(get_db),
+                   user: ClerkUser = Depends(get_approved_user)):
+    """Answer a ready check flag: "ok" (fine to schedule, a note was just missing) or "hold"."""
+    from backend.services import ready_check
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if request.decision not in ("ok", "hold"):
+        raise HTTPException(status_code=422, detail="Pick OK to schedule or Keep on hold.")
+    result = ready_check.record_decision(db, job, request.decision, _person(db, user), request.note)
+    db.refresh(job)
+    return {**result, "job": _enrich_with_latest_note(job, db)}
+
+
+@router.get("/ready/open")
+def ready_open(db: Session = Depends(get_db)):
+    """Jobs whose notes may hold up the build: waiting for an answer, or on hold."""
+    from backend.services import ready_check
+    return [_enrich_with_latest_note(j, db) for j in ready_check.open_items(db)]
 
 
 @router.post("/{job_id}/must-build")

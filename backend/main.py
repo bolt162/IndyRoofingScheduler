@@ -257,6 +257,24 @@ def _migrate_job_columns():
             "last_ai_analyzed_at": "TIMESTAMP",
             # JSON on Postgres so the list round-trips (SQLite stores JSON as TEXT)
             "no_build_dates": "JSON" if is_postgres else "TEXT",
+            # JobNimbus calendar, Weekly Plan plans, and the notes ready check (2026-10-19)
+            "jn_start_date": "DATE",
+            "jn_crews": "JSON" if is_postgres else "TEXT",
+            "jn_pm": "VARCHAR(255)",
+            "jn_work_orders": "JSON" if is_postgres else "TEXT",
+            "planned_date": "DATE",
+            "planned_pm_id": "INTEGER",
+            "planned_by": "VARCHAR(255)",
+            "planned_at": "TIMESTAMP",
+            "ready_status": "VARCHAR(20)",
+            "ready_flags": "JSON" if is_postgres else "TEXT",
+            "ready_input": "TEXT",
+            "ready_input_hash": "VARCHAR(64)",
+            "ready_checked_at": "TIMESTAMP",
+            "ready_ok_quotes": "JSON" if is_postgres else "TEXT",
+            "ready_decision_by": "VARCHAR(255)",
+            "ready_decision_at": "TIMESTAMP",
+            "ready_decision_note": "TEXT",
         }
         for name, col_type in columns.items():
             if name in existing:
@@ -438,6 +456,7 @@ def _add_email_jobs(scheduler, CronTrigger):
         ("run_research", CronTrigger(hour=9, minute=0, timezone=SCHEDULER_TZ), "Email: research new shingle products"),
         ("run_long_wait_alerts", CronTrigger(day_of_week="mon-fri", hour=9, minute=15, timezone=SCHEDULER_TZ), "Email: long-wait alerts"),
         ("run_past_date_alerts", CronTrigger(day_of_week="mon-sat", hour=8, minute=0, timezone=SCHEDULER_TZ), "Email: build dates that passed"),
+        ("run_ready_digest", CronTrigger(day_of_week="mon-sat", hour=7, minute=45, timezone=SCHEDULER_TZ), "Email: jobs to check before scheduling"),
         ("run_weekly", CronTrigger(day_of_week="thu", hour=10, minute=0, timezone=SCHEDULER_TZ), "Email: Thursday weekly update"),
         ("run_welcomes", CronTrigger(day_of_week="mon-wed,fri-sun", hour=10, minute=0, timezone=SCHEDULER_TZ), "Email: welcomes"),
         ("send_preview", CronTrigger(day_of_week="wed", hour=14, minute=0, timezone=SCHEDULER_TZ), "Email: Wednesday preview"),

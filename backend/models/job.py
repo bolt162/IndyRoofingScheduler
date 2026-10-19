@@ -146,6 +146,34 @@ class Job(Base):
     primary_complete_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     secondary_trades_status: Mapped[dict | None] = mapped_column(JSON, nullable=True)  # {trade: status}
 
+    # What JobNimbus has on the calendar (read every sync; JobNimbus is the source of truth).
+    # jn_start_date: earliest Pending Start work order date, else the job's own start date.
+    jn_start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    jn_crews: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)  # crew names on that work order
+    jn_pm: Mapped[str | None] = mapped_column(String(255), nullable=True)  # our PM on that work order (Luke Mroz)
+    # [{number, trade, status, start, crews, internal_note, customer_note}] (see services/schedule_sync.py)
+    jn_work_orders: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)
+
+    # A day picked on the Weekly Plan that hasn't been sent to JobNimbus yet. Kept apart from
+    # bucket/date_scheduled so the JobNimbus sync never erases it and the customer emails, which
+    # follow JobNimbus, don't treat a plan as a real booking.
+    planned_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    planned_pm_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    planned_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    planned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # Ready check: AI reads the notes for anything that would stop the build (services/ready_check.py).
+    # ready_status: unchecked / clear / flagged (needs an answer) / ok (office said fine) / hold
+    ready_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    ready_flags: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)  # [{issue, quote, source}]
+    ready_input: Mapped[str | None] = mapped_column(Text, nullable=True)  # dated notes + work order notes
+    ready_input_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)  # input last checked
+    ready_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ready_ok_quotes: Mapped[list | None] = mapped_column(JSON, nullable=True, default=list)  # flags an OK covered
+    ready_decision_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    ready_decision_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    ready_decision_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

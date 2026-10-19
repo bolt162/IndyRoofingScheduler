@@ -133,6 +133,43 @@ export interface Job {
   // Stamp of last AI re-analysis (note scan + recompute). If older than updated_at,
   // the job has changes that haven't been fed to the AI yet.
   last_ai_analyzed_at: string | null;
+  // What JobNimbus has on the calendar (read every sync)
+  jn_start_date: string | null;
+  jn_crews: string[] | null;
+  jn_pm: string | null;
+  jn_work_orders: JNWorkOrder[] | null;
+  // Day picked on the Weekly Plan, not sent to JobNimbus yet
+  planned_date: string | null;
+  planned_pm_id: number | null;
+  planned_by: string | null;
+  planned_at: string | null;
+  // Notes ready check
+  ready_status: ReadyStatus | null;
+  ready_flags: ReadyFlag[] | null;
+  ready_checked_at: string | null;
+  ready_decision_by: string | null;
+  ready_decision_at: string | null;
+  ready_decision_note: string | null;
+}
+
+export interface JNWorkOrder {
+  number: string;
+  trade: string;
+  status: string;
+  start: string | null;
+  crews: string[];
+  pm: string | null;
+  internal_note: string;
+  customer_note: string;
+}
+
+// clear: nothing holds it up · flagged: needs an answer · ok: office said fine · hold: wait
+export type ReadyStatus = 'clear' | 'flagged' | 'ok' | 'hold';
+
+export interface ReadyFlag {
+  issue: string;
+  quote: string;
+  source: string;
 }
 
 export interface JobNote {
@@ -188,6 +225,9 @@ export interface JobUpdate {
   crew_requirement_flag?: boolean;
   // Scheduler confirmed it's OK to build inside the job's No-Build Dates
   override_no_build?: boolean;
+  // Weekly Plan pick; null clears the plan
+  planned_date?: string | null;
+  planned_pm_id?: number | null;
 }
 
 export interface NotBuiltRequest {

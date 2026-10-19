@@ -94,7 +94,8 @@ def test_real_sync_still_works_when_email_hook_breaks(db, monkeypatch):
     jn_job = {"jnid": "j1", "name": "Pat Doe - J-1", "status_name": "Schedule Job", "Trade #1": "Roofing",
               "record_type_name": "Retail", "date_status_change": 1790000000}
     monkeypatch.setattr(jn, "fetch_jobs_at_tracked_statuses", lambda: [jn_job])
-    monkeypatch.setattr(jn, "fetch_notes_for_job", lambda jid: [])
+    monkeypatch.setattr(jn, "fetch_activities_for_job", lambda jid: [])
+    monkeypatch.setattr(jn, "fetch_work_orders_for_job", lambda jid: [])
     import backend.services.note_scanner as ns
     monkeypatch.setattr(ns, "scan_all_unscanned_jobs", lambda db_: {"scanned": 0})
     monkeypatch.setattr(E, "after_sync", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
@@ -108,7 +109,8 @@ def test_real_sync_records_queue_entry(db, monkeypatch):
     jn_job = {"jnid": "j2", "name": "Lee Roe - J-2", "status_name": "Schedule Job", "Trade #1": "Roofing",
               "record_type_name": "Retail", "date_status_change": 1790000000}
     monkeypatch.setattr(jn, "fetch_jobs_at_tracked_statuses", lambda: [jn_job])
-    monkeypatch.setattr(jn, "fetch_notes_for_job", lambda jid: [])
+    monkeypatch.setattr(jn, "fetch_activities_for_job", lambda jid: [])
+    monkeypatch.setattr(jn, "fetch_work_orders_for_job", lambda jid: [])
     import backend.services.note_scanner as ns
     monkeypatch.setattr(ns, "scan_all_unscanned_jobs", lambda db_: {"scanned": 0})
     jn.sync_jobs_from_jn(db)

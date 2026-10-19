@@ -31,6 +31,16 @@ DEFAULT_TEAM = [
     ("Aaron Christy", "Aaron Christy", "owner", "aaron@indyroofandrestoration.com", None),
 ]
 
+# Added after the first seed, so they're added on their own if missing (never re-added once edited).
+# Office: answer the ready check flags on jobs before they're scheduled (Aaron, 2026-10-19).
+ADDED_LATER = [
+    ("Nikka Samson", "Nikka Samson", "office", "nikka.samson@indyroofandrestoration.com", None),
+    ("Ross Manlapaz", "Ross Manlapaz", "office", "ross.manlapaz@indyroofandrestoration.com", None),
+]
+ROLES = ("rep", "pm", "ops", "office", "owner")
+# Who gets the morning list of jobs to check before scheduling (Nikka, Ross and Greg for now)
+READY_ROLES = ("office", "ops")
+
 # Who gets the full preview of Thursday's send. Reps get a copy with only their customers.
 FULL_PREVIEW_ROLES = ("owner", "ops", "pm")
 
@@ -40,14 +50,22 @@ def _key(name: str | None) -> str:
 
 
 def seed_team(db: Session) -> int:
-    """Insert DEFAULT_TEAM if the table is empty. Never overwrites edits. Returns rows added."""
-    if db.query(TeamContact).count():
-        return 0
-    for jn_name, display, role, email, phone in DEFAULT_TEAM:
+    """Insert DEFAULT_TEAM if the table is empty, plus any ADDED_LATER person not there yet.
+    Never overwrites edits. Returns rows added."""
+    rows = [] if db.query(TeamContact).count() else list(DEFAULT_TEAM)
+    have = {_key(r.jn_name) for r in db.query(TeamContact).all()}
+    rows += [r for r in ADDED_LATER if _key(r[0]) not in have]
+    for jn_name, display, role, email, phone in rows:
         db.add(TeamContact(jn_name=jn_name, display_name=display, role=role,
                            email=email, phone=phone, is_active=True))
-    db.commit()
-    return len(DEFAULT_TEAM)
+    if rows:
+        db.commit()
+    return len(rows)
+
+
+def ready_recipients(db: Session) -> list[str]:
+    rows = db.query(TeamContact).filter(TeamContact.is_active.is_(True), TeamContact.role.in_(READY_ROLES)).all()
+    return sorted({r.email for r in rows if r.email})
 
 
 def rep_contact(db: Session, jn_name: str | None) -> dict:
