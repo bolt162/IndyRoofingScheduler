@@ -100,7 +100,8 @@ Return ONLY valid JSON. No explanation text."""
         # Auto-apply duration hint (spec §4.3: adopt note-derived duration, keep unconfirmed)
         if result.get("duration_hint") and not job.duration_confirmed:
             job.duration_days = result["duration_hint"]
-            job.duration_source = f"AI scan: {result.get('duration_reason', 'extracted from notes')}"
+            # Column is VARCHAR(255); a longer AI reason used to fail the save and break the rest of the sync
+            job.duration_source = f"AI scan: {result.get('duration_reason', 'extracted from notes')}"[:255]
 
         # NOTE: multi_day_signal is kept in ai_note_scan_result for informational
         # display only. We do NOT auto-set is_multi_day — per spec (Section 7.4),

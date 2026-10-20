@@ -626,8 +626,10 @@ def sync_jobs_from_jn(db: Session) -> dict:
         from backend.services.note_scanner import scan_all_unscanned_jobs
         scan_result = scan_all_unscanned_jobs(db)
         scanned = scan_result.get("scanned", 0)
-    except Exception:
-        pass  # Don't fail the sync if scanning fails
+    except Exception as e:
+        # Don't fail the sync if scanning fails, and don't leave the session broken for the ready check
+        db.rollback()
+        logger.warning(f"Note scan failed: {e}")
 
     # Ready check: AI reads notes that changed since the last look for anything that stops the build
     ready = {}
@@ -635,12 +637,14 @@ def sync_jobs_from_jn(db: Session) -> dict:
         from backend.services.ready_check import run_ready_checks
         ready = run_ready_checks(db)
     except Exception as e:
+        db.rollback()
         logger.warning(f"Ready check run failed: {e}")
     # Crew notes: suggestions for jobs whose notes or work orders changed (skipped when switched off)
     try:
         from backend.services import crew_notes
         crew_notes.run(db)
     except Exception as e:
+        db.rollback()
         logger.warning(f"Crew notes run failed: {e}")
 
     return {
