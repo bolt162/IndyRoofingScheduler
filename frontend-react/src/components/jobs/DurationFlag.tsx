@@ -13,15 +13,17 @@ export function DurationFlag({
   tier,
   days,
   confirmed,
+  source,
 }: {
   tier: DurationTier | null;
   days: number;
   confirmed: boolean;
+  source?: string | null;
 }) {
   const cfg = tier ? tierConfig[tier] : null;
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1.5" title={source ?? (confirmed ? undefined : 'Days not known yet')}>
       <span className="text-xs text-muted-foreground">
         {days}d{' '}
         {confirmed ? (

@@ -243,3 +243,14 @@ def test_siding_jobs_ask_for_the_siding_crew_and_skip_the_gutter_line(db):
     ai = FakeAI([])
     CN.refresh(job, client=ai)
     assert "SIDING crew" in ai.prompts[0] and job.crew_note_suggestions == []
+
+
+def test_work_order_days_become_the_jobs_days_unless_a_person_set_them():
+    job = SimpleNamespace(days_estimate=BD.estimate([roof((TEAR, 43), ("Steep Fee - 12/12 - 19/12  Pitch", 10))]),
+                          duration_days=1, duration_confirmed=False, duration_source="auto")
+    BD.apply_to_job(job)
+    assert job.duration_days == 2 and job.duration_confirmed
+    assert job.duration_source == "Work order: 43 squares, 12/12 or steeper"
+    job.duration_days, job.duration_source = 3, "Set by Greg Russell"
+    BD.apply_to_job(job)
+    assert job.duration_days == 3

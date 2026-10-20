@@ -246,6 +246,9 @@ def update_job(job_id: int, update: JobUpdate, db: Session = Depends(get_db),
 
     for field, value in update_data.items():
         setattr(job, field, value)
+    # Days a person sets by hand are never replaced by the work order suggestion (services/build_days.py)
+    if "duration_days" in update_data:
+        job.duration_source = f"Set by {(user.name or user.email) if user else 'the office'}"[:255]
 
     # Re-classify duration tier when material or square footage changes
     if "material_type" in update_data or "square_footage" in update_data:

@@ -378,6 +378,7 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
                 tier={job.duration_tier}
                 days={job.duration_days}
                 confirmed={job.duration_confirmed}
+                source={job.duration_source}
               />
             </div>
           )}

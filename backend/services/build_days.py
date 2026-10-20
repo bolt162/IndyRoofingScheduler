@@ -81,6 +81,19 @@ def days_for(eff: float | None, crew_name: str | None = None) -> int | None:
     return 1 if eff < TWO_DAYS else 2 if eff < THREE_DAYS else 3
 
 
+SET_BY_PERSON = "Set by "
+
+
+def apply_to_job(job) -> None:
+    """Use the work order's suggestion as the job's build days, unless a person set them by hand."""
+    est = job.days_estimate if isinstance(getattr(job, "days_estimate", None), dict) else None
+    if not est or (job.duration_source or "").startswith(SET_BY_PERSON):
+        return
+    job.duration_days = days_for(est.get("eff")) or job.duration_days
+    job.duration_confirmed = True
+    job.duration_source = f"Work order: {', '.join(est.get('why') or [])}"[:255]
+
+
 def suggestion(job, crew_name: str | None = None) -> dict | None:
     """{days, why} shown on the Weekly Plan card. Uses the crew picked for the job when there is one."""
     est = job.days_estimate if isinstance(getattr(job, "days_estimate", None), dict) else None

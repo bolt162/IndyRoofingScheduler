@@ -467,6 +467,7 @@ def _apply_calendar(job: Job, jn_data: dict, work_orders: list[dict] | None,
         job.jn_work_orders = work_orders
         job.jn_start_date, job.jn_crews, job.jn_pm = schedule_sync.calendar_from(jn_data, work_orders)
         job.days_estimate = build_days.estimate(work_orders, (job.square_footage or 0) / 100 or None)
+        build_days.apply_to_job(job)
     elif job.bucket not in CALENDAR_BUCKETS:
         job.jn_start_date = schedule_sync._date(jn_data.get("date_start"))
     # Once JobNimbus books it (or it moves on), the plan made in the app is done.
@@ -535,6 +536,9 @@ def sync_jobs_from_jn(db: Session) -> dict:
                               "payment_type", "material_type", "square_footage",
                               "sales_rep", "jn_status", "bucket", "duration_tier",
                               "duration_confirmed", "crew_requirement_flag"]:
+                    # Days a person set by hand stay confirmed (the size tiers used to undo that every sync)
+                    if field == "duration_confirmed" and (existing.duration_source or "").startswith("Set by "):
+                        continue
                     if mapped.get(field) is not None:
                         setattr(existing, field, mapped[field])
                 # Update notes only if they actually changed
