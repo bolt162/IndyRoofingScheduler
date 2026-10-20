@@ -131,6 +131,7 @@ def test_books_the_job_with_gregs_steps_in_order(db):
     # 3. job to Pending Start Date with the same date
     assert w[2][:2] == ("PUT", f"jobs/{JOB}")
     assert w[2][2]["status"] == 447 and w[2][2]["date_start"] == midnight and "date_end" not in w[2][2]
+    assert w[2][2]["all_day"] is True and w[2][2]["all_day_start_date"] == "2030-10-29" == w[2][2]["all_day_end_date"]
     # 4. rep note
     assert w[3][:2] == ("POST", "activities")
     assert w[3][2]["note"] == "@PatRep roof scheduled Tuesday 10/29"

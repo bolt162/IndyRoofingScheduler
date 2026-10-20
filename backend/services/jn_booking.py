@@ -437,7 +437,9 @@ def book_job(db: Session, job: Job, who: str, jn: JN | None = None, lookups: Loo
         if not st.get("job_status"):
             body = {
                 "status": lookups.status_id("job", jn_job.get("record_type_name") or "", JOB_PENDING),
-                "date_start": start,
+                # All day, like Greg books it (without these the job shows "12:00 am"; Greg's test 2026-10-20)
+                "date_start": start, "all_day": True,
+                "all_day_start_date": d.isoformat(), "all_day_end_date": last_day.isoformat(),
                 "subcontractors": merge_refs(jn_job.get("subcontractors"), subs),
             }
             if (jn_job.get("date_end") or 0) and jn_job["date_end"] < start:
