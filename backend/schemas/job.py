@@ -61,6 +61,11 @@ class JobResponse(JobBase):
     planned_date: date | None = None
     planned_pm_id: int | None = None
     planned_crew_id: int | None = None
+    planned_days: int | None = None
+    crew_note_suggestions: list[dict] | None = None
+    crew_notes_approved: list[str] | None = None
+    crew_notes_by: str | None = None
+    crew_notes_at: datetime | None = None
     jn_push_steps: dict | None = None
     jn_push_error: str | None = None
     planned_by: str | None = None
@@ -122,6 +127,11 @@ class JobUpdate(BaseModel):
     planned_date: date | None = None
     planned_pm_id: int | None = None
     planned_crew_id: int | None = None
+    planned_days: int | None = None
+
+
+class CrewNotesRequest(BaseModel):
+    lines: list[str]
 
 
 class ReadyDecisionRequest(BaseModel):

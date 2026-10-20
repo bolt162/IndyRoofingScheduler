@@ -8,7 +8,7 @@ from backend.database import get_db
 from backend.models.job import Job, JobBucket
 from backend.models.note_log import NoteLog
 from backend.schemas.job import (JobResponse, JobCreate, JobUpdate, NotBuiltRequest, NoBuildDatesRequest,
-                                 ReadyDecisionRequest)
+                                 ReadyDecisionRequest, CrewNotesRequest)
 from backend.services.auth import ClerkUser, get_approved_user
 from backend.services.jobnimbus import sync_jobs_from_jn, _classify_duration_tier
 from backend.services.geocoding import geocode_address
@@ -84,6 +84,12 @@ def _enrich_with_latest_note(job: Job, db: Session) -> dict:
         job_dict["latest_system_note_id"] = None
         job_dict["latest_system_note_pushed"] = None
         job_dict["latest_system_note_pushed_at"] = None
+
+    # Suggested build days, adjusted for the crew picked on the Weekly Plan
+    from backend.models.pm import Crew
+    from backend.services import build_days
+    crew = db.get(Crew, job.planned_crew_id) if job.planned_crew_id else None
+    job_dict["days_suggestion"] = build_days.suggestion(job, crew.name if crew else None)
 
     # Secondary trade aging
     aging = _compute_secondary_aging(job, db)
@@ -235,7 +241,7 @@ def update_job(job_id: int, update: JobUpdate, db: Session = Depends(get_db),
                 job.planned_at = datetime.utcnow()
                 job.planned_by = (user.name or user.email) if user else None
         else:
-            update_data["planned_pm_id"] = update_data["planned_crew_id"] = None
+            update_data["planned_pm_id"] = update_data["planned_crew_id"] = update_data["planned_days"] = None
             job.planned_by = job.planned_at = None
 
     for field, value in update_data.items():
@@ -295,6 +301,21 @@ def ready_decision(job_id: int, request: ReadyDecisionRequest, db: Session = Dep
     result = ready_check.record_decision(db, job, request.decision, _person(db, user), request.note)
     db.refresh(job)
     return {**result, "job": _enrich_with_latest_note(job, db)}
+
+
+@router.post("/{job_id}/crew-notes")
+def approve_crew_notes(job_id: int, request: CrewNotesRequest, db: Session = Depends(get_db),
+                       user: ClerkUser = Depends(get_approved_user)):
+    """Save the crew notes the scheduler approved. They go onto the work order when the job is pushed."""
+    from backend.services import crew_notes
+    job = db.query(Job).filter(Job.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if any(len(ln) > 300 for ln in request.lines) or len(request.lines) > 12:
+        raise HTTPException(status_code=422, detail="Keep crew notes to a few short lines.")
+    crew_notes.approve(db, job, request.lines, _person(db, user))
+    db.refresh(job)
+    return _enrich_with_latest_note(job, db)
 
 
 @router.get("/ready/open")

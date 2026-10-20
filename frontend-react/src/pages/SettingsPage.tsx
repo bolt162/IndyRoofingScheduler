@@ -1009,6 +1009,21 @@ export function SettingsPage() {
                     onBlur={(e) => handleUpdateSetting('secondary_red_days', e.target.value)}
                   />
                 </div>
+                <div className="flex items-start justify-between gap-4 rounded-md border p-3 md:col-span-2">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="crew-notes-switch">Suggest crew notes</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Suggests notes for the crew&apos;s work order (gutter scope, install instructions from the notes).
+                      Nothing is added until someone approves it on the Weekly Plan.
+                    </p>
+                  </div>
+                  <Switch
+                    id="crew-notes-switch"
+                    checked={!['false', 'off', '0', 'no'].includes((getSetting('crew_notes_enabled') || 'true').toLowerCase())}
+                    onCheckedChange={(v) => handleUpdateSetting('crew_notes_enabled', v ? 'true' : 'false')}
+                    disabled={updateSetting.isPending}
+                  />
+                </div>
                 <div className="space-y-2">
                   <Label>Sit Time Average (days)</Label>
                   <Input

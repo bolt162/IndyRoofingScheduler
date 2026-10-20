@@ -67,6 +67,9 @@ def summarize_work_orders(wos: list[dict]) -> list[dict]:
             "pm": pm,
             "internal_note": _plain(w.get("internal_note") or ""),
             "customer_note": _plain(w.get("customer_note") or ""),
+            # Crew labor lines [name, quantity]: squares, steep fees, decking... (services/build_days.py)
+            "labor": [[(i.get("name") or "").strip(), i.get("quantity") or 0]
+                      for i in w.get("items") or [] if isinstance(i, dict) and (i.get("name") or "").strip()],
         })
     out.sort(key=lambda w: w["number"])
     return out

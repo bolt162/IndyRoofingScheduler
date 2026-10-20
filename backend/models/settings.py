@@ -95,6 +95,9 @@ DEFAULT_SETTINGS = {
     # Blocked weeks (JSON array of date strings)
     "blocked_weeks": {"value": "[]", "description": "Weeks blocked from scheduling (JSON array of start dates)"},
 
+    # Crew notes suggested from work orders and notes (approved on the Weekly Plan before they reach the crew)
+    "crew_notes_enabled": {"value": "true", "description": "Suggest crew notes for the work order (true/false)"},
+
     # JN sync interval
     "jn_sync_interval_minutes": {"value": "15", "description": "JobNimbus polling interval in minutes"},
 

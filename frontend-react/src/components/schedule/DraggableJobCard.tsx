@@ -1,11 +1,12 @@
 import { useDraggable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { toast } from 'sonner';
-import { AlertTriangle, HardHat, MapPin, Send, X } from 'lucide-react';
+import { AlertTriangle, CalendarDays, HardHat, MapPin, Send, X } from 'lucide-react';
 import { ReadyCheckBadge } from '@/components/jobs/ReadyCheckBadge';
 import { NoBuildDatesBadge } from '@/components/jobs/NoBuildDatesBadge';
 import { useUpdateJob } from '@/api/jobs';
 import { useCrews } from '@/api/settings';
+import { CrewNotesButton } from './CrewNotesButton';
 import { cn } from '@/lib/utils';
 import type { Crew, Job } from '@/types';
 
@@ -21,6 +22,45 @@ function crewsForJob(crews: Crew[] | undefined, job: Job) {
 export function sentToJobNimbus(job: Job) {
   const s = job.jn_push_steps;
   return !!s && s.date === job.planned_date && !!s.tasks;
+}
+
+/** Build days: picked here, else the suggestion from the work order, else the job's duration. */
+function DaysPicker({ job }: { job: Job }) {
+  const updateJob = useUpdateJob();
+  const sug = job.days_suggestion;
+  const value = job.planned_days ?? sug?.days ?? job.duration_days ?? 1;
+  const isSuggested = !job.planned_days && !!sug;
+  const title = sug ? `Suggested ${sug.days} day${sug.days > 1 ? 's' : ''}: ${sug.why}` : 'Build days';
+
+  return (
+    <label
+      className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-800"
+      title={title}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <CalendarDays className="h-3 w-3 shrink-0" />
+      <span className="sr-only">Build days for {job.customer_name}</span>
+      <select
+        value={value}
+        disabled={updateJob.isPending}
+        onChange={async (e) => {
+          const n = Number(e.target.value);
+          try {
+            // Picking the suggested number again goes back to following the suggestion
+            await updateJob.mutateAsync({ id: job.id, update: { planned_days: sug && n === sug.days ? null : n } });
+          } catch {
+            toast.error("Couldn't save the days. Try again.");
+          }
+        }}
+        className="cursor-pointer rounded border border-transparent bg-transparent py-px pr-1 hover:border-input focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60"
+      >
+        {[1, 2, 3, 4, 5].map((n) => (
+          <option key={n} value={n}>{n} day{n > 1 ? 's' : ''}</option>
+        ))}
+      </select>
+      {isSuggested && <span className="truncate text-[10px] text-muted-foreground">suggested</span>}
+    </label>
+  );
 }
 
 /** Crew for the build. Sits outside the drag handle so picking one never starts a drag. */
@@ -125,6 +165,8 @@ export function DraggableJobCard({
       </div>
       <div className="rounded-b-md border border-t-0 border-dashed border-primary/45 bg-card px-2.5 pb-1.5 pt-1">
         <CrewPicker job={job} />
+        <DaysPicker job={job} />
+        <CrewNotesButton job={job} />
         {sentToJobNimbus(job) ? (
           <p className="mt-0.5 flex items-center gap-1 text-[10px] text-emerald-700">
             <Send className="h-2.5 w-2.5 shrink-0" />

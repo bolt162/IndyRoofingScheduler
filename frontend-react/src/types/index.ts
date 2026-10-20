@@ -142,6 +142,14 @@ export interface Job {
   planned_date: string | null;
   planned_pm_id: number | null;
   planned_crew_id: number | null;
+  // Build days picked on the card; else days_suggestion (from the work order) is booked
+  planned_days: number | null;
+  days_suggestion: { days: number; why: string } | null;
+  // Crew notes: suggested lines, and the ones a scheduler approved for the work order
+  crew_note_suggestions: CrewNoteSuggestion[] | null;
+  crew_notes_approved: string[] | null;
+  crew_notes_by: string | null;
+  crew_notes_at: string | null;
   // Push to JobNimbus: one key per finished step, plus why it last stopped
   jn_push_steps: Record<string, unknown> | null;
   jn_push_error: string | null;
@@ -233,6 +241,7 @@ export interface JobUpdate {
   planned_date?: string | null;
   planned_pm_id?: number | null;
   planned_crew_id?: number | null;
+  planned_days?: number | null;
 }
 
 export interface NotBuiltRequest {
@@ -265,12 +274,22 @@ export interface Crew {
   created_at: string;
 }
 
+export interface CrewNoteSuggestion {
+  text: string;
+  quote?: string;
+  source?: string;
+  kind: 'gutters' | 'notes';
+}
+
 export interface PushPreviewItem {
   job_id: number;
   customer_name: string;
   planned_date: string;
   crew: string | null;
   pm: string | null;
+  days: number;
+  crew_notes: number | null;
+  crew_notes_waiting: boolean;
   ready: boolean;
   reason: string | null;
 }

@@ -136,7 +136,10 @@ export function PushToJobNimbus({ plannedCount }: { plannedCount: number }) {
                         <span className="truncate font-medium">{i.customer_name}</span>
                         <span className="tabular-nums text-muted-foreground">{day(i.planned_date)}</span>
                         <span className="col-span-2 truncate text-[11px] text-muted-foreground">
-                          {i.crew} · {i.pm}
+                          {i.crew} · {i.pm} · {i.days} day{i.days > 1 ? 's' : ''}
+                          {i.crew_notes !== null && (i.crew_notes_waiting
+                            ? <span className="text-amber-700"> · crew notes not reviewed</span>
+                            : i.crew_notes ? ` · ${i.crew_notes} crew note${i.crew_notes > 1 ? 's' : ''}` : '')}
                         </span>
                       </li>
                     ))}

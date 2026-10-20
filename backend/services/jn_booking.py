@@ -288,7 +288,23 @@ def preview_reason(job: Job, db: Session) -> str | None:
     return None
 
 
+def build_days(job: Job, crew: Crew | None) -> int:
+    """Days to book: what the scheduler picked on the card, else the suggestion, else the job's duration."""
+    from backend.services import build_days as bd
+    if job.planned_days:
+        return job.planned_days
+    sug = bd.suggestion(job, crew.name if crew else None)
+    return (sug or {}).get("days") or job.duration_days or 1
+
+
+def approved_crew_notes(db: Session, job: Job) -> list[str]:
+    from backend.services import crew_notes
+    return list(job.crew_notes_approved or []) if crew_notes.enabled(db) else []
+
+
 def preview(db: Session) -> dict:
+    from backend.services import crew_notes
+    notes_on = crew_notes.enabled(db)
     items = []
     for job in candidates(db):
         crew = db.get(Crew, job.planned_crew_id) if job.planned_crew_id else None
@@ -296,6 +312,9 @@ def preview(db: Session) -> dict:
         reason = preview_reason(job, db)
         items.append({"job_id": job.id, "customer_name": job.customer_name, "planned_date": job.planned_date.isoformat(),
                       "crew": crew.name if crew else None, "pm": pm.name if pm else None,
+                      "days": build_days(job, crew),
+                      "crew_notes": len(job.crew_notes_approved or []) if notes_on else None,
+                      "crew_notes_waiting": bool(notes_on and job.crew_note_suggestions and job.crew_notes_at is None),
                       "ready": reason is None, "reason": reason})
     return {"mode": mode(), "items": items, "ready_count": sum(1 for i in items if i["ready"])}
 
@@ -374,7 +393,8 @@ def book_job(db: Session, job: Job, who: str, jn: JN | None = None, lookups: Loo
         wo_id = wo.get("jnid")
         wo_type = wo.get("record_type_name") or ""
         start = local_midnight(d)
-        last_day = d + timedelta(days=max(1, job.duration_days or 1) - 1)
+        days = build_days(job, crew)
+        last_day = d + timedelta(days=max(1, days) - 1)
         st = job.jn_push_steps or {}
 
         if not st.get("work_order_status"):
@@ -393,13 +413,19 @@ def book_job(db: Session, job: Job, who: str, jn: JN | None = None, lookups: Loo
         if not st.get("work_order"):
             # v2 work orders need their own id in the body ("DocId must match the jnid"); the rest is a
             # partial update, so line items and notes stay as they are (checked 2026-10-19)
-            jn.put(f"v2/workorders/{wo_id}", {
+            body = {
                 "jnid": wo_id, "date_start": start, "all_day": True,
                 # JobNimbus shows these as 10/29/2026 but only accepts 2026-10-29 when writing
                 "all_day_start_date": d.isoformat(), "all_day_end_date": last_day.isoformat(),
                 "subcontractors": merge_refs(wo.get("subcontractors"), subs),
                 "owners": merge_refs(wo.get("owners"), [{"id": pm_user}] if pm_user else []),
-            })
+            }
+            # Crew notes the scheduler approved go into the box the crew reads on the work order
+            from backend.services.crew_notes import merged_customer_note
+            note = merged_customer_note(wo.get("customer_note"), approved_crew_notes(db, job))
+            if note:
+                body["customer_note"] = note
+            jn.put(f"v2/workorders/{wo_id}", body)
             _done(db, job, "work_order", wo.get("number") or wo_id)
 
         if not st.get("work_order_status"):

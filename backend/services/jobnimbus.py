@@ -463,8 +463,10 @@ def _apply_calendar(job: Job, jn_data: dict, work_orders: list[dict] | None,
                     activities: list[dict] | None, description: str) -> None:
     """Copy JobNimbus's calendar onto the job and refresh the ready check's input. Never touches bucket."""
     if work_orders is not None:
+        from backend.services import build_days
         job.jn_work_orders = work_orders
         job.jn_start_date, job.jn_crews, job.jn_pm = schedule_sync.calendar_from(jn_data, work_orders)
+        job.days_estimate = build_days.estimate(work_orders, (job.square_footage or 0) / 100 or None)
     elif job.bucket not in CALENDAR_BUCKETS:
         job.jn_start_date = schedule_sync._date(jn_data.get("date_start"))
     # Once JobNimbus books it (or it moves on), the plan made in the app is done.
@@ -472,6 +474,7 @@ def _apply_calendar(job: Job, jn_data: dict, work_orders: list[dict] | None,
     from backend.services.jn_booking import in_progress
     if job.planned_date and job.bucket not in PLANNABLE_BUCKETS and not in_progress(job):
         job.planned_date = job.planned_pm_id = job.planned_crew_id = job.planned_by = job.planned_at = None
+        job.planned_days = None
         job.jn_push_steps = job.jn_push_error = None
     if activities is not None:
         job.ready_input = schedule_sync.build_ready_input(description, activities, job.jn_work_orders or [])
@@ -633,6 +636,12 @@ def sync_jobs_from_jn(db: Session) -> dict:
         ready = run_ready_checks(db)
     except Exception as e:
         logger.warning(f"Ready check run failed: {e}")
+    # Crew notes: suggestions for jobs whose notes or work orders changed (skipped when switched off)
+    try:
+        from backend.services import crew_notes
+        crew_notes.run(db)
+    except Exception as e:
+        logger.warning(f"Crew notes run failed: {e}")
 
     return {
         "synced_at": datetime.utcnow().isoformat(),

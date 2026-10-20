@@ -348,3 +348,18 @@ export function useReadyDecision() {
     },
   });
 }
+
+// Approve the crew notes that go on the work order when the job is pushed
+export function useApproveCrewNotes() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, lines }: { id: number; lines: string[] }) => {
+      const { data } = await api.post(`/jobs/${id}/crew-notes`, { lines });
+      return data as Job;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['jobs'] });
+      qc.invalidateQueries({ queryKey: ['pushPreview'] });
+    },
+  });
+}
