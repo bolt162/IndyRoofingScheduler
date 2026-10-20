@@ -120,16 +120,17 @@ def test_books_the_job_with_gregs_steps_in_order(db):
 
     # 1. date, crew and Luke on the roofing work order (not the gutters one), before the status
     assert w[0][:2] == ("PUT", "v2/workorders/wo1")
+    assert w[0][2]["jnid"] == "wo1"  # JobNimbus refuses a v2 update without it
     assert w[0][2]["date_start"] == midnight and w[0][2]["all_day"] is True
-    assert w[0][2]["all_day_start_date"] == "10/29/2030" == w[0][2]["all_day_end_date"]
+    assert w[0][2]["all_day_start_date"] == "2030-10-29" == w[0][2]["all_day_end_date"]
     assert [s["id"] for s in w[0][2]["subcontractors"]] == ["dct", "luke_sub"]
     assert [o["id"] for o in w[0][2]["owners"]] == ["rep1", "luke_user"]
     assert "status" not in w[0][2]
     # 2. then Pending Start, on its own, with the Roofing workflow's id
-    assert w[1] == ("PUT", "v2/workorders/wo1", {"status": 472})
+    assert w[1] == ("PUT", "v2/workorders/wo1", {"jnid": "wo1", "status": 472})
     # 3. job to Pending Start Date with the same date
     assert w[2][:2] == ("PUT", f"jobs/{JOB}")
-    assert w[2][2]["status"] == 447 and w[2][2]["date_start"] == midnight
+    assert w[2][2]["status"] == 447 and w[2][2]["date_start"] == midnight and "date_end" not in w[2][2]
     # 4. rep note
     assert w[3][:2] == ("POST", "activities")
     assert w[3][2]["note"] == "@PatRep roof scheduled Tuesday 10/29"
@@ -182,7 +183,7 @@ def test_moving_the_plan_to_a_new_day_starts_a_fresh_booking(db):
     db.commit()
     jn = FakeJN()
     assert B.push(db, "Greg", jn=jn)["booked"] == 1
-    assert jn.writes()[0][2]["all_day_start_date"] == "10/30/2030"
+    assert jn.writes()[0][2]["all_day_start_date"] == "2030-10-30"
 
 
 def test_refuses_a_work_order_already_pending_start(db):
@@ -332,3 +333,13 @@ def test_only_office_ops_and_owners_can_book(db, monkeypatch):
     assert not can_book(db, user("pat@x.com"))
     assert can_book(db, user("NIKKA@x.com"))
     assert not can_book(db, user("stranger@x.com"))
+
+
+def test_an_old_job_end_date_before_the_new_start_is_cleared(db):
+    planned_job(db)
+    jn = FakeJN()
+    orig = jn.get
+    jn.get = lambda e, p=None: {**orig(e, p), "date_end": 1} if e == f"jobs/{JOB}" else orig(e, p)
+    B.push(db, "Greg", jn=jn)
+    job_put = next(c for c in jn.writes() if c[1] == f"jobs/{JOB}")
+    assert job_put[2]["date_end"] == 0

@@ -375,7 +375,6 @@ def book_job(db: Session, job: Job, who: str, jn: JN | None = None, lookups: Loo
         wo_type = wo.get("record_type_name") or ""
         start = local_midnight(d)
         last_day = d + timedelta(days=max(1, job.duration_days or 1) - 1)
-        mmddyyyy = lambda x: f"{x.month:02d}/{x.day:02d}/{x.year}"  # noqa: E731
         st = job.jn_push_steps or {}
 
         if not st.get("work_order_status"):
@@ -392,9 +391,12 @@ def book_job(db: Session, job: Job, who: str, jn: JN | None = None, lookups: Loo
                 raise BookingError("This job is already Pending Start Date in JobNimbus. Check it there.")
 
         if not st.get("work_order"):
+            # v2 work orders need their own id in the body ("DocId must match the jnid"); the rest is a
+            # partial update, so line items and notes stay as they are (checked 2026-10-19)
             jn.put(f"v2/workorders/{wo_id}", {
-                "date_start": start, "all_day": True,
-                "all_day_start_date": mmddyyyy(d), "all_day_end_date": mmddyyyy(last_day),
+                "jnid": wo_id, "date_start": start, "all_day": True,
+                # JobNimbus shows these as 10/29/2026 but only accepts 2026-10-29 when writing
+                "all_day_start_date": d.isoformat(), "all_day_end_date": last_day.isoformat(),
                 "subcontractors": merge_refs(wo.get("subcontractors"), subs),
                 "owners": merge_refs(wo.get("owners"), [{"id": pm_user}] if pm_user else []),
             })
@@ -402,15 +404,19 @@ def book_job(db: Session, job: Job, who: str, jn: JN | None = None, lookups: Loo
 
         if not st.get("work_order_status"):
             # Date is saved first (Greg's SOP), so the Build Day email and text show the right day
-            jn.put(f"v2/workorders/{wo_id}", {"status": lookups.status_id("workorder", wo_type, WO_PENDING)})
+            jn.put(f"v2/workorders/{wo_id}", {"jnid": wo_id,
+                                              "status": lookups.status_id("workorder", wo_type, WO_PENDING)})
             _done(db, job, "work_order_status")
 
         if not st.get("job_status"):
-            jn.put(f"jobs/{job.jn_job_id}", {
+            body = {
                 "status": lookups.status_id("job", jn_job.get("record_type_name") or "", JOB_PENDING),
                 "date_start": start,
                 "subcontractors": merge_refs(jn_job.get("subcontractors"), subs),
-            })
+            }
+            if (jn_job.get("date_end") or 0) and jn_job["date_end"] < start:
+                body["date_end"] = 0  # an old end date before the new start makes JobNimbus fail (500)
+            jn.put(f"jobs/{job.jn_job_id}", body)
             _done(db, job, "job_status")
 
         rep_id, rep_name = jn_job.get("sales_rep"), jn_job.get("sales_rep_name")
