@@ -150,8 +150,24 @@ Return ONLY valid JSON. No explanation text."""
         db.commit()
         return result
 
-    except Exception:
+    except Exception as e:
+        # A failed save leaves the session unusable; without this every later scan in the sync failed
+        # too, and all of them were retried (and paid for) every 15 minutes. Mark the job as tried so it
+        # waits until its notes change.
+        import logging
+        from datetime import datetime as _dt
+        logging.getLogger("note_scanner").warning(f"Note scan failed for job {job.id}: {type(e).__name__}: {e}")
+        db.rollback()
+        try:
+            job.ai_note_scan_result = json.dumps({"scan_failed": f"{type(e).__name__}"[:100]})
+            job.last_ai_analyzed_at = _dt.utcnow()
+            db.commit()
+        except Exception:
+            db.rollback()
         return None
+
+
+MAX_SCANS_PER_RUN = 20
 
 
 def scan_all_unscanned_jobs(db: Session) -> dict:
@@ -176,7 +192,7 @@ def scan_all_unscanned_jobs(db: Session) -> dict:
         Job.jn_notes_raw != "",
         (Job.ai_note_scan_result == None) | (Job.ai_note_scan_result == ""),
         Job.bucket.in_(relevant_buckets),
-    ).all()
+    ).limit(MAX_SCANS_PER_RUN).all()
 
     scanned = 0
     failed = 0

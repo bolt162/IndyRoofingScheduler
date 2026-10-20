@@ -8,6 +8,7 @@ the office number instead.
 """
 import re
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.models.email import TeamContact
@@ -59,7 +60,13 @@ def seed_team(db: Session) -> int:
         db.add(TeamContact(jn_name=jn_name, display_name=display, role=role,
                            email=email, phone=phone, is_active=True))
     if rows:
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            # Two requests right after a restart both added the same people (seen 2026-10-20 1:22am);
+            # the other one already did it
+            db.rollback()
+            return 0
     return len(rows)
 
 

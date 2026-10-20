@@ -262,3 +262,31 @@ def test_crew_notes_on_a_work_order_of_another_type_still_count(db):
     job = queued(db, jn_work_orders=wos)
     CN.refresh(job, client=FakeAI([{"text": "Only replace the house roof.", "quote": "House only", "source": "Work order"}]))
     assert job.crew_note_suggestions == []
+
+
+def test_note_scan_failure_marks_the_job_tried_and_keeps_the_session_usable(db, monkeypatch):
+    from backend.services import note_scanner as NS
+    monkeypatch.setattr(NS.settings, "ANTHROPIC_API_KEY", "x")
+
+    class Bad:
+        def __init__(self, *a, **k):
+            self.messages = SimpleNamespace(create=lambda **kw: SimpleNamespace(
+                content=[SimpleNamespace(type="text", text="not json")]))
+    monkeypatch.setattr(NS.anthropic, "Anthropic", Bad)
+    job = Job(customer_name="T", address="1", bucket="to_schedule", jn_notes_raw="some notes")
+    db.add(job)
+    db.commit()
+    assert NS.scan_all_unscanned_jobs(db)["failed"] == 1
+    db.refresh(job)
+    assert "scan_failed" in job.ai_note_scan_result
+    assert NS.scan_all_unscanned_jobs(db)["total"] == 0  # not retried every sync
+
+
+def test_seeding_the_team_twice_at_once_does_not_crash(db):
+    from backend.emails import team
+    from backend.models.email import TeamContact
+    db.add(TeamContact(jn_name="Nikka Samson", display_name="Nikka", role="office"))
+    db.commit()
+    # Pretend another request added her between our check and our save
+    team.seed_team(db)  # must not raise
+    assert db.query(TeamContact).filter(TeamContact.jn_name == "Nikka Samson").count() == 1
