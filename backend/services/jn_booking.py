@@ -49,6 +49,20 @@ TASKS_TO_COMPLETE = ("send work order & add job date to job file", "order materi
 # Work orders that are finished or dead are never the one to book
 CLOSED_WO_WORDS = ("complete", "cancel", "invoic", "paid", "closed", "lost", "void")
 STEPS = ("work_order", "work_order_status", "job_status", "rep_note", "build_block", "tasks")
+# Work order field JobNimbus's moved / taken-off messages read (built 2026-10-20). Customers only ever see
+# weather or their own request as the reason; anything else (crew, materials...) reads "outside our control".
+# Empty = a normal booking, so the usual Build Day email goes instead.
+RESCHEDULE_FIELD = "Reschedule Reason"
+
+
+def reschedule_category(reason: str | None) -> str:
+    """The Reschedule Reason JobNimbus gets for a Move or Not Built reason."""
+    r = (reason or "").lower()
+    if "weather" in r:
+        return "Weather"
+    if "customer" in r:
+        return "Customer request"
+    return "Other"
 
 # The work order that carries each trade's build, best match first
 WO_TRADES = {
@@ -356,8 +370,10 @@ def _done(db: Session, job: Job, step: str, detail=True) -> None:
 
 
 def book_job(db: Session, job: Job, who: str, jn: JN | None = None, lookups: Lookups | None = None,
-             ai_client=None, recheck: bool = True) -> dict:
-    """Do Greg's booking steps for one planned job. Returns {status: booked|skipped|failed, ...}."""
+             ai_client=None, recheck: bool = True, reschedule_reason: str = "") -> dict:
+    """Do Greg's booking steps for one planned job. Returns {status: booked|skipped|failed, ...}.
+    reschedule_reason (Weather / Customer request / Other) makes JobNimbus send the "your build day
+    moved" messages instead of the Build Day ones; a normal push leaves it empty."""
     from backend import activity
     jn = jn or JN()
     lookups = lookups or Lookups(jn)
@@ -422,6 +438,8 @@ def book_job(db: Session, job: Job, who: str, jn: JN | None = None, lookups: Loo
                 "all_day_start_date": d.isoformat(), "all_day_end_date": last_day.isoformat(),
                 "subcontractors": merge_refs(wo.get("subcontractors"), subs),
                 "owners": merge_refs(wo.get("owners"), [{"id": pm_user}] if pm_user else []),
+                # Set before the status change below, which is what fires JobNimbus's messages
+                RESCHEDULE_FIELD: reschedule_reason,
             }
             # Crew notes the scheduler approved go into the box the crew reads on the work order
             from backend.services.crew_notes import merged_customer_note
@@ -557,6 +575,9 @@ def unbook(db: Session, job: Job, who: str, reason: str, jn: JN | None = None,
       the rep's open Build Block for that day -> completed
     Taking the work order off Pending Start is what stops JobNimbus's "you're on the calendar"
     messages; booking it again (book_job) sends fresh ones with the new date.
+    Not moving to a new day: the Reschedule Reason goes on in the same change, so JobNimbus sends the
+    customer the "we had to take it off its day" email and text. Moving: it's cleared, and the new
+    booking sends the "moved" ones instead.
     Safe to run twice: each step checks JobNimbus first."""
     from backend import activity
     from backend.services.jobnimbus import note_body
@@ -576,8 +597,9 @@ def unbook(db: Session, job: Job, who: str, reason: str, jn: JN | None = None,
         if not old_day and booked and booked[0].get("date_start"):
             old_day = datetime.fromtimestamp(booked[0]["date_start"], LOCAL_TZ).date()
         cleared = {"date_start": 0, "all_day": False, "all_day_start_date": "", "all_day_end_date": ""}
+        why_field = {RESCHEDULE_FIELD: "" if moving_to else reschedule_category(reason)}
         for w in booked:
-            jn.put(f"v2/workorders/{w['jnid']}", {"jnid": w["jnid"], **cleared,
+            jn.put(f"v2/workorders/{w['jnid']}", {"jnid": w["jnid"], **cleared, **why_field,
                    "status": _first_status(lookups, "workorder", w.get("record_type_name") or "", WO_BACK)})
         if (jn_job.get("status_name") or "").strip().lower() == JOB_PENDING:
             jn.put(f"jobs/{job.jn_job_id}", {**cleared, "status": _first_status(
@@ -601,7 +623,8 @@ def unbook(db: Session, job: Job, who: str, reason: str, jn: JN | None = None,
         db.commit()
         activity.write("job", "jobnimbus", "Taken off the JobNimbus calendar",
                        detail=f"{job.customer_name}: {len(booked)} work order(s) back to Schedule, by {who}. {reason or ''}".strip())
-        return {"status": "unbooked", "work_orders": [w.get("number") for w in booked], "build_blocks_closed": closed}
+        return {"status": "unbooked", "work_orders": [w.get("number") for w in booked], "build_blocks_closed": closed,
+                "customer_told": bool(booked) and not moving_to}
     except BookingError as e:
         return {"status": "failed", "reason": str(e)}
     except Exception as e:  # noqa: BLE001
@@ -661,5 +684,6 @@ def _move(db: Session, job: Job, new_day: date, who: str, reason: str, jn: JN | 
     job.planned_date, job.planned_crew_id, job.planned_pm_id = new_day, crew.id, pm.id
     job.planned_by, job.planned_at = who, datetime.utcnow()
     db.commit()
-    res = book_job(db, job, who, jn=jn, lookups=lookups, ai_client=ai_client, recheck=False)
+    res = book_job(db, job, who, jn=jn, lookups=lookups, ai_client=ai_client, recheck=False,
+                   reschedule_reason=reschedule_category(reason))
     return {**res, "unbooked": out.get("work_orders")}

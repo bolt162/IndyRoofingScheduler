@@ -369,13 +369,16 @@ def test_unbook_reverses_the_booking_in_jobnimbus(db):
     out = B.unbook(db, job, "Greg", "Weather Pre-Build", jn=jn)
     assert out["status"] == "unbooked" and out["build_blocks_closed"] == 1
     w = jn.writes()
+    # The reason goes on in the same change as the status, so JobNimbus's taken-off messages read it
     assert w[0] == ("PUT", "v2/workorders/wo1", {"jnid": "wo1", "date_start": 0, "all_day": False,
-                                                 "all_day_start_date": "", "all_day_end_date": "", "status": 471})
+                                                 "all_day_start_date": "", "all_day_end_date": "",
+                                                 "Reschedule Reason": "Weather", "status": 471})
     assert w[1] == ("PUT", f"jobs/{JOB}", {"date_start": 0, "all_day": False, "all_day_start_date": "",
                                            "all_day_end_date": "", "status": 446})
     assert w[2][2]["note"] == "@PatRep roof moved off Tuesday 10/29 (Weather Pre-Build)"
     assert w[3] == ("PUT", "tasks/bb", {"is_completed": True})  # only that day's Build Block
     assert len(w) == 4 and job.jn_push_steps is None
+    assert out["customer_told"] is True
 
 
 def test_unbook_twice_changes_nothing_more(db):
@@ -419,11 +422,15 @@ def test_move_takes_it_off_and_books_the_new_day_with_the_same_crew(db):
     assert out["status"] == "booked", out
     w = jn.writes()
     assert w[0][2]["status"] == 471                       # off the calendar first
+    assert w[0][2]["Reschedule Reason"] == ""             # no "taken off" messages on a move
     note = next(c for c in w if c[1] == "activities")[2]["note"]
     assert note == "@PatRep roof moved off Tuesday 10/29 (Customer asked), moving to Tuesday 11/5"
     wo_date = next(c for c in w if c[1] == "v2/workorders/wo1" and c[2].get("all_day"))
     assert wo_date[2]["all_day_start_date"] == "2030-11-05"
     assert [s["id"] for s in wo_date[2]["subcontractors"]] == ["dct", "luke_sub"]
+    # Set before the status change: JobNimbus sends the "moved, as you asked" messages, not Build Day
+    assert wo_date[2]["Reschedule Reason"] == "Customer request"
+    assert w.index(wo_date) < w.index(("PUT", "v2/workorders/wo1", {"jnid": "wo1", "status": 472}))
     assert ("PUT", "v2/workorders/wo1", {"jnid": "wo1", "status": 472}) in w   # back to Pending Start: fresh messages
 
 
@@ -449,3 +456,20 @@ def test_move_waits_for_another_push_or_move(db):
     finally:
         B._push_lock.release()
     assert out["status"] == "failed" and "Already moving" in out["reason"]
+
+
+@pytest.mark.parametrize("reason,category", [
+    ("Weather", "Weather"), ("Weather Pre-Build: storms Thursday", "Weather"), ("Customer asked", "Customer request"),
+    ("Customer Related", "Customer request"), ("Crew", "Other"), ("Materials", "Other"),
+    ("Crew Unavailable", "Other"), ("Scope Change", "Other"), ("", "Other"),
+])
+def test_only_weather_and_customer_requests_are_named_to_the_customer(reason, category):
+    assert B.reschedule_category(reason) == category
+
+
+def test_a_normal_push_clears_the_reschedule_reason(db):
+    job = planned_job(db)
+    jn = FakeJN()
+    assert B.book_job(db, job, "Greg", jn=jn)["status"] == "booked"
+    wo_date = next(c for c in jn.writes() if c[1] == "v2/workorders/wo1" and c[2].get("all_day"))
+    assert wo_date[2]["Reschedule Reason"] == ""   # so the usual Build Day email goes

@@ -405,7 +405,8 @@ def mark_not_built(job_id: int, request: NotBuiltRequest, db: Session = Depends(
 
     # Build queue emails: start the same-day reschedule check (never blocks this action)
     from backend.emails import events as email_events
-    email_events.safely(email_events.on_reschedule, db, job)
+    email_events.safely(email_events.on_reschedule, db, job,
+                        customer_told=bool((jobnimbus_result or {}).get("customer_told")))
 
     # Note 2: Generate not-built note with reason
     from backend.services.notes import generate_not_built_note

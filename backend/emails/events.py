@@ -84,11 +84,14 @@ def after_sync(db: Session, observed: list[tuple], now: datetime | None = None) 
     return counts
 
 
-def on_reschedule(db: Session, job, now: datetime | None = None) -> None:
-    """A scheduled build was pushed (Not Built or weather). Starts the same-day reschedule wait."""
+def on_reschedule(db: Session, job, now: datetime | None = None, customer_told: bool = False) -> None:
+    """A scheduled build was pushed (Not Built or weather). Starts the same-day reschedule wait.
+    customer_told: JobNimbus already sent the customer its taken-off email and text, so the
+    end-of-day check sends no second one (the PM and rep alert still goes)."""
     now = now or datetime.utcnow()
     for state in states_for(db, job.id).values():
-        S.note_reschedule(state, job, now)
+        if S.note_reschedule(state, job, now):
+            state.reschedule_customer_told = customer_told
         # A new scheduled date later should earn a fresh look, but not a second fun email
         state.scheduled_seen_at = None if not state.scheduled_email_sent else state.scheduled_seen_at
     db.commit()

@@ -13,7 +13,7 @@ const REASONS = ['Weather', 'Customer asked', 'Crew', 'Materials', 'Other'];
 /**
  * Move a build booked in JobNimbus to a new day, in one step: the work order comes off Pending Start
  * (which stops the old "you're on the calendar" messages), then it's booked again on the new day with
- * the same crew and PM, so the customer gets the Build Day email and text with the new date.
+ * the same crew and PM. The reason picks which "your build day moved" email and text JobNimbus sends.
  */
 export function MoveBookingButton({ job }: { job: Job }) {
   const [open, setOpen] = useState(false);
@@ -51,8 +51,9 @@ export function MoveBookingButton({ job }: { job: Job }) {
           <div>
             <p className="text-sm font-semibold leading-snug">Move {job.customer_name}</p>
             <p className="text-[11px] leading-snug text-muted-foreground">
-              Takes it off the JobNimbus calendar and books the new day with the same crew. The customer gets the
-              Build Day email and text with the new date. To pull it without a new day, use Not Built.
+              Takes it off the JobNimbus calendar and books the new day with the same crew. The customer gets a
+              sorry-for-the-change email and text with the new date. Only weather or their own request is named as
+              the reason; anything else reads "outside our control". To pull it without a new day, use Not Built.
             </p>
           </div>
           <label className="space-y-1 text-xs">

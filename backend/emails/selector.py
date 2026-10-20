@@ -43,7 +43,7 @@ def new_state(job_id: int, mode: str = "live") -> EmailState:
         long_wait_alert_week=None, welcome_sent=False, sequence_week=0, rotation_index=0,
         getting_close_sent=False, last_jobs_ahead=None, last_counted_email_at=None,
         reschedule_track=False, reschedule_count_seen=0, original_date=None,
-        reschedule_pending_since=None, suppressed=False, suppressed_reason=None,
+        reschedule_pending_since=None, reschedule_customer_told=False, suppressed=False, suppressed_reason=None,
         entered_queue_at=None,
     )
 
@@ -152,6 +152,8 @@ def reschedule_decision(ctx: EmailContext, state: EmailState, job, now: datetime
     if has_new_date(job, state, now.date()):
         # The PM/rep alert still goes out on a second reschedule
         return Decision(None, "new date set", internal_alert=second)
+    if state.reschedule_customer_told:
+        return Decision(None, "JobNimbus already told the customer", internal_alert=second)
     reason = _gate(ctx, state)
     if reason:
         return Decision(None, reason, internal_alert=second)

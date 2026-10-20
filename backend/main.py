@@ -35,6 +35,7 @@ async def lifespan(app: FastAPI):
     _seed_default_settings()
     _cleanup_siding_material()
     _migrate_note_log_columns()
+    _migrate_email_state_columns()
     _migrate_crew_columns()
     _migrate_job_columns()
     _migrate_job_buckets()
@@ -418,6 +419,30 @@ def _migrate_note_log_columns():
                 db.rollback()
     except Exception as e:
         logger.warning(f"NoteLog column migration failed: {e}")
+    finally:
+        db.close()
+
+
+def _migrate_email_state_columns():
+    """Add new columns to email_states if they don't exist. Safe to run on every startup."""
+    from sqlalchemy import inspect, text
+    db = SessionLocal()
+    try:
+        insp = inspect(engine)
+        if "email_states" not in insp.get_table_names():
+            return  # create_all will make it with every column
+        existing = {col["name"] for col in insp.get_columns("email_states")}
+        if "reschedule_customer_told" not in existing:
+            stmt = "ADD COLUMN reschedule_customer_told BOOLEAN DEFAULT FALSE"
+            try:
+                db.execute(text(f"ALTER TABLE email_states {stmt}"))
+                db.commit()
+                logger.info(f"Migration: ALTER TABLE email_states {stmt}")
+            except Exception as e:
+                logger.warning(f"Migration skip ({stmt}): {e}")
+                db.rollback()
+    except Exception as e:
+        logger.warning(f"EmailState column migration failed: {e}")
     finally:
         db.close()
 

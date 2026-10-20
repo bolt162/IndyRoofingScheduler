@@ -325,6 +325,16 @@ def test_second_reschedule_customer_email_and_internal_alert():
     assert d.template == K.SECOND_RESCHEDULE and d.internal_alert
 
 
+def test_no_second_email_when_jobnimbus_already_told_the_customer():
+    # Not Built on a JobNimbus booking: JobNimbus sends the "taken off its day" email and text right away
+    st = welcomed_state(reschedule_track=True, reschedule_count_seen=1, original_date=date(2026, 10, 7))
+    j = scheduled_job(2, when=date(2026, 10, 7))
+    assert S.note_reschedule(st, j, NOW)
+    st.reschedule_customer_told = True
+    d = S.reschedule_decision(ctx(rescheduled_count=2), st, j, NOW)
+    assert d.template is None and d.internal_alert   # the PM and rep still hear about a second one
+
+
 def test_reschedule_email_does_not_use_up_the_weekly_email():
     st = welcomed_state(reschedule_pending_since=NOW - timedelta(days=2))
     d = S.Decision(K.RESCHEDULE)

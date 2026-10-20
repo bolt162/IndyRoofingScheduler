@@ -47,6 +47,8 @@ class EmailState(Base):
     reschedule_count_seen: Mapped[int] = mapped_column(Integer, default=0)
     original_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     reschedule_pending_since: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # JobNimbus already emailed and texted the customer about it (Not Built pulled the booking there)
+    reschedule_customer_told: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # "You're scheduled" fun email: when we first saw the job scheduled, and whether it went
     scheduled_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
