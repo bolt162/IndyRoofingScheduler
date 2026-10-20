@@ -220,3 +220,26 @@ def test_days_picked_on_the_card_win_and_notes_stay_off_when_switched_off(db, mo
     assert wo_put["all_day_end_date"] == "2030-10-31" and "customer_note" not in wo_put
     preview = B.preview(db)["items"]
     assert preview == [] or preview[0]["crew_notes"] is None
+
+
+def test_lines_from_any_crew_work_order_are_not_repeated(db):
+    # The crew's work order has no tear-off line, but its notes are still what the crew already reads
+    wos = [{"number": "WO-9", "trade": "Roofing", "status": "New", "labor": [["Roofing Labor", 1]],
+            "customer_note": "HOUSE ROOF ONLY\nContact PM before removing any decking"}]
+    job = queued(db, jn_work_orders=wos)
+    ai = FakeAI([{"text": "Call the PM before removing decking.", "quote": "Contact PM before removing any decking",
+                  "source": "Work order WO-9"},
+                 {"text": "Leave the copper for the homeowner.", "quote": "Leave it there for the homeowner",
+                  "source": "Note by Greg"}])
+    CN.refresh(job, client=ai)
+    assert [s["text"] for s in job.crew_note_suggestions] == [
+        "Gutters are NOT being replaced. Protect the gutters.", "Leave the copper for the homeowner."]
+    assert "HOUSE ROOF ONLY" in ai.prompts[0]
+
+
+def test_siding_jobs_ask_for_the_siding_crew_and_skip_the_gutter_line(db):
+    job = queued(db, primary_trade="siding",
+                 jn_work_orders=[roof((TEAR, 20)), {"number": "WO-3", "trade": "Siding", "labor": [], "customer_note": ""}])
+    ai = FakeAI([])
+    CN.refresh(job, client=ai)
+    assert "SIDING crew" in ai.prompts[0] and job.crew_note_suggestions == []

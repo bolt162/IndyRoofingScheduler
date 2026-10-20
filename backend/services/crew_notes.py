@@ -26,6 +26,7 @@ SETTING_KEY = "crew_notes_enabled"
 BUCKETS = ("coming_soon", "to_schedule", "not_built")
 MAX_PER_RUN = 40
 MAX_AI_LINES = 5
+PROMPT_VERSION = 2
 
 
 def enabled(db: Session) -> bool:
@@ -57,8 +58,8 @@ def gutter_line(work_orders: list[dict] | None) -> dict | None:
     return {"text": text, "source": "Work orders", "kind": "gutters"}
 
 
-PROMPT = """You help a roofing company's scheduler write the short notes the ROOFING crew reads on its work order.
-From the notes below, list ONLY instructions that change how the roofing crew does THIS install or behaves on site, for example:
+PROMPT = """You help a roofing company's scheduler write the short notes the {crew} crew reads on its work order.
+From the notes below, list ONLY instructions that change how the {crew} crew does THIS install or behaves on site, for example:
 - what to protect or be careful with (landscaping, pool, solar panels, skylights, a car that stays in the driveway)
 - access: gate code, where to park or put the dumpster, a dog in the yard, a side of the house to avoid
 - customer requests for build day (start time, keep a door clear, call before arriving)
@@ -67,7 +68,7 @@ From the notes below, list ONLY instructions that change how the roofing crew do
 - product or color, only if a note states it plainly
 
 Leave out: anything about money, insurance, the adjuster, supplements, permits, scheduling, the sales process,
-complaints, or the office. Leave out work done by other trades or crews (gutters, siding, windows, interior); whether the
+complaints, or the office. Leave out work done by other trades or crews than the {crew} crew; whether the
 gutters are being replaced is handled separately.
 Leave out anything the crew already sees in the work order's crew notes (given below).
 Never guess. Only what a note actually says.
@@ -96,7 +97,8 @@ def ask_ai(job: Job, existing: str, client=None) -> list[dict] | None:
         if not settings.ANTHROPIC_API_KEY:
             return None
         client = _client()
-    prompt = PROMPT.format(max_lines=MAX_AI_LINES, existing=existing or "(nothing yet)", notes=job.ready_input)
+    prompt = PROMPT.format(max_lines=MAX_AI_LINES, existing=existing or "(nothing yet)", notes=job.ready_input,
+                           crew=crew_word(job))
     try:
         from backend import activity
         with activity.call("claude", "crew notes"):
@@ -118,35 +120,55 @@ def ask_ai(job: Job, existing: str, client=None) -> list[dict] | None:
     return out
 
 
+# The work order trades whose crew does each primary trade's build
+CREW_TRADES = {"roofing": ("roofing", "roof flat", "commercial"), "roofing_repair": ("repairs", "roofing"),
+               "siding": ("siding",), "siding_repair": ("repairs", "siding"), "gutters": ("gutters",),
+               "windows": ("windows",), "paint": ("exterior painting",), "interior": ("interior",)}
+
+
+def crew_word(job: Job) -> str:
+    return {"roofing_repair": "roofing", "siding_repair": "siding", "paint": "painting"}.get(
+        job.primary_trade or "", job.primary_trade or "roofing").upper()
+
+
 def _main_wo(job: Job) -> dict | None:
     from backend.services.build_days import roofing_work_order
-    return roofing_work_order(job.jn_work_orders) or next(
-        (w for w in job.jn_work_orders or [] if (w.get("trade") or "").lower() == "roofing"), None)
+    trades = CREW_TRADES.get(job.primary_trade or "roofing", ("roofing",))
+    return (roofing_work_order(job.jn_work_orders) if "roofing" in trades else None) or next(
+        (w for w in job.jn_work_orders or [] if (w.get("trade") or "").lower() in trades), None)
+
+
+def _crew_box(job: Job) -> str:
+    """Everything already written for the crew on this trade's work orders."""
+    trades = CREW_TRADES.get(job.primary_trade or "roofing", ("roofing",))
+    return "\n".join(w.get("customer_note") or "" for w in job.jn_work_orders or []
+                     if (w.get("trade") or "").lower() in trades and (w.get("customer_note") or "").strip())
 
 
 def input_hash(job: Job) -> str:
-    wo = _main_wo(job) or {}
     trades = sorted((w.get("trade") or "", tuple(_labor(w))) for w in job.jn_work_orders or [])
-    blob = json.dumps([job.ready_input or "", wo.get("customer_note") or "", trades], default=str)
+    # Bump the version when the rules or prompt change, so every job gets fresh suggestions
+    blob = json.dumps([PROMPT_VERSION, job.ready_input or "", _crew_box(job), trades], default=str)
     return hashlib.sha256(blob.encode()).hexdigest()
 
 
 def refresh(job: Job, client=None) -> bool:
     """Rebuild the job's suggestions. False if the AI couldn't run (try again next sync)."""
     lines = []
-    existing = (_main_wo(job) or {}).get("customer_note") or ""
+    existing = _crew_box(job)
     g = gutter_line(job.jn_work_orders)
     # Greg often writes "We are replacing gutters" himself; don't suggest it twice
-    if g and "gutter" not in existing.lower():
+    if g and (job.primary_trade or "roofing").startswith("roofing") and "gutter" not in existing.lower():
         lines.append(g)
     if (job.ready_input or "").strip():
         found = ask_ai(job, existing, client=client)
         if found is None:
             return False
         lines += found
-    # Drop anything the crew already has on the work order
+    # Drop anything the crew already has on the work order, by its wording or by the note it quotes
     have = " ".join(existing.lower().split())
-    lines = [ln for ln in lines if " ".join(ln["text"].lower().split()) not in have]
+    lines = [ln for ln in lines if " ".join(ln["text"].lower().split()) not in have
+             and not (ln.get("quote") and " ".join(ln["quote"].lower().split()) in have)]
     job.crew_note_suggestions = lines
     job.crew_notes_hash = input_hash(job)
     return True
