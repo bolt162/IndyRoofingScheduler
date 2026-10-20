@@ -430,3 +430,22 @@ def test_move_takes_it_off_and_books_the_new_day_with_the_same_crew(db):
 def test_move_refuses_a_day_in_the_past(db):
     job = planned_job(db)
     assert B.move(db, job, date(2020, 1, 1), "Greg", "", jn=FakeJN())["status"] == "failed"
+
+
+def test_a_second_move_to_the_same_day_does_nothing(db):
+    job = planned_job(db)
+    job.jn_push_steps = {"date": "2030-11-05", **{s: True for s in B.STEPS}}
+    db.commit()
+    jn = FakeJN()
+    assert B.move(db, job, date(2030, 11, 5), "Greg", "Weather", jn=jn)["reason"] == "Already booked on that day."
+    assert jn.writes() == []
+
+
+def test_move_waits_for_another_push_or_move(db):
+    job = planned_job(db)
+    B._push_lock.acquire()
+    try:
+        out = B.move(db, job, date(2030, 11, 5), "Greg", "Weather", jn=FakeJN())
+    finally:
+        B._push_lock.release()
+    assert out["status"] == "failed" and "Already moving" in out["reason"]

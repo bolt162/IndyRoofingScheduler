@@ -24,6 +24,7 @@ export function MoveBookingButton({ job }: { job: Job }) {
   const tomorrow = format(addDays(new Date(), 1), 'yyyy-MM-dd');
 
   const go = async () => {
+    if (move.isPending) return;
     try {
       const res = await move.mutateAsync({ job_id: job.id, new_date: day, reason });
       if (res.status === 'booked') {

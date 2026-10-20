@@ -631,6 +631,19 @@ def move(db: Session, job: Job, new_day: date, who: str, reason: str, jn: JN | N
     (Greg's "move it off and back to Pending Start" SOP, in one step)."""
     if new_day < datetime.now(LOCAL_TZ).date():
         return {"status": "failed", "reason": "Pick today or a later day."}
+    # One move or push at a time: a double click ran Move twice and sent two Build Day emails (2026-10-20)
+    if not _push_lock.acquire(blocking=False):
+        return {"status": "failed", "reason": "Already moving it. Give it a moment, then refresh."}
+    try:
+        return _move(db, job, new_day, who, reason, jn, ai_client)
+    finally:
+        _push_lock.release()
+
+
+def _move(db: Session, job: Job, new_day: date, who: str, reason: str, jn: JN | None, ai_client) -> dict:
+    steps = job.jn_push_steps or {}
+    if steps.get("date") == new_day.isoformat() and all(steps.get(s) for s in STEPS):
+        return {"status": "booked", "reason": "Already booked on that day."}
     jn = jn or JN()
     lookups = Lookups(jn)
     crew = db.get(Crew, job.planned_crew_id) if job.planned_crew_id else crew_for_names(db, job.jn_crews)
