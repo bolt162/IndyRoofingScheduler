@@ -26,7 +26,7 @@ SETTING_KEY = "crew_notes_enabled"
 BUCKETS = ("coming_soon", "to_schedule", "not_built")
 MAX_PER_RUN = 40
 MAX_AI_LINES = 5
-PROMPT_VERSION = 2
+PROMPT_VERSION = 3
 
 
 def enabled(db: Session) -> bool:
@@ -141,8 +141,10 @@ def _main_wo(job: Job) -> dict | None:
 def _crew_box(job: Job) -> str:
     """Everything already written for the crew on this trade's work orders."""
     trades = CREW_TRADES.get(job.primary_trade or "roofing", ("roofing",))
-    return "\n".join(w.get("customer_note") or "" for w in job.jn_work_orders or []
-                     if (w.get("trade") or "").lower() in trades and (w.get("customer_note") or "").strip())
+    wos = [w for w in job.jn_work_orders or [] if (w.get("customer_note") or "").strip()]
+    mine = [w for w in wos if (w.get("trade") or "").lower() in trades]
+    # No work order for this trade yet (or it was made as another type): any work order's crew notes count
+    return "\n".join(w["customer_note"] for w in (mine or wos))
 
 
 def input_hash(job: Job) -> str:

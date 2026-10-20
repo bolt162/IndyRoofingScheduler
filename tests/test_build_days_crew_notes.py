@@ -254,3 +254,11 @@ def test_work_order_days_become_the_jobs_days_unless_a_person_set_them():
     job.duration_days, job.duration_source = 3, "Set by Greg Russell"
     BD.apply_to_job(job)
     assert job.duration_days == 3
+
+
+def test_crew_notes_on_a_work_order_of_another_type_still_count(db):
+    # Seen on J-26892: the roof crew's notes sat on a work order made as Gutters
+    wos = [{"number": "WO-11925", "trade": "Gutters", "labor": [], "customer_note": "House only\nWe are NOT replacing gutters"}]
+    job = queued(db, jn_work_orders=wos)
+    CN.refresh(job, client=FakeAI([{"text": "Only replace the house roof.", "quote": "House only", "source": "Work order"}]))
+    assert job.crew_note_suggestions == []
