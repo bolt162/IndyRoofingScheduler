@@ -40,6 +40,9 @@ PLANNABLE_BUCKETS = ("to_schedule", "not_built")
 BLOCKED_READY = ("flagged", "hold")
 WO_PENDING = "pending start"
 JOB_PENDING = "pending start date"
+# Where a booked job goes back to when it's pulled (weather, Not Built, a new day)
+WO_BACK = ("schedule", "scheduled", "new")
+JOB_BACK = ("schedule job", "schedule production", "order/schedule")
 BUILD_BLOCK_TYPE = "Build Block"
 # Open tasks Greg completes once a build is booked (titles vary in case)
 TASKS_TO_COMPLETE = ("send work order & add job date to job file", "order materials & begin trade prep")
@@ -533,3 +536,117 @@ def push(db: Session, who: str, job_ids: list[int] | None = None, jn: JN | None 
             except Exception:  # noqa: BLE001
                 db.rollback()
         _push_lock.release()
+
+
+# --- pulling a booked job back out (weather, Not Built, moving it to a new day) ---
+
+def _first_status(lookups: "Lookups", object_type: str, workflow: str, names: tuple) -> int:
+    for n in names:
+        sid = lookups.statuses().get((object_type, (workflow or "").lower(), n))
+        if sid is not None:
+            return sid
+    raise BookingError(f"JobNimbus has no status to move {workflow or 'this'} back to.")
+
+
+def unbook(db: Session, job: Job, who: str, reason: str, jn: JN | None = None,
+           lookups: Lookups | None = None, moving_to: date | None = None) -> dict:
+    """Undo a booking in JobNimbus, the opposite of book_job:
+      every work order on the job at Pending Start -> back to Schedule, date cleared
+      the job -> back to Schedule Job, date cleared
+      a note to the rep ("roof moved off Thursday 10/29 (weather)")
+      the rep's open Build Block for that day -> completed
+    Taking the work order off Pending Start is what stops JobNimbus's "you're on the calendar"
+    messages; booking it again (book_job) sends fresh ones with the new date.
+    Safe to run twice: each step checks JobNimbus first."""
+    from backend import activity
+    from backend.services.jobnimbus import note_body
+    jn = jn or JN()
+    lookups = lookups or Lookups(jn)
+    if not allowed(job):
+        return {"status": "skipped", "reason": "Sending to JobNimbus is turned off for this job."}
+    if not job.jn_job_id:
+        return {"status": "skipped", "reason": "Not a JobNimbus job."}
+    try:
+        jn_job = jn.get(f"jobs/{job.jn_job_id}") or {}
+        filt = json.dumps({"must": [{"term": {"related.id": job.jn_job_id}}]})
+        wos = [w for w in _list(jn.get("v2/workorders", {"filter": filt, "size": 50}), "results", "workorders")
+               if isinstance(w, dict) and w.get("is_active") is not False and not w.get("is_archived")]
+        booked = [w for w in wos if (w.get("status_name") or "").strip().lower() == WO_PENDING]
+        old_day = job.jn_start_date
+        if not old_day and booked and booked[0].get("date_start"):
+            old_day = datetime.fromtimestamp(booked[0]["date_start"], LOCAL_TZ).date()
+        cleared = {"date_start": 0, "all_day": False, "all_day_start_date": "", "all_day_end_date": ""}
+        for w in booked:
+            jn.put(f"v2/workorders/{w['jnid']}", {"jnid": w["jnid"], **cleared,
+                   "status": _first_status(lookups, "workorder", w.get("record_type_name") or "", WO_BACK)})
+        if (jn_job.get("status_name") or "").strip().lower() == JOB_PENDING:
+            jn.put(f"jobs/{job.jn_job_id}", {**cleared, "status": _first_status(
+                lookups, "job", jn_job.get("record_type_name") or "", JOB_BACK)})
+        if booked or old_day:
+            word = TRADE_WORD.get(job.primary_trade or "", "job")
+            rep = "".join((jn_job.get("sales_rep_name") or "").split())
+            when = f" off {old_day:%A} {old_day.month}/{old_day.day}" if old_day else ""
+            to = f", moving to {moving_to:%A} {moving_to.month}/{moving_to.day}" if moving_to else ""
+            why = f" ({reason.strip().rstrip('.')})" if (reason or "").strip() else ""
+            jn.post("activities", note_body(job.jn_job_id, f"{'@' + rep + ' ' if rep else ''}{word} moved{when}{why}{to}"))
+        closed = 0
+        if old_day:
+            for t in _list(jn.get("tasks", {"filter": filt, "size": 200}), "results", "tasks"):
+                if (t.get("record_type_name") == BUILD_BLOCK_TYPE and not t.get("is_completed")
+                        and t.get("date_start") and datetime.fromtimestamp(t["date_start"], LOCAL_TZ).date() == old_day):
+                    jn.put(f"tasks/{t['jnid']}", {"is_completed": True})
+                    closed += 1
+        job.jn_push_steps = None
+        job.jn_push_error = None
+        db.commit()
+        activity.write("job", "jobnimbus", "Taken off the JobNimbus calendar",
+                       detail=f"{job.customer_name}: {len(booked)} work order(s) back to Schedule, by {who}. {reason or ''}".strip())
+        return {"status": "unbooked", "work_orders": [w.get("number") for w in booked], "build_blocks_closed": closed}
+    except BookingError as e:
+        return {"status": "failed", "reason": str(e)}
+    except Exception as e:  # noqa: BLE001
+        logger.exception(f"Un-booking failed for job {job.id}")
+        return {"status": "failed", "reason": f"JobNimbus didn't accept a change ({type(e).__name__}). "
+                                              f"Check the job in JobNimbus.", "jn_error": True}
+
+
+def crew_for_names(db: Session, names: list[str] | None) -> Crew | None:
+    """The app crew behind a JobNimbus subcontractor name on the work order."""
+    want = {(n or "").strip().lower() for n in names or []}
+    crews = db.query(Crew).filter(Crew.is_active.is_(True)).all()
+    for c in crews:
+        if (c.jn_name or "").strip().lower() in want:
+            return c
+    for c in crews:
+        base = (c.name or "").strip().lower()
+        if base and any(n == base or n.startswith(base + " - ") for n in want):
+            return c
+    return None
+
+
+def move(db: Session, job: Job, new_day: date, who: str, reason: str, jn: JN | None = None,
+         ai_client=None) -> dict:
+    """Move a booked job to a new day: take it off JobNimbus's calendar, then book it again on the new
+    day with the same crew and PM, so the customer gets the Build Day email and text with the new date
+    (Greg's "move it off and back to Pending Start" SOP, in one step)."""
+    if new_day < datetime.now(LOCAL_TZ).date():
+        return {"status": "failed", "reason": "Pick today or a later day."}
+    jn = jn or JN()
+    lookups = Lookups(jn)
+    crew = db.get(Crew, job.planned_crew_id) if job.planned_crew_id else crew_for_names(db, job.jn_crews)
+    pm = db.get(PM, job.planned_pm_id) if job.planned_pm_id else None
+    if not pm and job.jn_pm:
+        pm = next((p for p in db.query(PM).filter(PM.is_active.is_(True)).all()
+                   if job.jn_pm.lower().startswith(p.name.lower())), None)
+    if not crew:
+        return {"status": "failed", "reason": "Can't tell which crew is on it. Use Not Built, then plan it again."}
+    if not pm:
+        return {"status": "failed", "reason": "Can't tell which PM is on it. Use Not Built, then plan it again."}
+    out = unbook(db, job, who, reason, jn=jn, lookups=lookups, moving_to=new_day)
+    if out["status"] != "unbooked":
+        return out
+    job.planned_date, job.planned_crew_id, job.planned_pm_id = new_day, crew.id, pm.id
+    job.planned_by, job.planned_at = who, datetime.utcnow()
+    db.commit()
+    res = book_job(db, job, who, jn=jn, lookups=lookups, ai_client=ai_client, recheck=False)
+    return {**res, "unbooked": out.get("work_orders")}

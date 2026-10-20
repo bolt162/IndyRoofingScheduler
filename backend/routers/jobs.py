@@ -385,10 +385,18 @@ def set_no_build_dates(job_id: int, request: NoBuildDatesRequest, db: Session = 
 
 
 @router.post("/{job_id}/not-built")
-def mark_not_built(job_id: int, request: NotBuiltRequest, db: Session = Depends(get_db)):
+def mark_not_built(job_id: int, request: NotBuiltRequest, db: Session = Depends(get_db),
+                   user: ClerkUser = Depends(get_approved_user)):
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    # Booked in JobNimbus: take it off JobNimbus's calendar too, or the next sync puts it right back
+    # (seen 2026-10-20: Brooke Clark marked Not Built for weather, back to scheduled 15 minutes later)
+    jobnimbus_result = None
+    if (job.jn_status or "").strip().lower() == "pending start date":
+        from backend.services import jn_booking
+        why = request.reason + (f": {request.detail}" if (request.detail or "").strip() else "")
+        jobnimbus_result = jn_booking.unbook(db, job, _person(db, user), why)
     job.bucket = JobBucket.NOT_BUILT.value
     job.not_built_reason = request.reason
     job.rescheduled_count += 1
@@ -407,7 +415,9 @@ def mark_not_built(job_id: int, request: NotBuiltRequest, db: Session = Depends(
     job.bucket = JobBucket.TO_SCHEDULE.value
     db.commit()
     db.refresh(job)
-    return _enrich_with_latest_note(job, db)
+    out = _enrich_with_latest_note(job, db)
+    out["jobnimbus"] = jobnimbus_result
+    return out
 
 
 class StandaloneOptionRequest(BaseModel):

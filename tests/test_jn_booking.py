@@ -344,3 +344,89 @@ def test_an_old_job_end_date_before_the_new_start_is_cleared(db):
     B.push(db, "Greg", jn=jn)
     job_put = next(c for c in jn.writes() if c[1] == f"jobs/{JOB}")
     assert job_put[2]["date_end"] == 0
+
+
+# --- taking a booked job off the calendar, and moving it ---
+
+def booked_jn(**kw):
+    jn = FakeJN(wo_status="Pending Start", wo_start=MIDNIGHT, job_status="Pending Start Date", **kw)
+    orig = jn.get
+
+    def get(e, p=None):
+        if e == "tasks":
+            return {"results": [{"jnid": "bb", "record_type_name": "Build Block", "is_completed": False,
+                                 "date_start": B.local_ts(BUILD, 16)},
+                                {"jnid": "bb_other", "record_type_name": "Build Block", "is_completed": False,
+                                 "date_start": B.local_ts(date(2030, 11, 5), 16)}]}
+        return orig(e, p)
+    jn.get = get
+    return jn
+
+
+def test_unbook_reverses_the_booking_in_jobnimbus(db):
+    job = planned_job(db, bucket="scheduled", jn_status="Pending Start Date", jn_start_date=BUILD)
+    jn = booked_jn()
+    out = B.unbook(db, job, "Greg", "Weather Pre-Build", jn=jn)
+    assert out["status"] == "unbooked" and out["build_blocks_closed"] == 1
+    w = jn.writes()
+    assert w[0] == ("PUT", "v2/workorders/wo1", {"jnid": "wo1", "date_start": 0, "all_day": False,
+                                                 "all_day_start_date": "", "all_day_end_date": "", "status": 471})
+    assert w[1] == ("PUT", f"jobs/{JOB}", {"date_start": 0, "all_day": False, "all_day_start_date": "",
+                                           "all_day_end_date": "", "status": 446})
+    assert w[2][2]["note"] == "@PatRep roof moved off Tuesday 10/29 (Weather Pre-Build)"
+    assert w[3] == ("PUT", "tasks/bb", {"is_completed": True})  # only that day's Build Block
+    assert len(w) == 4 and job.jn_push_steps is None
+
+
+def test_unbook_twice_changes_nothing_more(db):
+    job = planned_job(db, bucket="scheduled", jn_status="Pending Start Date", jn_start_date=None)
+    jn = FakeJN(wo_status="Schedule", job_status="Schedule Job")
+    out = B.unbook(db, job, "Greg", "Weather", jn=jn)
+    assert out["status"] == "unbooked" and jn.writes() == []
+
+
+def test_unbook_respects_the_switch(db, monkeypatch):
+    job = planned_job(db)
+    monkeypatch.setenv("JN_BOOKING_MODE", "off")
+    jn = booked_jn()
+    assert B.unbook(db, job, "Greg", "Weather", jn=jn)["status"] == "skipped" and jn.writes() == []
+
+
+def test_move_takes_it_off_and_books_the_new_day_with_the_same_crew(db):
+    job = planned_job(db, bucket="scheduled", jn_status="Pending Start Date", jn_start_date=BUILD,
+                      jn_crews=["DCT Construction - Roof Crew"], jn_pm="Luke Mroz")
+    job.planned_crew_id = job.planned_pm_id = None
+    db.commit()
+    state = {"booked": True}
+    jn = booked_jn()
+    orig_get, orig_put = jn.get, jn.put
+
+    def get(e, p=None):
+        r = orig_get(e, p)
+        if e == "v2/workorders" and not state["booked"]:
+            r["results"][0]["status_name"] = "Schedule"
+        if e == f"jobs/{JOB}" and not state["booked"]:
+            r["status_name"] = "Schedule Job"
+        return r
+
+    def put(e, b):
+        if e == f"jobs/{JOB}" and b.get("status") == 446:
+            state["booked"] = False
+        return orig_put(e, b)
+    jn.get, jn.put = get, put
+    new_day = date(2030, 11, 5)
+    out = B.move(db, job, new_day, "Greg", "Customer asked", jn=jn)
+    assert out["status"] == "booked", out
+    w = jn.writes()
+    assert w[0][2]["status"] == 471                       # off the calendar first
+    note = next(c for c in w if c[1] == "activities")[2]["note"]
+    assert note == "@PatRep roof moved off Tuesday 10/29 (Customer asked), moving to Tuesday 11/5"
+    wo_date = next(c for c in w if c[1] == "v2/workorders/wo1" and c[2].get("all_day"))
+    assert wo_date[2]["all_day_start_date"] == "2030-11-05"
+    assert [s["id"] for s in wo_date[2]["subcontractors"]] == ["dct", "luke_sub"]
+    assert ("PUT", "v2/workorders/wo1", {"jnid": "wo1", "status": 472}) in w   # back to Pending Start: fresh messages
+
+
+def test_move_refuses_a_day_in_the_past(db):
+    job = planned_job(db)
+    assert B.move(db, job, date(2020, 1, 1), "Greg", "", jn=FakeJN())["status"] == "failed"

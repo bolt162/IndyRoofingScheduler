@@ -52,3 +52,18 @@ export function usePushToJobNimbus() {
     },
   });
 }
+
+/** Move a job booked in JobNimbus to a new day: off the calendar, then booked again. */
+export function useMoveBooking() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { job_id: number; new_date: string; reason: string }) => {
+      const { data } = await api.post('/schedule/move', body, { timeout: 120000 });
+      return data as { status: string; reason?: string; work_order?: string };
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['jobs'] });
+      qc.invalidateQueries({ queryKey: ['pushPreview'] });
+    },
+  });
+}

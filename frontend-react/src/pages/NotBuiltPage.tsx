@@ -76,7 +76,7 @@ export function NotBuiltPage() {
         });
       }
 
-      await markNotBuilt.mutateAsync({
+      const res: any = await markNotBuilt.mutateAsync({
         id: selectedJob.id,
         request: {
           reason,
@@ -86,7 +86,14 @@ export function NotBuiltPage() {
         },
       });
 
-      toast.success(`${selectedJob.customer_name} marked as Not Built`);
+      const jn = res?.jobnimbus;
+      if (!jn) toast.success(`${selectedJob.customer_name} marked as Not Built`);
+      else if (jn.status === 'unbooked')
+        toast.success(`${selectedJob.customer_name} marked as Not Built and taken off the JobNimbus calendar`);
+      else if (jn.status === 'skipped')
+        toast.warning(`${selectedJob.customer_name} marked as Not Built here. JobNimbus wasn't changed: ${jn.reason} Move it off Pending Start there.`);
+      else
+        toast.error(`${selectedJob.customer_name} marked as Not Built here, but JobNimbus didn't change: ${jn.reason}`);
       setDialogOpen(false);
     } catch {
       toast.error('Failed to mark job as Not Built');

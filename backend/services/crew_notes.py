@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from backend.config import settings
 from backend.models.job import Job
+from backend.models.settings import SystemSettings  # noqa: F401  (registers the table)
 
 logger = logging.getLogger("crew_notes")
 

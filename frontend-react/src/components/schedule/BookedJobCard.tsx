@@ -1,6 +1,7 @@
 import { HardHat, Lock, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Job } from '@/types';
+import { MoveBookingButton } from './MoveBookingButton';
 
 /** "DCT Construction - Roof Crew" -> "DCT Construction" */
 export function crewShort(name: string) {
@@ -25,7 +26,7 @@ export function BookedJobCard({ job }: { job: Job }) {
   return (
     <div
       className="rounded-md border border-slate-200 bg-slate-50 px-2.5 py-2"
-      title="Booked in JobNimbus. To change the date, change it on the work order in JobNimbus."
+      title="Booked in JobNimbus. Use Move to change the day; it updates JobNimbus and tells the customer."
     >
       <div className="flex items-center justify-between gap-2">
         <span className="truncate text-xs font-semibold">{job.customer_name}</span>
@@ -48,6 +49,7 @@ export function BookedJobCard({ job }: { job: Job }) {
         {crews.length ? crews.join(', ') : 'No crew on the work order'}
         {wo && <span className="text-muted-foreground">· {wo.trade || 'Work order'} {wo.number}</span>}
       </p>
+      <MoveBookingButton job={job} />
     </div>
   );
 }

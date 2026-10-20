@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -49,6 +51,29 @@ def can_book(db: Session, user: ClerkUser) -> bool:
         return False
     row = db.query(TeamContact).filter(TeamContact.email.ilike(user.email)).first()
     return bool(row and row.role in BOOKING_ROLES and getattr(row, "is_active", True) is not False)
+
+
+class MoveRequest(BaseModel):
+    job_id: int
+    new_date: date
+    reason: str = ""
+
+
+@router.post("/move")
+def move_booked_job(request: MoveRequest, db: Session = Depends(get_db),
+                    user: ClerkUser = Depends(get_approved_user)):
+    """Move a job booked in JobNimbus to a new day (off the calendar and booked again)."""
+    from backend.models.job import Job
+    from backend.routers.jobs import _person
+    from backend.services import jn_booking
+    if not can_book(db, user):
+        raise HTTPException(status_code=403, detail="Only the office, operations or owners can move bookings in JobNimbus.")
+    job = db.get(Job, request.job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if jn_booking.mode() == "off" or not jn_booking.allowed(job):
+        raise HTTPException(status_code=409, detail="Sending to JobNimbus is turned off for this job.")
+    return jn_booking.move(db, job, request.new_date, _person(db, user), request.reason)
 
 
 class PushRequest(BaseModel):
