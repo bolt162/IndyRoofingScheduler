@@ -476,12 +476,7 @@ def book_job(db: Session, job: Job, who: str, jn: JN | None = None, lookups: Loo
 
         if not st.get("build_block"):
             if rep_id:
-                jn.post("tasks", {
-                    **({"record_type": tid} if (tid := lookups.task_type_id(BUILD_BLOCK_TYPE)) else {}),
-                    "record_type_name": BUILD_BLOCK_TYPE, "title": BUILD_BLOCK_TYPE, "description": "",
-                    "date_start": local_ts(d, 16), "date_end": local_ts(d, 16, 59), "all_day": False,
-                    "owners": [{"id": rep_id}], "related": [{"id": job.jn_job_id, "type": "job"}],
-                })
+                jn.post("tasks", _build_block_body(job, rep_id, d, lookups))
                 _done(db, job, "build_block")
             else:
                 _done(db, job, "build_block", "no rep on the job")
@@ -566,6 +561,38 @@ def _first_status(lookups: "Lookups", object_type: str, workflow: str, names: tu
     raise BookingError(f"JobNimbus has no status to move {workflow or 'this'} back to.")
 
 
+def moved_note_text(job: Job, jn_job: dict, old_day: date | None, reason: str | None,
+                    moving_to: date | None = None) -> str:
+    """The rep's note: "@PatRep roof moved off Thursday 10/29 (Weather), moving to Monday 11/2"."""
+    word = TRADE_WORD.get(job.primary_trade or "", "job")
+    rep = "".join((jn_job.get("sales_rep_name") or "").split())
+    when = f" off {old_day:%A} {old_day.month}/{old_day.day}" if old_day else ""
+    to = f", moving to {moving_to:%A} {moving_to.month}/{moving_to.day}" if moving_to else ""
+    why = f" ({reason.strip().rstrip('.')})" if (reason or "").strip() else ""
+    return f"{'@' + rep + ' ' if rep else ''}{word} moved{when}{why}{to}"
+
+
+def _close_build_blocks(jn: "JN", filt: str, day: date | None) -> int:
+    """Complete the rep's open Build Block for that day."""
+    closed = 0
+    if day:
+        for t in _list(jn.get("tasks", {"filter": filt, "size": 200}), "results", "tasks"):
+            if (t.get("record_type_name") == BUILD_BLOCK_TYPE and not t.get("is_completed")
+                    and t.get("date_start") and datetime.fromtimestamp(t["date_start"], LOCAL_TZ).date() == day):
+                jn.put(f"tasks/{t['jnid']}", {"is_completed": True})
+                closed += 1
+    return closed
+
+
+def _build_block_body(job: Job, rep_id: str, d: date, lookups: "Lookups") -> dict:
+    return {
+        **({"record_type": tid} if (tid := lookups.task_type_id(BUILD_BLOCK_TYPE)) else {}),
+        "record_type_name": BUILD_BLOCK_TYPE, "title": BUILD_BLOCK_TYPE, "description": "",
+        "date_start": local_ts(d, 16), "date_end": local_ts(d, 16, 59), "all_day": False,
+        "owners": [{"id": rep_id}], "related": [{"id": job.jn_job_id, "type": "job"}],
+    }
+
+
 def unbook(db: Session, job: Job, who: str, reason: str, jn: JN | None = None,
            lookups: Lookups | None = None, moving_to: date | None = None) -> dict:
     """Undo a booking in JobNimbus, the opposite of book_job:
@@ -605,19 +632,8 @@ def unbook(db: Session, job: Job, who: str, reason: str, jn: JN | None = None,
             jn.put(f"jobs/{job.jn_job_id}", {**cleared, "status": _first_status(
                 lookups, "job", jn_job.get("record_type_name") or "", JOB_BACK)})
         if booked or old_day:
-            word = TRADE_WORD.get(job.primary_trade or "", "job")
-            rep = "".join((jn_job.get("sales_rep_name") or "").split())
-            when = f" off {old_day:%A} {old_day.month}/{old_day.day}" if old_day else ""
-            to = f", moving to {moving_to:%A} {moving_to.month}/{moving_to.day}" if moving_to else ""
-            why = f" ({reason.strip().rstrip('.')})" if (reason or "").strip() else ""
-            jn.post("activities", note_body(job.jn_job_id, f"{'@' + rep + ' ' if rep else ''}{word} moved{when}{why}{to}"))
-        closed = 0
-        if old_day:
-            for t in _list(jn.get("tasks", {"filter": filt, "size": 200}), "results", "tasks"):
-                if (t.get("record_type_name") == BUILD_BLOCK_TYPE and not t.get("is_completed")
-                        and t.get("date_start") and datetime.fromtimestamp(t["date_start"], LOCAL_TZ).date() == old_day):
-                    jn.put(f"tasks/{t['jnid']}", {"is_completed": True})
-                    closed += 1
+            jn.post("activities", note_body(job.jn_job_id, moved_note_text(job, jn_job, old_day, reason, moving_to)))
+        closed = _close_build_blocks(jn, filt, old_day)
         job.jn_push_steps = None
         job.jn_push_error = None
         db.commit()
@@ -663,6 +679,53 @@ def move(db: Session, job: Job, new_day: date, who: str, reason: str, jn: JN | N
         _push_lock.release()
 
 
+def _active_work_orders(jn: "JN", job: Job) -> list[dict]:
+    filt = json.dumps({"must": [{"term": {"related.id": job.jn_job_id}}]})
+    return [w for w in _list(jn.get("v2/workorders", {"filter": filt, "size": 50}), "results", "workorders")
+            if isinstance(w, dict) and w.get("is_active") is not False and not w.get("is_archived")]
+
+
+def _move_in_place(db: Session, job: Job, booked: list[dict], new_day: date, crew: Crew, pm: PM, who: str,
+                   reason: str, jn: "JN", lookups: "Lookups") -> dict:
+    """Move a booked job by changing only its dates. The work order stays at Pending Start, so the Build Day
+    email and the 1-hour "you're on the calendar" text don't go again; the Reschedule Reason set in the same
+    change makes JobNimbus send the one "your build day moved" email and text (fires on a start date change).
+    Only the main work order gets the reason, so the customer hears about it once."""
+    from backend import activity
+    from backend.services.jobnimbus import note_body
+    jn_job = jn.get(f"jobs/{job.jn_job_id}") or {}
+    filt = json.dumps({"must": [{"term": {"related.id": job.jn_job_id}}]})
+    old_day = job.jn_start_date
+    if not old_day and booked[0].get("date_start"):
+        old_day = datetime.fromtimestamp(booked[0]["date_start"], LOCAL_TZ).date()
+    start = local_midnight(new_day)
+    last_day = new_day + timedelta(days=max(1, build_days(job, crew)) - 1)
+    dates = {"date_start": start, "all_day": True,
+             "all_day_start_date": new_day.isoformat(), "all_day_end_date": last_day.isoformat()}
+    main = pick_work_order(job, booked) if len(booked) > 1 else booked[0]
+    for w in sorted(booked, key=lambda w: w is main):  # the main one last, after the others are quiet
+        jn.put(f"v2/workorders/{w['jnid']}", {"jnid": w["jnid"], **dates,
+               RESCHEDULE_FIELD: reschedule_category(reason) if w is main else ""})
+    body = dict(dates)
+    if (jn_job.get("date_end") or 0) and jn_job["date_end"] < start:
+        body["date_end"] = 0  # an old end date before the new start makes JobNimbus fail (500)
+    jn.put(f"jobs/{job.jn_job_id}", body)
+    jn.post("activities", note_body(job.jn_job_id, moved_note_text(job, jn_job, old_day, reason, new_day)))
+    _close_build_blocks(jn, filt, old_day)
+    if jn_job.get("sales_rep"):
+        jn.post("tasks", _build_block_body(job, jn_job["sales_rep"], new_day, lookups))
+    job.planned_date, job.planned_crew_id, job.planned_pm_id = new_day, crew.id, pm.id
+    job.planned_by, job.planned_at = who, datetime.utcnow()
+    job.jn_start_date = new_day  # the Weekly Plan shows the new day now, not after the next sync
+    job.jn_push_steps = {"date": new_day.isoformat(), "by": who, **{s: True for s in STEPS}}
+    job.jn_push_error = None
+    db.commit()
+    activity.write("job", "jobnimbus", "Moved in JobNimbus",
+                   detail=f"{job.customer_name}: {old_day or '?'} -> {new_day}, by {who}. {reason or ''}".strip())
+    return {"job_id": job.id, "customer_name": job.customer_name, "status": "booked", "moved_in_place": True,
+            "work_order": main.get("number")}
+
+
 def _move(db: Session, job: Job, new_day: date, who: str, reason: str, jn: JN | None, ai_client) -> dict:
     steps = job.jn_push_steps or {}
     if steps.get("date") == new_day.isoformat() and all(steps.get(s) for s in STEPS):
@@ -678,6 +741,19 @@ def _move(db: Session, job: Job, new_day: date, who: str, reason: str, jn: JN | 
         return {"status": "failed", "reason": "Can't tell which crew is on it. Use Not Built, then plan it again."}
     if not pm:
         return {"status": "failed", "reason": "Can't tell which PM is on it. Use Not Built, then plan it again."}
+    if not allowed(job):
+        return {"status": "skipped", "reason": "Sending to JobNimbus is turned off for this job."}
+    try:
+        booked = [w for w in _active_work_orders(jn, job) if (w.get("status_name") or "").strip().lower() == WO_PENDING]
+        if booked:
+            return _move_in_place(db, job, booked, new_day, crew, pm, who, reason, jn, lookups)
+    except BookingError as e:
+        return _failed(db, job, str(e))
+    except Exception as e:  # noqa: BLE001
+        logger.exception(f"Move failed for job {job.id}")
+        return {**_failed(db, job, f"JobNimbus didn't accept a change ({type(e).__name__}). Check the job in "
+                                   f"JobNimbus before trying again."), "jn_error": True}
+    # Not on JobNimbus's calendar (yet): book it fresh on the new day
     out = unbook(db, job, who, reason, jn=jn, lookups=lookups, moving_to=new_day)
     if out["status"] != "unbooked":
         return out

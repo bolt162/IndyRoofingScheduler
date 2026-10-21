@@ -395,43 +395,51 @@ def test_unbook_respects_the_switch(db, monkeypatch):
     assert B.unbook(db, job, "Greg", "Weather", jn=jn)["status"] == "skipped" and jn.writes() == []
 
 
-def test_move_takes_it_off_and_books_the_new_day_with_the_same_crew(db):
+def test_move_changes_only_the_dates_so_the_build_day_messages_dont_go_again(db):
     job = planned_job(db, bucket="scheduled", jn_status="Pending Start Date", jn_start_date=BUILD,
                       jn_crews=["DCT Construction - Roof Crew"], jn_pm="Luke Mroz")
     job.planned_crew_id = job.planned_pm_id = None
     db.commit()
-    state = {"booked": True}
     jn = booked_jn()
-    orig_get, orig_put = jn.get, jn.put
-
-    def get(e, p=None):
-        r = orig_get(e, p)
-        if e == "v2/workorders" and not state["booked"]:
-            r["results"][0]["status_name"] = "Schedule"
-        if e == f"jobs/{JOB}" and not state["booked"]:
-            r["status_name"] = "Schedule Job"
-        return r
-
-    def put(e, b):
-        if e == f"jobs/{JOB}" and b.get("status") == 446:
-            state["booked"] = False
-        return orig_put(e, b)
-    jn.get, jn.put = get, put
     new_day = date(2030, 11, 5)
     out = B.move(db, job, new_day, "Greg", "Customer asked", jn=jn)
-    assert out["status"] == "booked", out
+    assert out["status"] == "booked" and out["moved_in_place"], out
     w = jn.writes()
-    assert w[0][2]["status"] == 471                       # off the calendar first
-    assert w[0][2]["Reschedule Reason"] == ""             # no "taken off" messages on a move
-    note = next(c for c in w if c[1] == "activities")[2]["note"]
-    assert note == "@PatRep roof moved off Tuesday 10/29 (Customer asked), moving to Tuesday 11/5"
-    wo_date = next(c for c in w if c[1] == "v2/workorders/wo1" and c[2].get("all_day"))
-    assert wo_date[2]["all_day_start_date"] == "2030-11-05"
-    assert [s["id"] for s in wo_date[2]["subcontractors"]] == ["dct", "luke_sub"]
-    # Set before the status change: JobNimbus sends the "moved, as you asked" messages, not Build Day
-    assert wo_date[2]["Reschedule Reason"] == "Customer request"
-    assert w.index(wo_date) < w.index(("PUT", "v2/workorders/wo1", {"jnid": "wo1", "status": 472}))
-    assert ("PUT", "v2/workorders/wo1", {"jnid": "wo1", "status": 472}) in w   # back to Pending Start: fresh messages
+    # The work order never leaves Pending Start: no status in any change, so no Build Day email or 1-hour text
+    assert not any("status" in c[2] for c in w if c[1].startswith(("v2/workorders", "jobs/")))
+    assert w[0] == ("PUT", "v2/workorders/wo1", {
+        "jnid": "wo1", "date_start": B.local_midnight(new_day), "all_day": True,
+        "all_day_start_date": "2030-11-05", "all_day_end_date": "2030-11-05",
+        "Reschedule Reason": "Customer request"})   # the date change + reason sends the "moved" messages
+    assert w[1][1] == f"jobs/{JOB}" and w[1][2]["all_day_start_date"] == "2030-11-05"
+    assert w[2][2]["note"] == "@PatRep roof moved off Tuesday 10/29 (Customer asked), moving to Tuesday 11/5"
+    assert ("PUT", "tasks/bb", {"is_completed": True}) in w          # old day's Build Block done
+    bb = next(c for c in w if c[1] == "tasks" and c[0] == "POST")[2]
+    assert bb["date_start"] == B.local_ts(new_day, 16) and bb["owners"] == [{"id": "rep1"}]
+    assert job.jn_start_date == new_day and job.jn_push_steps["date"] == "2030-11-05"
+    # A second click on the same day does nothing
+    n = len(jn.writes())
+    assert B.move(db, job, new_day, "Greg", "Customer asked", jn=jn)["reason"] == "Already booked on that day."
+    assert len(jn.writes()) == n
+
+
+def test_move_tells_the_customer_once_when_two_work_orders_are_booked(db):
+    job = planned_job(db, bucket="scheduled", jn_status="Pending Start Date", jn_start_date=BUILD)
+    gutters = {"jnid": "wo3", "number": "WO-11855", "record_type_name": "Gutters", "status_name": "Pending Start",
+               "is_active": True, "date_start": MIDNIGHT}
+    jn = booked_jn(extra_wos=[gutters])
+    assert B.move(db, job, date(2030, 11, 5), "Greg", "Weather", jn=jn)["status"] == "booked"
+    wo_puts = [c for c in jn.writes() if c[1].startswith("v2/workorders/")]
+    assert [(c[1], c[2]["Reschedule Reason"]) for c in wo_puts] == [
+        ("v2/workorders/wo3", ""), ("v2/workorders/wo1", "Weather")]   # main one last, the only one with a reason
+
+
+def test_move_books_fresh_when_jobnimbus_has_nothing_booked(db):
+    job = planned_job(db, bucket="scheduled", jn_status="Schedule Job", jn_start_date=None)
+    jn = FakeJN(wo_status="Schedule")
+    out = B.move(db, job, date(2030, 11, 5), "Greg", "Weather", jn=jn)
+    assert out["status"] == "booked" and not out.get("moved_in_place")
+    assert ("PUT", "v2/workorders/wo1", {"jnid": "wo1", "status": 472}) in jn.writes()
 
 
 def test_move_refuses_a_day_in_the_past(db):
