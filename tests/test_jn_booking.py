@@ -481,3 +481,36 @@ def test_a_normal_push_clears_the_reschedule_reason(db):
     assert B.book_job(db, job, "Greg", jn=jn)["status"] == "booked"
     wo_date = next(c for c in jn.writes() if c[1] == "v2/workorders/wo1" and c[2].get("all_day"))
     assert wo_date[2]["Reschedule Reason"] == ""   # so the usual Build Day email goes
+
+
+def test_a_plan_is_cleared_when_jobnimbus_has_the_work_order_booked_but_the_job_status_lags(db):
+    # Greg books the work order by hand (or the job's status hasn't caught up): the job is still
+    # To Schedule, but JobNimbus has it booked. The old plan must not sit in the Push count.
+    from backend.services import jobnimbus as jnapi
+    job = planned_job(db)
+    wo = {"number": "WO-11853", "trade": "Roofing", "status": "Pending Start", "start": "2030-11-17",
+          "crews": [], "pm": None, "internal_note": "", "customer_note": "", "labor": []}
+    jnapi._apply_calendar(job, {}, [wo], None, "")
+    assert job.bucket == "to_schedule" and job.planned_date is None
+    assert job.jn_start_date == date(2030, 11, 17)
+
+
+def test_a_plan_stays_while_the_work_order_is_not_booked(db):
+    from backend.services import jobnimbus as jnapi
+    job = planned_job(db)
+    wo = {"number": "WO-11853", "trade": "Roofing", "status": "Schedule", "start": None,
+          "crews": [], "pm": None, "internal_note": "", "customer_note": "", "labor": []}
+    jnapi._apply_calendar(job, {}, [wo], None, "")
+    assert job.planned_date == BUILD
+
+
+def test_not_built_clears_the_plan_for_the_day_it_missed(db):
+    from types import SimpleNamespace
+    from backend.routers.jobs import mark_not_built
+    from backend.schemas.job import NotBuiltRequest
+    job = planned_job(db, jn_status="Schedule Job", rescheduled_count=0, priority_bump=0.0)
+    mark_not_built(job.id, NotBuiltRequest(reason="Weather Pre-Build"), db=db,
+                   user=SimpleNamespace(email=None, name="Greg"))
+    db.refresh(job)
+    assert job.bucket == "to_schedule" and job.planned_date is None and job.planned_crew_id is None
+    assert B.candidates(db) == []   # not left in the Push to JobNimbus count

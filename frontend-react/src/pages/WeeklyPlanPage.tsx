@@ -29,8 +29,17 @@ import { ReadyCheckBadge, readyBlocked, readyIssue } from '@/components/jobs/Rea
 import type { Job } from '@/types';
 
 /** Still waiting in the queue, so a day can be picked for it here. */
+const PUSH_STEPS = ['work_order', 'work_order_status', 'job_status', 'rep_note', 'build_block', 'tasks'];
+
+/** A push that told the customer but stopped before the last step; it stays on the plan so Push can finish it. */
+function pushInProgress(job: Job) {
+  const s = job.jn_push_steps ?? {};
+  return !!s.work_order_status && !PUSH_STEPS.every((k) => s[k]);
+}
+
+/** Same rule as the Push to JobNimbus count (jn_booking.candidates), so every job it counts shows here. */
 function isPlannable(job: Job) {
-  return job.bucket === 'to_schedule' || job.bucket === 'not_built';
+  return job.bucket === 'to_schedule' || job.bucket === 'not_built' || pushInProgress(job);
 }
 
 export function WeeklyPlanPage() {

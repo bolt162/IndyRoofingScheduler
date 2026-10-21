@@ -399,6 +399,10 @@ def mark_not_built(job_id: int, request: NotBuiltRequest, db: Session = Depends(
         jobnimbus_result = jn_booking.unbook(db, job, _person(db, user), why)
     job.bucket = JobBucket.NOT_BUILT.value
     job.not_built_reason = request.reason
+    # The day it was planned for is gone: back to the queue with no plan, or it stays counted in
+    # Push to JobNimbus (the test job sat there after Greg's Not Built, 2026-10-21)
+    job.planned_date = job.planned_pm_id = job.planned_crew_id = job.planned_by = job.planned_at = None
+    job.planned_days = None
     job.rescheduled_count += 1
     job.priority_bump += 5.0  # elevated priority on return to queue
     db.commit()

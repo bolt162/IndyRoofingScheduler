@@ -472,8 +472,13 @@ def _apply_calendar(job: Job, jn_data: dict, work_orders: list[dict] | None,
         job.jn_start_date = schedule_sync._date(jn_data.get("date_start"))
     # Once JobNimbus books it (or it moves on), the plan made in the app is done.
     # A push to JobNimbus that stopped halfway keeps its plan so the button can finish it.
+    # A work order at Pending Start counts as booked even when the job's own status hasn't caught up
+    # (Greg booking by hand, e.g. Patrick Lamb 2026-10-20): a plan left over from before would sit in the
+    # Push to JobNimbus count but show nowhere on the Weekly Plan.
     from backend.services.jn_booking import in_progress
-    if job.planned_date and job.bucket not in PLANNABLE_BUCKETS and not in_progress(job):
+    booked_in_jn = any((w.get("status") or "").strip().lower() == schedule_sync.PENDING_START
+                       for w in job.jn_work_orders or []) if work_orders is not None else False
+    if job.planned_date and (job.bucket not in PLANNABLE_BUCKETS or booked_in_jn) and not in_progress(job):
         job.planned_date = job.planned_pm_id = job.planned_crew_id = job.planned_by = job.planned_at = None
         job.planned_days = None
         job.jn_push_steps = job.jn_push_error = None
