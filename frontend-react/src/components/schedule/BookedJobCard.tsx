@@ -1,4 +1,4 @@
-import { HardHat, Lock, MapPin } from 'lucide-react';
+import { CloudRain, HardHat, Lock, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Job } from '@/types';
 import { MoveBookingButton } from './MoveBookingButton';
@@ -49,6 +49,19 @@ export function BookedJobCard({ job }: { job: Job }) {
         {crews.length ? crews.join(', ') : 'No crew on the work order'}
         {wo && <span className="text-muted-foreground">· {wo.trade || 'Work order'} {wo.number}</span>}
       </p>
+      {(job.weather_status === 'do_not_build' || job.weather_status === 'scheduler_decision') && (
+        <p
+          className={cn(
+            'mt-1 flex items-start gap-1 text-[10px] leading-snug',
+            job.weather_status === 'do_not_build' ? 'text-red-700' : 'text-amber-800',
+          )}
+          title="From the weather check. Use Move or Not Built to change it; that updates JobNimbus and tells the customer."
+        >
+          <CloudRain className="mt-px h-3 w-3 shrink-0" />
+          {job.weather_status === 'do_not_build' ? "Forecast says don't build" : 'Weather is borderline'}
+          {job.weather_detail ? `: ${job.weather_detail}` : ''}
+        </p>
+      )}
       <MoveBookingButton job={job} />
     </div>
   );

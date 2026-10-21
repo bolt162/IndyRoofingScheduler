@@ -30,20 +30,20 @@ def _get_setting(db: Session, key: str, default: str = "") -> str:
 # Forecast retrieval — dual provider
 # ---------------------------------------------------------------------------
 
-def get_forecast(lat: float, lon: float, target_date: str | None = None) -> dict | None:
+def get_forecast(lat: float, lon: float, target_date: str | None = None, provider: str = "free") -> dict | None:
     """
-    Get weather forecast — tries Clarity Wx first (if configured),
-    falls back to Open-Meteo.  Returns normalized dict:
+    Get weather forecast. Returns normalized dict:
     { date, temp_max, temp_min, precipitation, wind_max, wind_gust,
       humidity, pop_am, pop_pm, tstorm_am, tstorm_pm, snow, ice, source }
+
+    provider="free" (default): Open-Meteo, for weekly looks (scoring, Suggest builds, the morning check).
+    provider="bamwx": Clarity Wx (BAM, paid) for one address, used only by the night-before and 5 AM
+    checks (Aaron, 2026-10-21); falls back to Open-Meteo when it isn't set up or has no answer.
     """
-    # Try Clarity Wx (Stage 2) first
-    if claritywx.is_configured():
+    if provider == "bamwx" and claritywx.is_configured():
         forecast = _get_claritywx_forecast(lat, lon, target_date)
         if forecast:
             return forecast
-
-    # Fallback to Open-Meteo (Stage 1)
     return _get_openmeteo_forecast(lat, lon, target_date)
 
 
@@ -62,10 +62,8 @@ def _get_claritywx_forecast(lat: float, lon: float, target_date: str | None = No
         if valid_at and valid_at[:10] == target:
             return claritywx.normalize_daily_forecast(day, target)
 
-    # If target date not found, use first day
-    if daily:
-        return claritywx.normalize_daily_forecast(daily[0], target)
-
+    # No forecast for that day: say so (the caller falls back). Using another day's forecast
+    # here once judged builds on the wrong day's weather.
     return None
 
 
@@ -259,12 +257,8 @@ def check_weather_for_job(
         return {"error": "Job has no coordinates — geocoding needed"}
 
     # Get forecast
-    if force_bamwx and claritywx.is_configured():
-        forecast = _get_claritywx_forecast(job.latitude, job.longitude, target_date)
-        if not forecast:
-            forecast = get_forecast(job.latitude, job.longitude, target_date)
-    else:
-        forecast = get_forecast(job.latitude, job.longitude, target_date)
+    forecast = get_forecast(job.latitude, job.longitude, target_date,
+                            provider="bamwx" if force_bamwx else "free")
 
     if not forecast:
         return {"error": "Could not retrieve forecast"}
@@ -301,20 +295,19 @@ def check_all_scheduled_jobs(db: Session) -> dict:
 
     Returns: { results: [...], rolled_back: [...], scheduler_decision: [...] }
     """
-    jobs = db.query(Job).filter(Job.bucket == JobBucket.SCHEDULED.value).all()
+    jobs = [j for j in db.query(Job).filter(Job.bucket == JobBucket.SCHEDULED.value).all() if build_date(j)]
     results = []
     rolled_back = []
     needs_decision = []
 
     for job in jobs:
-        target = str(job.date_scheduled) if job.date_scheduled else None
-        result = check_weather_for_job(db, job.id, target)
+        result = check_weather_for_job(db, job.id, str(build_date(job)))
         results.append(result)
 
         status = result.get("status")
         if status == "do_not_build":
-            # Auto-rollback per spec §6.3 line 264
-            _auto_rollback_job(db, job, result.get("detail", ""))
+            # Flagged, not pulled: see flag_do_not_build
+            flag_do_not_build(db, job, result.get("detail", ""), "Weather check")
             rolled_back.append({
                 "job_id": job.id,
                 "customer_name": job.customer_name,
@@ -334,6 +327,25 @@ def check_all_scheduled_jobs(db: Session) -> dict:
         "scheduler_decision": needs_decision,
         "total_checked": len(jobs),
     }
+
+
+def build_date(job: Job):
+    """The day the build is booked for: JobNimbus's work order date, else the job's scheduled date."""
+    return job.jn_start_date or job.date_scheduled
+
+
+def flag_do_not_build(db: Session, job: Job, detail: str, check: str) -> None:
+    """A booked build the forecast says not to build. Builds are booked in JobNimbus now, so pulling it
+    in the app alone would leave JobNimbus and the customer thinking it's on (and the next sync puts it
+    back). Instead it's flagged on the Weekly Plan card and in the Activity Log; the scheduler uses
+    Move or Not Built, which update JobNimbus and tell the customer."""
+    from backend import activity
+    job.weather_status = "do_not_build"
+    job.weather_detail = detail
+    db.commit()
+    activity.write("job", "weather", f"{check}: forecast says don't build", status="error",
+                   job_id=job.id,
+                   detail=f"{job.customer_name}, {build_date(job)}: {detail}. Use Move or Not Built on the Weekly Plan.")
 
 
 def _auto_rollback_job(db: Session, job: Job, weather_detail: str):
