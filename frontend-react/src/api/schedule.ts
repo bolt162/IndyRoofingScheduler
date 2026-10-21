@@ -67,3 +67,42 @@ export function useMoveBooking() {
     },
   });
 }
+
+/** Suggest builds: pencil in the open days of a week around what's already planned or booked. */
+export function useSuggestBuilds() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { week_start: string; pm_ids?: number[] }) => {
+      const { data } = await api.post('/schedule/suggest', body, { timeout: 120000 });
+      return data as { suggested: { job_id: number }[]; waiting?: number; reason?: string };
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['jobs'] }),
+  });
+}
+
+/** Keep suggestions (they become normal plans) by job, or every one in a week. */
+export function useKeepSuggestions() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { job_ids?: number[]; week_start?: string }) => {
+      const { data } = await api.post('/schedule/suggestions/keep', body);
+      return data as { kept: number };
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['jobs'] });
+      qc.invalidateQueries({ queryKey: ['pushPreview'] });
+    },
+  });
+}
+
+/** Dismiss suggestions by job, or every one in a week. */
+export function useClearSuggestions() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: { job_ids?: number[]; week_start?: string }) => {
+      const { data } = await api.post('/schedule/suggestions/clear', body);
+      return data as { cleared: number };
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['jobs'] }),
+  });
+}

@@ -482,6 +482,10 @@ def _apply_calendar(job: Job, jn_data: dict, work_orders: list[dict] | None,
         job.planned_date = job.planned_pm_id = job.planned_crew_id = job.planned_by = job.planned_at = None
         job.planned_days = None
         job.jn_push_steps = job.jn_push_error = None
+    # A suggestion only means something while the job is still waiting
+    if job.suggested_date and (job.bucket not in PLANNABLE_BUCKETS or booked_in_jn or job.planned_date):
+        from backend.services.suggest import clear_job
+        clear_job(job)
     if activities is not None:
         job.ready_input = schedule_sync.build_ready_input(description, activities, job.jn_work_orders or [])
 

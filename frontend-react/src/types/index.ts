@@ -155,6 +155,12 @@ export interface Job {
   jn_push_error: string | null;
   planned_by: string | null;
   planned_at: string | null;
+  // "Suggest builds": pencilled in, not a plan until someone keeps it
+  suggested_date: string | null;
+  suggested_crew_id: number | null;
+  suggested_pm_id: number | null;
+  suggested_days: number | null;
+  suggested_why: string | null;
   // Notes ready check
   ready_status: ReadyStatus | null;
   ready_flags: ReadyFlag[] | null;

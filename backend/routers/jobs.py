@@ -240,6 +240,9 @@ def update_job(job_id: int, update: JobUpdate, db: Session = Depends(get_db),
             if update_data["planned_date"] != job.planned_date:
                 job.planned_at = datetime.utcnow()
                 job.planned_by = (user.name or user.email) if user else None
+            # Planned for real now (a suggestion dragged to a day, or any job): no suggestion left over
+            from backend.services.suggest import clear_job
+            clear_job(job)
         else:
             update_data["planned_pm_id"] = update_data["planned_crew_id"] = update_data["planned_days"] = None
             job.planned_by = job.planned_at = None
@@ -403,6 +406,8 @@ def mark_not_built(job_id: int, request: NotBuiltRequest, db: Session = Depends(
     # Push to JobNimbus (the test job sat there after Greg's Not Built, 2026-10-21)
     job.planned_date = job.planned_pm_id = job.planned_crew_id = job.planned_by = job.planned_at = None
     job.planned_days = None
+    from backend.services.suggest import clear_job
+    clear_job(job)
     job.rescheduled_count += 1
     job.priority_bump += 5.0  # elevated priority on return to queue
     db.commit()

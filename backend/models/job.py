@@ -172,6 +172,13 @@ class Job(Base):
     crew_notes_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     planned_by: Mapped[str | None] = mapped_column(String(255), nullable=True)
     planned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # "Suggest builds" on the Weekly Plan (services/suggest.py): a day, crew and PM pencilled in for the
+    # scheduler to Keep (copied into planned_*) or dismiss. Never sent to JobNimbus until it's kept.
+    suggested_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    suggested_crew_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    suggested_pm_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    suggested_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    suggested_why: Mapped[str | None] = mapped_column(String(255), nullable=True)
     # Push to JobNimbus (services/jn_booking.py): {date, by, work_order, work_order_status, ...}, one key
     # per finished step so a push that stopped halfway never repeats one. jn_push_error: why it stopped.
     jn_push_steps: Mapped[dict | None] = mapped_column(JSON, nullable=True)

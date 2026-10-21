@@ -288,6 +288,12 @@ def _migrate_job_columns():
             "ready_decision_by": "VARCHAR(255)",
             "ready_decision_at": "TIMESTAMP",
             "ready_decision_note": "TEXT",
+            # Suggest builds (2026-10-21)
+            "suggested_date": "DATE",
+            "suggested_crew_id": "INTEGER",
+            "suggested_pm_id": "INTEGER",
+            "suggested_days": "INTEGER",
+            "suggested_why": "VARCHAR(255)",
         }
         for name, col_type in columns.items():
             if name in existing:

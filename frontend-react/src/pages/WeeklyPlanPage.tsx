@@ -11,7 +11,7 @@ import {
 } from '@dnd-kit/core';
 import { toast } from 'sonner';
 import {
-  ChevronLeft, ChevronRight, Check,
+  ChevronLeft, ChevronRight, Check, Sparkles, X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -20,7 +20,9 @@ import { DayColumn } from '@/components/schedule/DayColumn';
 import { UnassignedJobRow } from '@/components/schedule/UnassignedJobRow';
 import { PushToJobNimbus } from '@/components/schedule/PushToJobNimbus';
 import { useJobs, useReadyOpen, useUpdateJob } from '@/api/jobs';
-import { useSchedulePlans, useConfirmPlan } from '@/api/schedule';
+import {
+  useSchedulePlans, useConfirmPlan, useSuggestBuilds, useKeepSuggestions, useClearSuggestions,
+} from '@/api/schedule';
 import { usePMs } from '@/api/settings';
 import { useUIStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
@@ -50,6 +52,9 @@ export function WeeklyPlanPage() {
   const { data: pms } = usePMs();
   const updateJob = useUpdateJob();
   const confirmPlan = useConfirmPlan();
+  const suggestBuilds = useSuggestBuilds();
+  const keepSuggestions = useKeepSuggestions();
+  const clearSuggestions = useClearSuggestions();
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -76,7 +81,7 @@ export function WeeklyPlanPage() {
   // here that haven't been sent to JobNimbus yet. Plans live apart from the booking so the
   // 15-minute JobNimbus sync never erases them.
   const daysByKey = useMemo(() => {
-    const map: Record<string, { booked: Job[]; planned: Job[] }> = {};
+    const map: Record<string, { booked: Job[]; planned: Job[]; suggested: Job[] }> = {};
     weekDays.forEach((d) => {
       const key = format(d, 'yyyy-MM-dd');
       map[key] = {
@@ -84,6 +89,7 @@ export function WeeklyPlanPage() {
           (j) => j.bucket === 'scheduled' && (j.jn_start_date ?? j.date_scheduled) === key,
         ),
         planned: (allJobs ?? []).filter((j) => j.planned_date === key && isPlannable(j)),
+        suggested: (allJobs ?? []).filter((j) => j.suggested_date === key && !j.planned_date && isPlannable(j)),
       };
     });
     return map;
@@ -112,7 +118,7 @@ export function WeeklyPlanPage() {
   const unassignedJobs = useMemo(
     () =>
       (allJobs ?? [])
-        .filter((j) => j.bucket === 'to_schedule' && !j.planned_date)
+        .filter((j) => j.bucket === 'to_schedule' && !j.planned_date && !j.suggested_date)
         .sort((a, b) => b.score - a.score),
     [allJobs]
   );
@@ -122,6 +128,26 @@ export function WeeklyPlanPage() {
     () => (allJobs ?? []).filter((j) => j.planned_date && isPlannable(j)).length,
     [allJobs]
   );
+
+  const weekKey = format(selectedWeekStart, 'yyyy-MM-dd');
+  const weekSuggested = useMemo(
+    () => Object.values(daysByKey).reduce((n, d) => n + d.suggested.length, 0),
+    [daysByKey],
+  );
+
+  const handleSuggest = async () => {
+    try {
+      const res = await suggestBuilds.mutateAsync({
+        week_start: weekKey,
+        ...(selectedPMIds.length ? { pm_ids: selectedPMIds } : {}),
+      });
+      const n = res.suggested.length;
+      if (n === 0) toast.info(res.reason ?? 'No open slots to fill this week.');
+      else toast.success(`Suggested ${n} build${n > 1 ? 's' : ''}. Nothing is saved until you keep them.`);
+    } catch {
+      toast.error("Couldn't suggest builds. Try again.");
+    }
+  };
 
   // Draft plans for this week
   const weekDraftPlans = useMemo(
@@ -162,6 +188,8 @@ export function WeeklyPlanPage() {
     if (over.id === 'unassigned' || over.data.current?.unassigned) {
       if (job.planned_date) {
         await unscheduleJob(job);
+      } else if (job.suggested_date) {
+        await clearSuggestions.mutateAsync({ job_ids: [job.id] }).catch(() => toast.error("Couldn't remove the suggestion."));
       }
       return;
     }
@@ -171,17 +199,19 @@ export function WeeklyPlanPage() {
     const dayStr = over.data.current?.date as string | undefined;
     if (!dayStr) return;
 
-    // Require exactly one PM selected to assign jobs
-    if (selectedPMIds.length === 0) {
+    // A suggestion dragged to a day keeps its suggested PM and crew unless one PM is picked
+    const fromSuggestion = !job.planned_date && !!job.suggested_date;
+    const useSuggestedPm = fromSuggestion && selectedPMIds.length !== 1 && !!job.suggested_pm_id;
+    if (!useSuggestedPm && selectedPMIds.length === 0) {
       toast.error('Select a PM from the header before scheduling jobs');
       return;
     }
-    if (selectedPMIds.length > 1) {
+    if (!useSuggestedPm && selectedPMIds.length > 1) {
       toast.error('Select exactly one PM to assign this job to');
       return;
     }
 
-    const assignedPmId = selectedPMIds[0];
+    const assignedPmId = useSuggestedPm ? job.suggested_pm_id! : selectedPMIds[0];
     const pmName = activePMs.find((p) => p.id === assignedPmId)?.name ?? '';
 
     // No-Build Dates: the customer asked us not to build then — make the scheduler confirm
@@ -213,6 +243,7 @@ export function WeeklyPlanPage() {
         update: {
           planned_date: dayStr,
           planned_pm_id: assignedPmId,
+          ...(fromSuggestion && job.suggested_crew_id ? { planned_crew_id: job.suggested_crew_id } : {}),
           ...(clash ? { override_no_build: true } : {}),
         },
       });
@@ -336,7 +367,7 @@ export function WeeklyPlanPage() {
                   {format(selectedWeekStart, 'MMM d')} – {format(addDays(selectedWeekStart, 6), 'MMM d')}
                 </p>
                 <p className="text-[10px] text-muted-foreground">
-                  Gray = booked in JobNimbus · Dashed = planned here, not sent yet
+                  Gray = booked in JobNimbus · Dashed = planned here, not sent yet · Dotted = suggested, not saved
                 </p>
               </div>
               <Button variant="outline" size="icon" onClick={nextWeek}>
@@ -365,6 +396,52 @@ export function WeeklyPlanPage() {
               </div>
 
               <Separator orientation="vertical" className="h-6 hidden sm:block" />
+
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={handleSuggest}
+                  disabled={suggestBuilds.isPending}
+                  title="Pencil in the open days this week, around what's already planned or booked. Nothing is saved or sent."
+                >
+                  <Sparkles className="mr-1 h-3.5 w-3.5" />
+                  {suggestBuilds.isPending ? 'Suggesting…' : 'Suggest builds'}
+                </Button>
+                {weekSuggested > 0 && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 text-xs"
+                      disabled={keepSuggestions.isPending}
+                      onClick={async () => {
+                        try {
+                          const r = await keepSuggestions.mutateAsync({ week_start: weekKey });
+                          toast.success(`Kept ${r.kept}. They're planned now; push them when you're ready.`);
+                        } catch {
+                          toast.error("Couldn't keep them. Try again.");
+                        }
+                      }}
+                    >
+                      <Check className="mr-1 h-3.5 w-3.5" />
+                      Keep all ({weekSuggested})
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-xs text-muted-foreground"
+                      disabled={clearSuggestions.isPending}
+                      onClick={() => clearSuggestions.mutateAsync({ week_start: weekKey })
+                        .catch(() => toast.error("Couldn't clear them. Try again."))}
+                    >
+                      <X className="mr-1 h-3.5 w-3.5" />
+                      Clear suggestions
+                    </Button>
+                  </>
+                )}
+              </div>
 
               <PushToJobNimbus plannedCount={plannedCount} />
 
@@ -395,6 +472,7 @@ export function WeeklyPlanPage() {
                     date={day}
                     jobs={daysByKey[key]?.planned ?? []}
                     booked={daysByKey[key]?.booked ?? []}
+                    suggested={daysByKey[key]?.suggested ?? []}
                     pms={activePMs}
                     pmJobCounts={pmJobCountsByDay[key] ?? {}}
                     isToday={isToday(day)}

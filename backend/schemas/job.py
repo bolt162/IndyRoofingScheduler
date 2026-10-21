@@ -70,6 +70,11 @@ class JobResponse(JobBase):
     jn_push_error: str | None = None
     planned_by: str | None = None
     planned_at: datetime | None = None
+    suggested_date: date | None = None
+    suggested_crew_id: int | None = None
+    suggested_pm_id: int | None = None
+    suggested_days: int | None = None
+    suggested_why: str | None = None
     ready_status: str | None = None
     ready_flags: list[dict] | None = None
     ready_checked_at: datetime | None = None

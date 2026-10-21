@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -93,3 +93,45 @@ def push_to_jobnimbus(request: PushRequest, db: Session = Depends(get_db),
     if result["busy"]:
         raise HTTPException(status_code=409, detail="Someone is already sending jobs to JobNimbus. Try again in a minute.")
     return result
+
+
+# --- Suggest builds: pencil in the rest of a week; nothing is saved as a plan until it's kept ---
+
+class SuggestRequest(BaseModel):
+    week_start: date
+    pm_ids: list[int] | None = None
+
+
+class SuggestionsRequest(BaseModel):
+    job_ids: list[int] | None = None
+    week_start: date | None = None
+
+
+@router.post("/suggest")
+def suggest_builds(request: SuggestRequest, db: Session = Depends(get_db),
+                   user: ClerkUser = Depends(get_approved_user)):
+    from backend.services import suggest
+    return suggest.suggest_week(db, request.week_start, pm_ids=request.pm_ids)
+
+
+@router.post("/suggestions/keep")
+def keep_suggestions(request: SuggestionsRequest, db: Session = Depends(get_db),
+                     user: ClerkUser = Depends(get_approved_user)):
+    from backend.models.job import Job
+    from backend.routers.jobs import _person
+    from backend.services import suggest
+    ids = request.job_ids
+    if ids is None and request.week_start:
+        monday = request.week_start - timedelta(days=request.week_start.weekday())
+        ids = [j.id for j in db.query(Job).filter(Job.suggested_date >= monday,
+                                                  Job.suggested_date < monday + timedelta(days=7)).all()]
+    return {"kept": suggest.keep(db, ids or [], _person(db, user))}
+
+
+@router.post("/suggestions/clear")
+def clear_suggestions(request: SuggestionsRequest, db: Session = Depends(get_db),
+                      user: ClerkUser = Depends(get_approved_user)):
+    from backend.services import suggest
+    if request.job_ids is None and request.week_start is None:
+        raise HTTPException(status_code=400, detail="Say which jobs or which week.")
+    return {"cleared": suggest.clear(db, week_start=request.week_start, job_ids=request.job_ids)}
