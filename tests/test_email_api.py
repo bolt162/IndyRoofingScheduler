@@ -48,7 +48,7 @@ def add_queued_job(Session):
     db.commit()
     for mode in ("test", "live"):
         st = R.S.new_state(job.id, mode)
-        st.entered_queue_at = datetime.utcnow() - timedelta(days=20)
+        st.entered_queue_at = datetime.utcnow() - timedelta(days=3)
         db.add(st)
     db.commit()
     job_id = job.id

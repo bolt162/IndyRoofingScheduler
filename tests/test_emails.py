@@ -171,6 +171,29 @@ def test_unwelcomed_job_gets_welcome_first():
     assert d.template == K.WELCOME
 
 
+def test_late_add_skips_welcome_and_picks_up_at_its_week():
+    st = S.new_state(1)
+    st.entered_queue_at = NOW - timedelta(days=24)  # 3 weeks waiting, email just added
+    assert S.welcome_decision(ctx(), st, job(), NOW).template is None
+    d = S.weekly_decision(ctx(jobs_ahead=20), st, job(), NOW)
+    assert d.template == "week_3"
+    S.apply_sent(st, d, ctx(jobs_ahead=20), NOW)
+    assert st.welcome_sent and st.sequence_week == 3
+    assert S.weekly_decision(ctx(jobs_ahead=18), st, job(), NOW + timedelta(days=7)).template == "week_4"
+
+
+def test_late_add_past_two_months_goes_to_rotation():
+    st = S.new_state(1)
+    st.entered_queue_at = NOW - timedelta(days=80)
+    assert S.weekly_decision(ctx(jobs_ahead=20), st, job(), NOW).template == "week_8"
+
+
+def test_late_add_near_front_still_gets_getting_close():
+    st = S.new_state(1)
+    st.entered_queue_at = NOW - timedelta(days=30)
+    assert S.weekly_decision(ctx(jobs_ahead=2), st, job(), NOW).template == K.GETTING_CLOSE
+
+
 def test_one_email_per_week():
     st = welcomed_state(last_counted_email_at=NOW - timedelta(days=1))
     assert S.weekly_decision(ctx(), st, job(), NOW).template is None

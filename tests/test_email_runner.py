@@ -87,7 +87,7 @@ def test_off_mode_sends_nothing_and_records_no_progress(db, jn, outbox):
 
 
 def test_test_mode_progress_never_counts_as_live(db, jn, outbox):
-    job = add_job(db, jn, "Jane Smith", entered=THU - timedelta(days=30))
+    job = add_job(db, jn, "Jane Smith", entered=THU - timedelta(days=3))
     R.run_weekly(db, THU, mode="test")
     assert [s["template"] for s in outbox] == ["welcome"]
     assert st(db, job, "test").welcome_sent and not st(db, job, "live").welcome_sent
@@ -116,14 +116,14 @@ def test_weekly_sequence_over_weeks(db, jn, outbox, monkeypatch):
     monkeypatch.setenv("EMAIL_TEST_MAX_PER_RUN", "100")
     for i in range(12):  # a realistic line ahead of her, so she isn't "getting close"
         add_job(db, jn, f"Ahead{i} Owner", entered=THU - timedelta(days=200 - i))
-    jane = add_job(db, jn, "Jane Smith", entered=THU - timedelta(days=30))
+    jane = add_job(db, jn, "Jane Smith", entered=THU - timedelta(days=3))
     for week in range(4):
         R.run_weekly(db, THU + timedelta(days=7 * week), mode="test")
     assert [s["template"] for s in outbox if s["job_id"] == jane.id] == ["welcome", "week_1", "week_2", "week_3"]
 
 
 def test_alone_in_line_gets_getting_close_after_welcome(db, jn, outbox):
-    jane = add_job(db, jn, "Jane Smith", entered=THU - timedelta(days=30))
+    jane = add_job(db, jn, "Jane Smith", entered=THU - timedelta(days=3))
     R.run_weekly(db, THU, mode="test")
     R.run_weekly(db, THU + timedelta(days=7), mode="test")
     assert [s["template"] for s in outbox] == ["welcome", "getting_close"]

@@ -6,7 +6,8 @@ Weekly (Thursday 10:00 AM) priority, per the handoff spec 4.4:
   2. 3 or fewer ahead, never rescheduled, not yet sent -> Getting close
   3. office turned on weather slowdown this week       -> Weather slowdown
   4. next email in the trade's sequence (weeks 1-8, then rotation)
-A job that never got a Welcome (e.g. it was already queued at launch) gets the Welcome first.
+A job that never got a Welcome gets the Welcome first, unless it has already waited a week or more
+(e.g. the email address was added late): then it skips the Welcome and picks up at its week.
 """
 from dataclasses import dataclass
 from datetime import datetime, date, timedelta
@@ -26,6 +27,11 @@ DONE_BUCKETS = {"other_trades", "primary_completed", "completed", "archived"}
 
 # A counted email in the last 6 days means "already emailed this week"
 WEEK_WINDOW = timedelta(days=6)
+
+
+def weeks_waiting(state: EmailState, job, now: datetime) -> int:
+    entered = state.entered_queue_at or getattr(job, "date_entered", None) or getattr(job, "created_at", None)
+    return max((now - entered).days // 7, 0) if entered else 0
 
 
 @dataclass
@@ -94,8 +100,12 @@ def weekly_decision(ctx: EmailContext, state: EmailState, job, now: datetime,
     if state.last_counted_email_at and now - state.last_counted_email_at < WEEK_WINDOW:
         return Decision(None, "already emailed this week")
 
+    seq = state.sequence_week
     if not state.welcome_sent:
-        return Decision(K.WELCOME, "welcome (not yet sent)")
+        weeks = weeks_waiting(state, job, now)
+        if weeks < 1:
+            return Decision(K.WELCOME, "welcome (not yet sent)")
+        seq = max(seq, min(weeks, 8) - 1)  # added late: pick up where they are, no Welcome
     if state.reschedule_track:
         return Decision(K.FRONT_OF_LINE, "reschedule track", rotation_index=state.rotation_index)
     if K.is_repair(ctx.track):
@@ -107,8 +117,8 @@ def weekly_decision(ctx: EmailContext, state: EmailState, job, now: datetime,
         return Decision(K.GETTING_CLOSE, f"{ctx.jobs_ahead} ahead")
     if weather_on:
         return Decision(K.WEATHER, "weather slowdown on")
-    if state.sequence_week < 8:
-        return Decision(f"week_{state.sequence_week + 1}", "sequence")
+    if seq < 8:
+        return Decision(f"week_{seq + 1}", "sequence")
     return Decision(K.ROTATION, "rotation", rotation_index=state.rotation_index)
 
 
@@ -121,6 +131,8 @@ def welcome_decision(ctx: EmailContext, state: EmailState, job, now: datetime) -
         return Decision(None, "welcome already sent")
     if not in_queue(job, state, now.date()):
         return Decision(None, "not in queue")
+    if weeks_waiting(state, job, now) >= 1:
+        return Decision(None, "added late, picks up at its week on Thursday")
     return Decision(K.WELCOME, "entered queue")
 
 
@@ -172,8 +184,9 @@ def apply_sent(state: EmailState, decision: Decision, ctx: EmailContext, now: da
 
     state.last_counted_email_at = now
     state.last_jobs_ahead = ctx.jobs_ahead
+    state.welcome_sent = True  # a late add's first weekly email stands in for the Welcome
     if t == K.WELCOME:
-        state.welcome_sent = True
+        pass
     elif t == K.GETTING_CLOSE:
         state.getting_close_sent = True
     elif t in (K.ROTATION, K.FRONT_OF_LINE):
