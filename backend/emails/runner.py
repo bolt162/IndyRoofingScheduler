@@ -354,6 +354,10 @@ def run_scheduled_emails(db: Session, now: datetime | None = None, mode: str | N
             st.scheduled_email_sent = True  # never eligible; don't keep retrying
             db.commit()
             continue
+        if ctx.scheduled_date and ctx.scheduled_date < _indy_today(rc.now):
+            st.scheduled_seen_at = None  # date already passed (rained out, not redated): wait for a real new date
+            db.commit()
+            continue
         try:
             jn_sent = jn_schedule_email_sent(job.jn_job_id, since=st.scheduled_seen_at - timedelta(hours=1)) if job.jn_job_id else False
         except Exception:  # noqa: BLE001

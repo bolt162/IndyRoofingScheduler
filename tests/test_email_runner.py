@@ -284,6 +284,29 @@ def test_fun_email_when_jobnimbus_email_missing_flags_office(db, jn, outbox):
     assert outbox[1]["subject"].startswith("No scheduling email from JobNimbus")
 
 
+def test_no_fun_email_for_a_date_already_past(db, jn, outbox):
+    # 10/20 case: rained out, work order kept the old date, customer got "You're on the calendar" for a past day
+    job = sched_job(db, jn)
+    jn["details"][job.jn_job_id].start_date = date(2026, 10, 7)  # day before THU
+    R.run_scheduled_emails(db, THU + timedelta(hours=2), mode="live")
+    assert outbox == []
+    assert not st(db, job, "live").scheduled_email_sent  # a real new date later still earns it
+    assert st(db, job, "live").scheduled_seen_at is None
+
+
+def test_rescheduled_customer_never_gets_the_welcome(db, jn, outbox):
+    # 10/21 case: scheduled before emails went live, rained out, then got "Welcome to the build queue"
+    job = add_job(db, jn, "Jane Smith", bucket="to_schedule", jn_status="Pending Start Date",
+                  entered=THU - timedelta(days=2), rescheduled_count=1)
+    for mode in ("test", "live"):
+        st(db, job, mode).reschedule_track = True
+    db.commit()
+    R.run_welcomes(db, THU, mode="live")
+    assert outbox == []
+    R.run_weekly(db, THU, mode="live")
+    assert [s["template"] for s in outbox] == ["front_of_line"]
+
+
 # --- Long wait alerts ---
 
 def test_long_wait_alerts_at_10_then_every_2_weeks(db, jn, outbox):

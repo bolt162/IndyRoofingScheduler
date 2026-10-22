@@ -100,14 +100,14 @@ def weekly_decision(ctx: EmailContext, state: EmailState, job, now: datetime,
     if state.last_counted_email_at and now - state.last_counted_email_at < WEEK_WINDOW:
         return Decision(None, "already emailed this week")
 
+    if state.reschedule_track:  # already scheduled once: never the new-customer Welcome
+        return Decision(K.FRONT_OF_LINE, "reschedule track", rotation_index=state.rotation_index)
     seq = state.sequence_week
     if not state.welcome_sent:
         weeks = weeks_waiting(state, job, now)
         if weeks < 1:
             return Decision(K.WELCOME, "welcome (not yet sent)")
         seq = max(seq, min(weeks, 8) - 1)  # added late: pick up where they are, no Welcome
-    if state.reschedule_track:
-        return Decision(K.FRONT_OF_LINE, "reschedule track", rotation_index=state.rotation_index)
     if K.is_repair(ctx.track):
         # Repairs: welcome, then a weekly check-in with a home care tip
         if weather_on:
@@ -129,6 +129,8 @@ def welcome_decision(ctx: EmailContext, state: EmailState, job, now: datetime) -
         return Decision(None, reason)
     if state.welcome_sent:
         return Decision(None, "welcome already sent")
+    if state.reschedule_track:
+        return Decision(None, "rescheduled: gets front-of-line updates, not the Welcome")
     if not in_queue(job, state, now.date()):
         return Decision(None, "not in queue")
     if weeks_waiting(state, job, now) >= 1:
