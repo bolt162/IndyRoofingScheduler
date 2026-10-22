@@ -91,9 +91,9 @@ def _enrich_with_latest_note(job: Job, db: Session) -> dict:
     crew = db.get(Crew, job.planned_crew_id) if job.planned_crew_id else None
     job_dict["days_suggestion"] = build_days.suggestion(job, crew.name if crew else None)
 
-    # Gutters after a roof that's done are planned like a build, with gutter crews
-    from backend.services.jn_booking import gutters_after_roof, work_trade
-    job_dict["gutters_after_roof"] = gutters_after_roof(job)
+    # Gutters or siding after the main trade is done are planned like a build, with that trade's crews
+    from backend.services.jn_booking import follow_up_trade, work_trade
+    job_dict["follow_up_trade"] = follow_up_trade(job)
     job_dict["work_trade"] = work_trade(job)
 
     # When it entered the build queue, the same date the customer emails count from
@@ -410,8 +410,8 @@ def mark_not_built(job_id: int, request: NotBuiltRequest, db: Session = Depends(
     jobnimbus_result = None
     from backend.services import jn_booking
     why = request.reason + (f": {request.detail}" if (request.detail or "").strip() else "")
-    if jn_booking.gutters_after_roof(job):
-        # Gutters after the roof: off JobNimbus's calendar (it sends the reschedule messages), plan cleared.
+    if jn_booking.follow_up_trade(job):
+        # Gutters or siding after the main trade: off JobNimbus's calendar (it sends the reschedule messages), plan cleared.
         # The job stays at Other Trades, so it isn't put back in the build queue or sent queue emails.
         if jn_booking.booked_in_jn(job):
             jobnimbus_result = jn_booking.unbook(db, job, _person(db, user), why)

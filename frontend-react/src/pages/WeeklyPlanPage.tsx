@@ -39,14 +39,14 @@ function pushInProgress(job: Job) {
   return !!s.work_order_status && !PUSH_STEPS.every((k) => s[k]);
 }
 
-/** Gutters after a roof that JobNimbus has booked (its Gutters work order is at Pending Start). */
-function gutterBooked(job: Job) {
-  return job.gutters_after_roof && (job.jn_work_orders ?? []).some((w) => w.status.trim().toLowerCase() === 'pending start');
+/** Gutters or siding after the main trade that JobNimbus has booked (its work order is at Pending Start). */
+function followUpBooked(job: Job) {
+  return !!job.follow_up_trade && (job.jn_work_orders ?? []).some((w) => w.status.trim().toLowerCase() === 'pending start');
 }
 
 /** Same rule as the Push to JobNimbus count (jn_booking.candidates), so every job it counts shows here. */
 function isPlannable(job: Job) {
-  return job.bucket === 'to_schedule' || job.bucket === 'not_built' || job.gutters_after_roof || pushInProgress(job);
+  return job.bucket === 'to_schedule' || job.bucket === 'not_built' || !!job.follow_up_trade || pushInProgress(job);
 }
 
 export function WeeklyPlanPage() {
@@ -91,7 +91,7 @@ export function WeeklyPlanPage() {
       const key = format(d, 'yyyy-MM-dd');
       map[key] = {
         booked: (allJobs ?? []).filter(
-          (j) => (j.bucket === 'scheduled' || gutterBooked(j)) && (j.jn_start_date ?? j.date_scheduled) === key,
+          (j) => (j.bucket === 'scheduled' || followUpBooked(j)) && (j.jn_start_date ?? j.date_scheduled) === key,
         ),
         planned: (allJobs ?? []).filter((j) => j.planned_date === key && isPlannable(j)),
         suggested: (allJobs ?? []).filter((j) => j.suggested_date === key && !j.planned_date && isPlannable(j)),
@@ -119,11 +119,11 @@ export function WeeklyPlanPage() {
     return result;
   }, [daysByKey, activePMs]);
 
-  // Unassigned jobs (To Schedule bucket, and gutters waiting on a finished roof; not planned yet, sorted by score)
+  // Unassigned jobs (To Schedule bucket, and gutters / siding waiting after the main trade; not planned yet, sorted by score)
   const unassignedJobs = useMemo(
     () =>
       (allJobs ?? [])
-        .filter((j) => (j.bucket === 'to_schedule' || (j.gutters_after_roof && !gutterBooked(j)))
+        .filter((j) => (j.bucket === 'to_schedule' || (!!j.follow_up_trade && !followUpBooked(j)))
           && !j.planned_date && !j.suggested_date)
         .sort((a, b) => b.score - a.score),
     [allJobs]
@@ -141,7 +141,7 @@ export function WeeklyPlanPage() {
     [daysByKey],
   );
 
-  const handleSuggest = async (kind: 'roofs' | 'gutters') => {
+  const handleSuggest = async (kind: 'roofs' | 'gutters' | 'siding') => {
     try {
       const res = await suggestBuilds.mutateAsync({
         week_start: weekKey,
@@ -149,8 +149,9 @@ export function WeeklyPlanPage() {
         ...(selectedPMIds.length ? { pm_ids: selectedPMIds } : {}),
       });
       const n = res.suggested.length;
-      const what = kind === 'roofs' ? 'roof' : 'gutter job';
-      if (n === 0) toast.info(res.reason ?? `No open ${kind === 'roofs' ? 'roof' : 'gutter'} slots to fill this week.`);
+      const word = kind === 'roofs' ? 'roof' : kind === 'gutters' ? 'gutter' : 'siding';
+      const what = kind === 'roofs' ? 'roof' : `${word} job`;
+      if (n === 0) toast.info(res.reason ?? `No open ${word} slots to fill this week.`);
       else toast.success(`Suggested ${n} ${what}${n > 1 ? 's' : ''}. Nothing is saved until you keep them.`);
     } catch {
       toast.error("Couldn't make suggestions. Try again.");
@@ -424,10 +425,21 @@ export function WeeklyPlanPage() {
                   className="h-8 text-xs"
                   onClick={() => handleSuggest('gutters')}
                   disabled={suggestBuilds.isPending}
-                  title="Pencil in gutters: gutter-only jobs, and gutters on roofs that are already done (never before the roof). Longest wait first. Nothing is saved or sent."
+                  title="Pencil in gutters: gutter-only jobs, and gutters on roofs that are already done (never before the roof; after the siding only if the job says siding first). Longest wait first. Nothing is saved or sent."
                 >
                   <Sparkles className="mr-1 h-3.5 w-3.5" />
                   {suggesting === 'gutters' ? 'Suggesting…' : 'Suggest gutters'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => handleSuggest('siding')}
+                  disabled={suggestBuilds.isPending}
+                  title="Pencil in siding: full siding jobs, and siding on jobs whose main trade is done (after the gutters unless the job says siding first). Longest wait first. Siding repairs stay manual. Nothing is saved or sent."
+                >
+                  <Sparkles className="mr-1 h-3.5 w-3.5" />
+                  {suggesting === 'siding' ? 'Suggesting…' : 'Suggest siding'}
                 </Button>
                 {weekSuggested > 0 && (
                   <>

@@ -298,6 +298,8 @@ def _migrate_job_columns():
             "jn_number": "VARCHAR(50)",
             # Map spots from the instant quote's address lookup (2026-10-23)
             "geocoded_address": "VARCHAR(500)",
+            # Siding before gutters switch (2026-10-22)
+            "siding_before_gutters": "BOOLEAN NOT NULL DEFAULT FALSE",
         }
         for name, col_type in columns.items():
             if name in existing:
