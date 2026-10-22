@@ -8,7 +8,9 @@ never sees them.
 How a week is filled, Monday to Friday, from tomorrow on:
   - Jobs planned here or booked in JobNimbus stay put; their crews and PMs count as busy those days
     (a 2-day build keeps its crew busy both days).
-  - Full roofs only (Aaron, 2026-10-22): repairs, siding and gutters are placed by hand.
+  - Two buttons (Aaron, 2026-10-22). Suggest roofs: full roofs only; repairs and siding are placed by hand.
+    Suggest gutters: gutter-only jobs, and the Gutters work order on roofs that are done (never before
+    the roof, or the re-roof can damage them), longest wait first.
   - Waiting jobs (To Schedule / Not Built, no plan yet) go in order: must-build first, then the same
     score the Unassigned list sorts by. Jobs the ready check flagged or put on hold are skipped.
   - Each crew does its own trade, one build at a time, and the whole build fits inside Mon to Fri.
@@ -27,7 +29,6 @@ logger = logging.getLogger("suggest")
 
 WAITING = ("to_schedule", "not_built")
 BLOCKED_READY = ("flagged", "hold")
-SUGGESTED_TRADES = ("roofing",)  # full roofs
 
 
 def _is_test(name: str | None) -> bool:
@@ -52,13 +53,60 @@ def _span(start: date, days: int) -> list[date]:
 
 
 def _days_for(job: Job, crew: Crew) -> int:
-    from backend.services import build_days as bd
-    sug = bd.suggestion(job, crew.name)
-    return (sug or {}).get("days") or job.duration_days or 1
+    from backend.services.jn_booking import build_days
+    return build_days(job, crew)
 
 
-def clear(db: Session, week_start: date | None = None, job_ids: list[int] | None = None) -> int:
-    """Dismiss suggestions: one week's, or just these jobs'."""
+def _kind(job: Job) -> str:
+    from backend.services.jn_booking import GUTTERS, work_trade
+    return "gutters" if work_trade(job) == GUTTERS else "roofs"
+
+
+def _waiting_days(db: Session, job: Job, today: date) -> int:
+    """Gutters after a roof: days since the roof was done. Gutter-only jobs: days in the build queue."""
+    from backend.models.email import JobEvent
+    from backend.services.jn_booking import gutters_after_roof
+    from backend.services.scoring import days_in_queue
+    if not gutters_after_roof(job):
+        return days_in_queue(db, job)
+    ev = (db.query(JobEvent).filter(JobEvent.job_id == job.id, JobEvent.to_bucket == "other_trades")
+          .order_by(JobEvent.created_at.desc()).first())
+    # Roofs finished before we started watching have waited longest
+    return (today - ev.created_at.date()).days if ev else 999
+
+
+def _candidates(db: Session, kind: str, today: date) -> list[tuple[Job, str]]:
+    """Jobs to place, best first, with the reason shown on the card."""
+    from backend.services.jn_booking import GUTTERS, booked_in_jn, gutters_after_roof
+    open_q = db.query(Job).filter(Job.planned_date.is_(None), Job.suggested_date.is_(None))
+    if kind == "gutters":
+        jobs = [j for j in open_q.filter(Job.bucket.in_(WAITING + ("other_trades",))).all()
+                if (j.primary_trade == GUTTERS and j.bucket in WAITING)
+                or (gutters_after_roof(j) and not booked_in_jn(j))]
+    else:
+        jobs = open_q.filter(Job.bucket.in_(WAITING), Job.primary_trade == "roofing").all()  # full roofs
+    jobs = [j for j in jobs if j.ready_status not in BLOCKED_READY and not _is_test(j.customer_name)]
+    out = []
+    if kind == "gutters":
+        waited = {j.id: _waiting_days(db, j, today) for j in jobs}
+        jobs.sort(key=lambda j: (not j.must_build, -waited[j.id], j.id))
+        for j in jobs:
+            w = waited[j.id]
+            why = ("roof done" + (f" {w} days ago" if w != 999 else "") if gutters_after_roof(j)
+                   else f"waiting {w} days")
+            out.append((j, ", ".join((["must build"] if j.must_build else []) + [why])))
+    else:
+        jobs.sort(key=lambda j: (not j.must_build, -(j.score or 0), j.id))
+        for j in jobs:
+            why = ["must build"] if j.must_build else []
+            why.append(f"score {j.score:.0f}" if j.score else "oldest waiting")
+            out.append((j, ", ".join(why)))
+    return out
+
+
+def clear(db: Session, week_start: date | None = None, job_ids: list[int] | None = None,
+          kind: str | None = None) -> int:
+    """Dismiss suggestions: one week's, or just these jobs'. kind: only roofs' or only gutters'."""
     q = db.query(Job).filter(Job.suggested_date.isnot(None))
     if job_ids is not None:
         q = q.filter(Job.id.in_(job_ids))
@@ -67,6 +115,8 @@ def clear(db: Session, week_start: date | None = None, job_ids: list[int] | None
         q = q.filter(Job.suggested_date >= monday, Job.suggested_date < monday + timedelta(days=7))
     n = 0
     for job in q.all():
+        if kind and _kind(job) != kind:
+            continue
         clear_job(job)
         n += 1
     db.commit()
@@ -81,8 +131,9 @@ def clear_job(job: Job) -> None:
 def keep(db: Session, job_ids: list[int], who: str) -> int:
     """The scheduler likes these: they become normal plans (still not sent to JobNimbus)."""
     n = 0
+    from backend.services.jn_booking import plannable
     for job in db.query(Job).filter(Job.id.in_(job_ids), Job.suggested_date.isnot(None)).all():
-        if job.bucket not in WAITING or job.planned_date:
+        if not plannable(job) or job.planned_date:
             clear_job(job)
             continue
         job.planned_date, job.planned_crew_id, job.planned_pm_id = (
@@ -117,8 +168,9 @@ class _Forecasts:
         if not forecast:
             return None
         try:
+            from backend.services.jn_booking import work_trade
             r = check_material_thresholds(self.db, job.material_type or "", forecast,
-                                          primary_trade=job.primary_trade or "")
+                                          primary_trade=work_trade(job) or "")
         except Exception as e:  # noqa: BLE001
             logger.warning(f"Weather check failed for job {job.id}: {e}")
             return None
@@ -126,12 +178,13 @@ class _Forecasts:
 
 
 def suggest_week(db: Session, week_start: date, pm_ids: list[int] | None = None, today: date | None = None,
-                 forecasts: _Forecasts | None = None) -> dict:
+                 forecasts: _Forecasts | None = None, kind: str = "roofs") -> dict:
+    """kind: "roofs" (Suggest roofs) or "gutters" (Suggest gutters). Each replaces only its own suggestions."""
     from backend.services import no_build
-    from backend.services.jn_booking import build_days, crew_for_names
+    from backend.services.jn_booking import booked_in_jn, build_days, crew_for_names, work_trade
     today = today or no_build.local_today()
     days = week_days(week_start, today)
-    clear(db, week_start=week_start)
+    clear(db, week_start=week_start, kind=kind)
     if not days:
         return {"suggested": [], "reason": "No build days left in this week."}
 
@@ -155,7 +208,10 @@ def suggest_week(db: Session, week_start: date, pm_ids: list[int] | None = None,
                 busy[crew.id].add(d)
             if job.planned_pm_id:
                 pm_load[(job.planned_pm_id, d)] = pm_load.get((job.planned_pm_id, d), 0) + 1
-    for job in db.query(Job).filter(Job.bucket == "scheduled", Job.jn_start_date.isnot(None)).all():
+    # Booked in JobNimbus: builds, and gutters booked on a roof that's done
+    for job in db.query(Job).filter(Job.bucket.in_(("scheduled", "other_trades")), Job.jn_start_date.isnot(None)).all():
+        if job.bucket == "other_trades" and not booked_in_jn(job):
+            continue  # its date is the finished roof's
         crew = crew_for_names(db, job.jn_crews)
         pm = next((p for n, p in pm_by_name.items() if job.jn_pm and job.jn_pm.lower().startswith(n)), None)
         for d in _span(job.jn_start_date, job.duration_days or 1):
@@ -165,11 +221,9 @@ def suggest_week(db: Session, week_start: date, pm_ids: list[int] | None = None,
                 pm_load[(pm.id, d)] = pm_load.get((pm.id, d), 0) + 1
 
     # Not already suggested for another week (this week's were just cleared)
-    waiting = [j for j in db.query(Job).filter(Job.bucket.in_(WAITING), Job.planned_date.is_(None),
-                                               Job.suggested_date.is_(None),
-                                               Job.primary_trade.in_(SUGGESTED_TRADES)).all()
-               if j.ready_status not in BLOCKED_READY and not _is_test(j.customer_name)]
-    waiting.sort(key=lambda j: (not j.must_build, -(j.score or 0), j.id))
+    ranked = _candidates(db, kind, today)
+    waiting = [j for j, _ in ranked]
+    reasons = {j.id: why for j, why in ranked}
     forecasts = forecasts or _Forecasts(db)
     last_day = days[0] - timedelta(days=days[0].weekday()) + timedelta(days=4)  # Friday
 
@@ -179,7 +233,7 @@ def suggest_week(db: Session, week_start: date, pm_ids: list[int] | None = None,
             if day in busy[crew.id]:
                 continue
             for job in waiting:
-                if job in placed or not _trade_ok(crew, job.primary_trade):
+                if job in placed or not _trade_ok(crew, work_trade(job)):
                     continue
                 n = _days_for(job, crew)
                 span = _span(day, n)
@@ -194,9 +248,7 @@ def suggest_week(db: Session, week_start: date, pm_ids: list[int] | None = None,
                     continue
                 job.suggested_date, job.suggested_crew_id, job.suggested_pm_id = day, crew.id, pm.id
                 job.suggested_days = n
-                why = ["must build"] if job.must_build else []
-                why.append(f"score {job.score:.0f}" if job.score else "oldest waiting")
-                job.suggested_why = ", ".join(why)[:255]
+                job.suggested_why = reasons[job.id][:255]
                 busy[crew.id].update(span)
                 for d in span:
                     pm_load[(pm.id, d)] = pm_load.get((pm.id, d), 0) + 1

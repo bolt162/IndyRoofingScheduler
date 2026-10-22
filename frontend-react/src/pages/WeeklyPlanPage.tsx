@@ -39,9 +39,14 @@ function pushInProgress(job: Job) {
   return !!s.work_order_status && !PUSH_STEPS.every((k) => s[k]);
 }
 
+/** Gutters after a roof that JobNimbus has booked (its Gutters work order is at Pending Start). */
+function gutterBooked(job: Job) {
+  return job.gutters_after_roof && (job.jn_work_orders ?? []).some((w) => w.status.trim().toLowerCase() === 'pending start');
+}
+
 /** Same rule as the Push to JobNimbus count (jn_booking.candidates), so every job it counts shows here. */
 function isPlannable(job: Job) {
-  return job.bucket === 'to_schedule' || job.bucket === 'not_built' || pushInProgress(job);
+  return job.bucket === 'to_schedule' || job.bucket === 'not_built' || job.gutters_after_roof || pushInProgress(job);
 }
 
 export function WeeklyPlanPage() {
@@ -86,7 +91,7 @@ export function WeeklyPlanPage() {
       const key = format(d, 'yyyy-MM-dd');
       map[key] = {
         booked: (allJobs ?? []).filter(
-          (j) => j.bucket === 'scheduled' && (j.jn_start_date ?? j.date_scheduled) === key,
+          (j) => (j.bucket === 'scheduled' || gutterBooked(j)) && (j.jn_start_date ?? j.date_scheduled) === key,
         ),
         planned: (allJobs ?? []).filter((j) => j.planned_date === key && isPlannable(j)),
         suggested: (allJobs ?? []).filter((j) => j.suggested_date === key && !j.planned_date && isPlannable(j)),
@@ -114,11 +119,12 @@ export function WeeklyPlanPage() {
     return result;
   }, [daysByKey, activePMs]);
 
-  // Unassigned jobs (To Schedule bucket, not planned yet, sorted by score)
+  // Unassigned jobs (To Schedule bucket, and gutters waiting on a finished roof; not planned yet, sorted by score)
   const unassignedJobs = useMemo(
     () =>
       (allJobs ?? [])
-        .filter((j) => j.bucket === 'to_schedule' && !j.planned_date && !j.suggested_date)
+        .filter((j) => (j.bucket === 'to_schedule' || (j.gutters_after_roof && !gutterBooked(j)))
+          && !j.planned_date && !j.suggested_date)
         .sort((a, b) => b.score - a.score),
     [allJobs]
   );
@@ -135,19 +141,22 @@ export function WeeklyPlanPage() {
     [daysByKey],
   );
 
-  const handleSuggest = async () => {
+  const handleSuggest = async (kind: 'roofs' | 'gutters') => {
     try {
       const res = await suggestBuilds.mutateAsync({
         week_start: weekKey,
+        kind,
         ...(selectedPMIds.length ? { pm_ids: selectedPMIds } : {}),
       });
       const n = res.suggested.length;
-      if (n === 0) toast.info(res.reason ?? 'No open slots to fill this week.');
-      else toast.success(`Suggested ${n} build${n > 1 ? 's' : ''}. Nothing is saved until you keep them.`);
+      const what = kind === 'roofs' ? 'roof' : 'gutter job';
+      if (n === 0) toast.info(res.reason ?? `No open ${kind === 'roofs' ? 'roof' : 'gutter'} slots to fill this week.`);
+      else toast.success(`Suggested ${n} ${what}${n > 1 ? 's' : ''}. Nothing is saved until you keep them.`);
     } catch {
-      toast.error("Couldn't suggest builds. Try again.");
+      toast.error("Couldn't make suggestions. Try again.");
     }
   };
+  const suggesting = suggestBuilds.isPending ? suggestBuilds.variables?.kind : undefined;
 
   // Draft plans for this week
   const weekDraftPlans = useMemo(
@@ -402,12 +411,23 @@ export function WeeklyPlanPage() {
                   variant="outline"
                   size="sm"
                   className="h-8 text-xs"
-                  onClick={handleSuggest}
+                  onClick={() => handleSuggest('roofs')}
                   disabled={suggestBuilds.isPending}
-                  title="Pencil in the open days this week, around what's already planned or booked. Nothing is saved or sent."
+                  title="Pencil full roofs into the open days this week, around what's already planned or booked. Repairs and siding stay manual. Nothing is saved or sent."
                 >
                   <Sparkles className="mr-1 h-3.5 w-3.5" />
-                  {suggestBuilds.isPending ? 'Suggesting…' : 'Suggest builds'}
+                  {suggesting === 'roofs' ? 'Suggesting…' : 'Suggest roofs'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs"
+                  onClick={() => handleSuggest('gutters')}
+                  disabled={suggestBuilds.isPending}
+                  title="Pencil in gutters: gutter-only jobs, and gutters on roofs that are already done (never before the roof). Longest wait first. Nothing is saved or sent."
+                >
+                  <Sparkles className="mr-1 h-3.5 w-3.5" />
+                  {suggesting === 'gutters' ? 'Suggesting…' : 'Suggest gutters'}
                 </Button>
                 {weekSuggested > 0 && (
                   <>

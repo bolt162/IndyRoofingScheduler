@@ -115,6 +115,9 @@ export interface Job {
   score_explanation: string | null;
   jn_status: string | null;
   jn_number: string | null;
+  // Roof done (Other Trades) with the Gutters work order still to build; work_trade is what gets booked
+  gutters_after_roof: boolean;
+  work_trade: string | null;
   // When it entered the build queue (same date the customer emails count from)
   entered_queue_at: string | null;
   jn_notes_raw: string | null;

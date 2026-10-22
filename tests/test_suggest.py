@@ -176,3 +176,57 @@ def test_no_days_left_this_week(db):
     job(db, "A")
     out = S.suggest_week(db, MON, today=date(2030, 11, 8), forecasts=NoWeather())
     assert out["suggested"] == [] and "No build days" in out["reason"]
+
+
+# --- Suggest gutters ---
+
+def gutters_wo(status="New"):
+    return [{"number": "1", "trade": "Roofing", "status": "Completed", "start": None, "crews": [], "pm": None,
+             "internal_note": "", "customer_note": ""},
+            {"number": "2", "trade": "Gutters", "status": status, "start": None, "crews": [], "pm": None,
+             "internal_note": "", "customer_note": ""}]
+
+
+def run_gutters(db):
+    return S.suggest_week(db, MON, today=TODAY, forecasts=NoWeather(), kind="gutters")
+
+
+def test_gutters_only_after_the_roof_is_done_with_gutter_crews(db):
+    setup(db, crews=(("DCT", ["roofing"], 1), ("Alpha", ["gutters"], 2)))
+    waiting_roof = job(db, "Roof not done", secondary_trades=["gutters"])
+    roof_done = job(db, "Roof done", bucket="other_trades", secondary_trades=["gutters"], jn_work_orders=gutters_wo())
+    gutter_only = job(db, "Gutters only", primary_trade="gutters")
+    run_gutters(db)
+    assert waiting_roof.suggested_date is None
+    assert {roof_done.suggested_date, gutter_only.suggested_date} == {MON, date(2030, 11, 5)}
+    alpha = db.query(Crew).filter_by(name="Alpha").one()
+    assert roof_done.suggested_crew_id == alpha.id and roof_done.suggested_days == 1
+    assert "roof done" in roof_done.suggested_why
+
+
+def test_gutters_skip_ones_booked_or_finished_and_longest_wait_goes_first(db):
+    from datetime import datetime
+    from backend.models.email import JobEvent
+    setup(db, crews=(("Alpha", ["gutters"], 1),))
+    booked = job(db, "Booked", bucket="other_trades", jn_work_orders=gutters_wo("Pending Start"))
+    finished = job(db, "Finished", bucket="other_trades", jn_work_orders=gutters_wo("Completed"))
+    recent = job(db, "Roof done yesterday", bucket="other_trades", jn_work_orders=gutters_wo())
+    old = job(db, "Roof done 3 weeks ago", bucket="other_trades", jn_work_orders=gutters_wo())
+    db.add_all([JobEvent(job_id=recent.id, to_bucket="other_trades", created_at=datetime(2030, 10, 31)),
+                JobEvent(job_id=old.id, to_bucket="other_trades", created_at=datetime(2030, 10, 11))])
+    db.commit()
+    run_gutters(db)
+    assert booked.suggested_date is None and finished.suggested_date is None
+    assert old.suggested_date == MON and recent.suggested_date == date(2030, 11, 5)
+
+
+def test_each_button_only_replaces_its_own_suggestions(db):
+    setup(db, crews=(("DCT", ["roofing"], 1), ("Alpha", ["gutters"], 2)))
+    roof = job(db, "Roof")
+    gutters = job(db, "Gutters", bucket="other_trades", jn_work_orders=gutters_wo())
+    run(db)
+    run_gutters(db)
+    assert roof.suggested_date == MON and gutters.suggested_date == MON
+    run(db)
+    assert gutters.suggested_date == MON
+    assert S.keep(db, [gutters.id], "Greg") == 1 and gutters.planned_date == MON

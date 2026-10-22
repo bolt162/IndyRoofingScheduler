@@ -91,6 +91,11 @@ def _enrich_with_latest_note(job: Job, db: Session) -> dict:
     crew = db.get(Crew, job.planned_crew_id) if job.planned_crew_id else None
     job_dict["days_suggestion"] = build_days.suggestion(job, crew.name if crew else None)
 
+    # Gutters after a roof that's done are planned like a build, with gutter crews
+    from backend.services.jn_booking import gutters_after_roof, work_trade
+    job_dict["gutters_after_roof"] = gutters_after_roof(job)
+    job_dict["work_trade"] = work_trade(job)
+
     # When it entered the build queue, the same date the customer emails count from
     from backend.models.email import EmailState
     state = db.query(EmailState).filter(EmailState.job_id == job.id, EmailState.mode == "live").first()
@@ -401,9 +406,25 @@ def mark_not_built(job_id: int, request: NotBuiltRequest, db: Session = Depends(
     # Booked in JobNimbus: take it off JobNimbus's calendar too, or the next sync puts it right back
     # (seen 2026-10-20: Brooke Clark marked Not Built for weather, back to scheduled 15 minutes later)
     jobnimbus_result = None
+    from backend.services import jn_booking
+    why = request.reason + (f": {request.detail}" if (request.detail or "").strip() else "")
+    if jn_booking.gutters_after_roof(job):
+        # Gutters after the roof: off JobNimbus's calendar (it sends the reschedule messages), plan cleared.
+        # The job stays at Other Trades, so it isn't put back in the build queue or sent queue emails.
+        if jn_booking.booked_in_jn(job):
+            jobnimbus_result = jn_booking.unbook(db, job, _person(db, user), why)
+        job.planned_date = job.planned_pm_id = job.planned_crew_id = job.planned_by = job.planned_at = None
+        job.planned_days = None
+        job.jn_start_date = None
+        job.jn_work_orders = [{**w, "status": "Schedule"} if (w.get("status") or "").strip().lower() == "pending start"
+                              else w for w in job.jn_work_orders or []]
+        job.rescheduled_count += 1
+        db.commit()
+        db.refresh(job)
+        out = _enrich_with_latest_note(job, db)
+        out["jobnimbus"] = jobnimbus_result
+        return out
     if (job.jn_status or "").strip().lower() == "pending start date":
-        from backend.services import jn_booking
-        why = request.reason + (f": {request.detail}" if (request.detail or "").strip() else "")
         jobnimbus_result = jn_booking.unbook(db, job, _person(db, user), why)
     job.bucket = JobBucket.NOT_BUILT.value
     job.not_built_reason = request.reason

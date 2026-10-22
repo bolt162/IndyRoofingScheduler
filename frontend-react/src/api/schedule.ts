@@ -72,7 +72,7 @@ export function useMoveBooking() {
 export function useSuggestBuilds() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (body: { week_start: string; pm_ids?: number[] }) => {
+    mutationFn: async (body: { week_start: string; kind: 'roofs' | 'gutters'; pm_ids?: number[] }) => {
       const { data } = await api.post('/schedule/suggest', body, { timeout: 120000 });
       return data as { suggested: { job_id: number }[]; waiting?: number; reason?: string };
     },

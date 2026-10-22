@@ -455,9 +455,8 @@ def map_jn_job_to_model(jn_data: dict) -> dict:
 
 
 # Buckets whose work orders we read each sync (see services/schedule_sync.py)
-CALENDAR_BUCKETS = {"coming_soon", "to_schedule", "scheduled", "not_built"}
-# A Weekly Plan pick only means something while the job is still waiting to be booked
-PLANNABLE_BUCKETS = {"to_schedule", "not_built"}
+# other_trades: for the Gutters work order on a roof that is done (Suggest gutters)
+CALENDAR_BUCKETS = {"coming_soon", "to_schedule", "scheduled", "not_built", "other_trades"}
 
 
 def _apply_calendar(job: Job, jn_data: dict, work_orders: list[dict] | None,
@@ -476,15 +475,15 @@ def _apply_calendar(job: Job, jn_data: dict, work_orders: list[dict] | None,
     # A work order at Pending Start counts as booked even when the job's own status hasn't caught up
     # (Greg booking by hand, e.g. Patrick Lamb 2026-10-20): a plan left over from before would sit in the
     # Push to JobNimbus count but show nowhere on the Weekly Plan.
-    from backend.services.jn_booking import in_progress
+    from backend.services.jn_booking import in_progress, plannable
     booked_in_jn = any((w.get("status") or "").strip().lower() == schedule_sync.PENDING_START
                        for w in job.jn_work_orders or []) if work_orders is not None else False
-    if job.planned_date and (job.bucket not in PLANNABLE_BUCKETS or booked_in_jn) and not in_progress(job):
+    if job.planned_date and (not plannable(job) or booked_in_jn) and not in_progress(job):
         job.planned_date = job.planned_pm_id = job.planned_crew_id = job.planned_by = job.planned_at = None
         job.planned_days = None
         job.jn_push_steps = job.jn_push_error = None
     # A suggestion only means something while the job is still waiting
-    if job.suggested_date and (job.bucket not in PLANNABLE_BUCKETS or booked_in_jn or job.planned_date):
+    if job.suggested_date and (not plannable(job) or booked_in_jn or job.planned_date):
         from backend.services.suggest import clear_job
         clear_job(job)
     if activities is not None:

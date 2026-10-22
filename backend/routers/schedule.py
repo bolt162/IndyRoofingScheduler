@@ -1,6 +1,8 @@
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
+from typing import Literal
+
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -100,6 +102,7 @@ def push_to_jobnimbus(request: PushRequest, db: Session = Depends(get_db),
 class SuggestRequest(BaseModel):
     week_start: date
     pm_ids: list[int] | None = None
+    kind: Literal["roofs", "gutters"] = "roofs"
 
 
 class SuggestionsRequest(BaseModel):
@@ -111,7 +114,7 @@ class SuggestionsRequest(BaseModel):
 def suggest_builds(request: SuggestRequest, db: Session = Depends(get_db),
                    user: ClerkUser = Depends(get_approved_user)):
     from backend.services import suggest
-    return suggest.suggest_week(db, request.week_start, pm_ids=request.pm_ids)
+    return suggest.suggest_week(db, request.week_start, pm_ids=request.pm_ids, kind=request.kind)
 
 
 @router.post("/suggestions/keep")

@@ -514,3 +514,35 @@ def test_not_built_clears_the_plan_for_the_day_it_missed(db):
     db.refresh(job)
     assert job.bucket == "to_schedule" and job.planned_date is None and job.planned_crew_id is None
     assert B.candidates(db) == []   # not left in the Push to JobNimbus count
+
+
+def test_gutters_after_the_roof_book_only_the_gutters_work_order(db):
+    roof_done = [{"number": "WO-11853", "trade": "Roofing", "status": "Completed"},
+                 {"number": "WO-11854", "trade": "Gutters", "status": "New"}]
+    job = planned_job(db, bucket="other_trades", jn_status="Other Trades", jn_work_orders=roof_done)
+    jn = FakeJN(wo_status="Completed", job_status="Other Trades")
+    result = B.push(db, "Greg Russell", jn=jn)
+    assert result["booked"] == 1, result
+    w = jn.writes()
+    assert [c[1] for c in w] == ["v2/workorders/wo2", "v2/workorders/wo2", "activities"]
+    assert w[1][2] == {"jnid": "wo2", "status": 481}
+    assert w[2][2]["note"] == "@PatRep gutters scheduled Tuesday 10/29"
+    assert B.build_days(job, None) == 1
+
+
+def test_not_built_on_gutters_after_the_roof_keeps_the_job_out_of_the_queue(db, monkeypatch):
+    from backend.routers import jobs as R
+    from backend.schemas.job import NotBuiltRequest
+    from backend.services.auth import ClerkUser
+    booked = [{"number": "WO-11853", "trade": "Roofing", "status": "Completed"},
+              {"number": "WO-11854", "trade": "Gutters", "status": "Pending Start", "start": "2030-10-29"}]
+    job = planned_job(db, bucket="other_trades", jn_status="Other Trades", jn_work_orders=booked,
+                      jn_start_date=BUILD)
+    calls = []
+    monkeypatch.setattr(B, "unbook", lambda db, job, who, why, **kw: calls.append(why) or {"status": "unbooked"})
+    monkeypatch.setattr(R, "_person", lambda db, user: "Greg")
+    monkeypatch.setattr(R, "_enrich_with_latest_note", lambda job, db: {"bucket": job.bucket})
+    out = R.mark_not_built(job.id, NotBuiltRequest(reason="Weather"), db=db, user=ClerkUser({"sub": "u", "email": "g@x"}))
+    assert calls == ["Weather"]
+    assert out["bucket"] == "other_trades" and job.planned_date is None
+    assert B.gutters_after_roof(job) and not B.booked_in_jn(job)

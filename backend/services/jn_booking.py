@@ -64,6 +64,32 @@ def reschedule_category(reason: str | None) -> str:
         return "Customer request"
     return "Other"
 
+GUTTERS = "gutters"
+
+
+def booked_in_jn(job: Job) -> bool:
+    """A work order on the job is at Pending Start (from the last sync)."""
+    return any((w.get("status") or "").strip().lower() == WO_PENDING for w in job.jn_work_orders or [])
+
+
+def gutters_after_roof(job: Job) -> bool:
+    """A roof job whose roof is done (Other Trades in JobNimbus) with its Gutters work order still to build.
+    Gutters always go on after the roof, or the re-roof can damage them (Aaron, 2026-10-22)."""
+    return job.bucket == "other_trades" and any(
+        (w.get("trade") or "").strip().lower() == GUTTERS
+        and not any(x in (w.get("status") or "").lower() for x in CLOSED_WO_WORDS)
+        for w in job.jn_work_orders or [])
+
+
+def work_trade(job: Job) -> str | None:
+    """The trade being booked: the gutters on a roof that's done, else the job's main trade."""
+    return GUTTERS if gutters_after_roof(job) else job.primary_trade
+
+
+def plannable(job: Job) -> bool:
+    return job.bucket in PLANNABLE_BUCKETS or gutters_after_roof(job)
+
+
 # The work order that carries each trade's build, best match first
 WO_TRADES = {
     "roofing": ["Roofing", "Roof Flat", "Commercial"],
@@ -235,7 +261,7 @@ def merge_refs(existing: list | None, add: list[dict]) -> list[dict]:
 
 
 def pick_work_order(job: Job, work_orders: list[dict]) -> dict:
-    trades = WO_TRADES.get(job.primary_trade or "", [])
+    trades = WO_TRADES.get(work_trade(job) or "", [])
     live = [w for w in work_orders or [] if isinstance(w, dict)
             and w.get("is_active") is not False and not w.get("is_archived")]
     live = [w for w in live if not any(x in (w.get("status_name") or "").lower() for x in CLOSED_WO_WORDS)]
@@ -269,7 +295,7 @@ def in_progress(job: Job) -> bool:
 
 def candidates(db: Session) -> list[Job]:
     jobs = db.query(Job).filter(Job.planned_date.isnot(None)).order_by(Job.planned_date, Job.customer_name).all()
-    return [j for j in jobs if j.bucket in PLANNABLE_BUCKETS or in_progress(j)]
+    return [j for j in jobs if plannable(j) or in_progress(j)]
 
 
 def already_sent(job: Job) -> bool:
@@ -310,6 +336,8 @@ def build_days(job: Job, crew: Crew | None) -> int:
     from backend.services import build_days as bd
     if job.planned_days:
         return job.planned_days
+    if work_trade(job) == GUTTERS:
+        return 1  # the work order's estimate is the roof's size
     sug = bd.suggestion(job, crew.name if crew else None)
     return (sug or {}).get("days") or job.duration_days or 1
 
@@ -377,6 +405,8 @@ def book_job(db: Session, job: Job, who: str, jn: JN | None = None, lookups: Loo
     from backend import activity
     jn = jn or JN()
     lookups = lookups or Lookups(jn)
+    # Gutters after a roof: only the Gutters work order is booked; the job stays at Other Trades
+    follow_up = gutters_after_roof(job)
     d = job.planned_date
     if in_progress(job) and (job.jn_push_steps or {}).get("date"):
         d = date.fromisoformat(job.jn_push_steps["date"])
@@ -455,7 +485,9 @@ def book_job(db: Session, job: Job, who: str, jn: JN | None = None, lookups: Loo
                                               "status": lookups.status_id("workorder", wo_type, WO_PENDING)})
             _done(db, job, "work_order_status")
 
-        if not st.get("job_status"):
+        if not st.get("job_status") and follow_up:
+            _done(db, job, "job_status", "gutters after the roof: job stays at Other Trades")
+        elif not st.get("job_status"):
             body = {
                 "status": lookups.status_id("job", jn_job.get("record_type_name") or "", JOB_PENDING),
                 # All day, like Greg books it (without these the job shows "12:00 am"; Greg's test 2026-10-20)
@@ -471,9 +503,14 @@ def book_job(db: Session, job: Job, who: str, jn: JN | None = None, lookups: Loo
         rep_id, rep_name = jn_job.get("sales_rep"), jn_job.get("sales_rep_name")
         if not st.get("rep_note"):
             from backend.services.jobnimbus import note_body
-            jn.post("activities", note_body(job.jn_job_id, rep_note_text(rep_name, job.primary_trade, d)))
+            jn.post("activities", note_body(job.jn_job_id, rep_note_text(rep_name, work_trade(job), d)))
             _done(db, job, "rep_note")
 
+        if not st.get("build_block") and follow_up:
+            _done(db, job, "build_block", "not for gutters after the roof")
+        if not st.get("tasks") and follow_up:
+            _done(db, job, "tasks", "not for gutters after the roof")
+        st = job.jn_push_steps or {}
         if not st.get("build_block"):
             if rep_id:
                 jn.post("tasks", _build_block_body(job, rep_id, d, lookups))
@@ -564,7 +601,7 @@ def _first_status(lookups: "Lookups", object_type: str, workflow: str, names: tu
 def moved_note_text(job: Job, jn_job: dict, old_day: date | None, reason: str | None,
                     moving_to: date | None = None) -> str:
     """The rep's note: "@PatRep roof moved off Thursday 10/29 (Weather), moving to Monday 11/2"."""
-    word = TRADE_WORD.get(job.primary_trade or "", "job")
+    word = TRADE_WORD.get(work_trade(job) or "", "job")
     rep = "".join((jn_job.get("sales_rep_name") or "").split())
     when = f" off {old_day:%A} {old_day.month}/{old_day.day}" if old_day else ""
     to = f", moving to {moving_to:%A} {moving_to.month}/{moving_to.day}" if moving_to else ""
@@ -706,13 +743,15 @@ def _move_in_place(db: Session, job: Job, booked: list[dict], new_day: date, cre
     for w in sorted(booked, key=lambda w: w is main):  # the main one last, after the others are quiet
         jn.put(f"v2/workorders/{w['jnid']}", {"jnid": w["jnid"], **dates,
                RESCHEDULE_FIELD: reschedule_category(reason) if w is main else ""})
-    body = dict(dates)
-    if (jn_job.get("date_end") or 0) and jn_job["date_end"] < start:
-        body["date_end"] = 0  # an old end date before the new start makes JobNimbus fail (500)
-    jn.put(f"jobs/{job.jn_job_id}", body)
+    follow_up = gutters_after_roof(job)
+    if not follow_up:  # gutters after the roof: the job's own date is the roof's, leave it
+        body = dict(dates)
+        if (jn_job.get("date_end") or 0) and jn_job["date_end"] < start:
+            body["date_end"] = 0  # an old end date before the new start makes JobNimbus fail (500)
+        jn.put(f"jobs/{job.jn_job_id}", body)
     jn.post("activities", note_body(job.jn_job_id, moved_note_text(job, jn_job, old_day, reason, new_day)))
     _close_build_blocks(jn, filt, old_day)
-    if jn_job.get("sales_rep"):
+    if jn_job.get("sales_rep") and not follow_up:
         jn.post("tasks", _build_block_body(job, jn_job["sales_rep"], new_day, lookups))
     job.planned_date, job.planned_crew_id, job.planned_pm_id = new_day, crew.id, pm.id
     job.planned_by, job.planned_at = who, datetime.utcnow()
