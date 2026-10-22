@@ -284,3 +284,14 @@ def test_gutters_suggestions_survive_suggest_siding(db):
     run_siding(db)
     run_siding(db)
     assert g.suggested_date == MON and s.suggested_date == MON
+
+
+def test_siding_days_come_from_the_siding_work_order():
+    from backend.services.build_days import siding_days
+    wo = lambda labor: [{"trade": "Siding", "labor": labor}]  # noqa: E731
+    assert siding_days(wo([["Install Vinyl Siding", 10]])) == 1
+    assert siding_days(wo([["Remove & Replace w/ Vinyl Siding", 14], ["Remove Vinyl Siding", 14]])) == 2
+    assert siding_days(wo([["Install Vinyl Siding", 16], ["Install Metal Wrap Fascia", 90]])) == 3  # 16 + 3
+    assert siding_days(wo([["Install Hardie Siding", 30], ["Repair Siding", 5]])) == 4
+    assert siding_days(wo([["Soffit Vent", 4]])) is None
+    assert siding_days([{"trade": "Roofing", "labor": [["Install Vinyl Siding", 30]]}]) is None
