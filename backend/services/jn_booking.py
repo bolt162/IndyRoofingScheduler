@@ -354,7 +354,8 @@ def build_days(job: Job, crew: Crew | None) -> int:
     if trade == SIDING:
         if (job.duration_source or "").startswith(bd.SET_BY_PERSON):
             return job.duration_days or 1
-        # hook: a siding estimate from the Siding work order goes here once it's fit
+        if days := bd.siding_days(job.jn_work_orders):
+            return days
         if follow_up_trade(job):
             return 1  # the job's days are the roof's
         return job.duration_days or 1

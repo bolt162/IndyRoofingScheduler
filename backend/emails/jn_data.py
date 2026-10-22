@@ -145,10 +145,10 @@ def fetch_material_items(jnid: str) -> list[dict]:
 
 
 # JobNimbus's own scheduling email. Since 2026-10-07 scheduling runs at the work order level, whose email is
-# "Build day is coming!" (subject "It's official, ..." since 2026-10-22); gutters get "Your gutters are on the
-# calendar". The old job-level "Project Update" email is off but kept here for older jobs.
+# "Build day is coming!" (subject "It's official, ..." since 2026-10-22). Gutters and siding have their own emails.
+# The old job-level "Project Update" email is off but kept here for older jobs.
 JN_SCHEDULE_EMAIL_TITLES = ("Build day is coming", "build day is on the calendar", "Your gutters are on the calendar",
-                            "Project Update from Indy Roof")
+                            "Your new siding is on the calendar", "Project Update from Indy Roof")
 
 
 def jn_schedule_email_sent(jnid: str, since: datetime | None = None) -> bool:

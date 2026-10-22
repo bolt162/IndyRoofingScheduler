@@ -71,6 +71,32 @@ def estimate(work_orders: list[dict] | None, squares_fallback: float | None = No
     return {"eff": round(eff, 1), "squares": sq, "why": why}
 
 
+def siding_days(work_orders: list[dict] | None) -> int | None:
+    """Days for the siding, from the labor lines on the job's Siding work orders (all of them; two can be one build).
+
+    Fit 2026-10-22 on 22 Leon Leon jobs (actual days from crew photo dates): exact on 14, never off by more
+    than a day. Work order dates as Greg sets them were exact on 7. Story count isn't on the labor lines.
+      effective = siding squares + soffit/fascia feet / 30
+      under 12 = 1 day, 12 to 17 = 2, 18 to 27 = 3, 28+ = 4 (anything past ~300 ft of soffit/fascia: look at it)
+    """
+    squares = feet = 0.0
+    found = False
+    for w in work_orders or []:
+        if (w.get("trade") or "").strip().lower() != "siding":
+            continue
+        for n, q in _items(w):
+            if (any(k in n for k in ("siding", "board & batten", "board &amp; batten", "shake"))
+                    and any(k in n for k in ("install", "replace")) and "repair" not in n):
+                squares += q
+                found = True
+            elif ("soffit" in n or "fascia" in n) and "vent" not in n and "paint" not in n:
+                feet += q
+    if not found:
+        return None
+    eff = squares + feet / 30
+    return 1 if eff < 12 else 2 if eff < 18 else 3 if eff < 28 else 4
+
+
 def days_for(eff: float | None, crew_name: str | None = None) -> int | None:
     if eff is None:
         return None
@@ -86,6 +112,12 @@ SET_BY_PERSON = "Set by "
 
 def apply_to_job(job) -> None:
     """Use the work order's suggestion as the job's build days, unless a person set them by hand."""
+    if (getattr(job, "primary_trade", None) or "") == "siding" and not (job.duration_source or "").startswith(SET_BY_PERSON):
+        days = siding_days(getattr(job, "jn_work_orders", None))
+        if days:
+            job.duration_days, job.duration_confirmed = days, True
+            job.duration_source = "Siding work order (squares + soffit/fascia)"
+        return
     est = job.days_estimate if isinstance(getattr(job, "days_estimate", None), dict) else None
     if not est or (job.duration_source or "").startswith(SET_BY_PERSON):
         return
