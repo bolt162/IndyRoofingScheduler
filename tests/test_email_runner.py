@@ -264,16 +264,15 @@ def sched_job(db, jn):
     return job
 
 
-def test_fun_email_waits_an_hour_after_jobnimbus(db, jn, outbox):
-    sched_job(db, jn)
+def test_no_fun_email_when_jobnimbus_sent_its_own(db, jn, outbox):
+    """Aaron (2026-10-22): JobNimbus's email opens with the fun part now, so ours is a backup only."""
+    job = sched_job(db, jn)
     R.run_scheduled_emails(db, THU + timedelta(minutes=30), mode="test")
     assert outbox == []
     R.run_scheduled_emails(db, THU + timedelta(minutes=61), mode="test")
-    assert [s["template"] for s in outbox] == ["scheduled"]
-    assert "scheduled for Wednesday, October 21" in outbox[0]["text"]
-    assert "more official email" in outbox[0]["text"]
+    assert outbox == [] and st(db, job).scheduled_email_sent
     R.run_scheduled_emails(db, THU + timedelta(hours=5), mode="test")
-    assert len(outbox) == 1  # once per job
+    assert outbox == []
 
 
 def test_fun_email_when_jobnimbus_email_missing_flags_office(db, jn, outbox):

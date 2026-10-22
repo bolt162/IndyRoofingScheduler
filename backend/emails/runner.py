@@ -362,6 +362,12 @@ def run_scheduled_emails(db: Session, now: datetime | None = None, mode: str | N
             jn_sent = jn_schedule_email_sent(job.jn_job_id, since=st.scheduled_seen_at - timedelta(hours=1)) if job.jn_job_id else False
         except Exception:  # noqa: BLE001
             jn_sent = True  # can't tell: assume it went, so we don't flag the office wrongly
+        if jn_sent:
+            # Aaron (2026-10-22): JobNimbus's own email now opens with the fun part, so ours is a backup only
+            st.scheduled_email_sent = True
+            result["skipped"] = result.get("skipped", 0) + 1
+            db.commit()
+            continue
         ctx = replace(ctx, jn_schedule_email_sent=jn_sent)
         if deliver(rc, job, _compose(K.SCHEDULED, ctx, st, job), [ctx.customer_email], customer_name=job.customer_name):
             st.scheduled_email_sent = True
