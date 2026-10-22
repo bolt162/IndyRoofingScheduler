@@ -30,6 +30,7 @@ import { toast } from 'sonner';
 import { MATERIAL_LABELS } from '@/types';
 import { cn } from '@/lib/utils';
 import { JobFormDialog } from './JobFormDialog';
+import { JobName } from './JobName';
 import { useUIStore } from '@/stores/ui-store';
 import type { Job } from '@/types';
 
@@ -42,6 +43,9 @@ const PAYMENT_COLORS: Record<string, string> = {
 export function JobCard({ job, compact = false }: { job: Job; compact?: boolean }) {
   const daysInQueue = job.date_entered
     ? differenceInDays(new Date(), parseISO(job.date_entered))
+    : null;
+  const daysInBuildQueue = job.entered_queue_at
+    ? differenceInDays(new Date(), parseISO(job.entered_queue_at))
     : null;
 
   // Pull recommended crew from latest scoring result (if any)
@@ -168,8 +172,8 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
           {/* Row 1: Name + Score + Flags */}
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <p className={cn('font-semibold truncate', compact ? 'text-sm' : 'text-base')}>
-                {job.customer_name}
+              <p className={cn('font-semibold', compact ? 'text-sm' : 'text-base')}>
+                <JobName job={job} />
               </p>
               <p className="text-xs text-muted-foreground flex items-center gap-1 truncate">
                 <MapPin className="h-3 w-3 shrink-0" />
@@ -372,7 +376,10 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
               </div>
               <div className="flex items-center gap-1">
                 <Calendar className="h-3 w-3" />
-                {daysInQueue !== null ? `${daysInQueue}d in queue` : '—'}
+                <span title="Days since the job was created in JobNimbus">{daysInQueue !== null ? `${daysInQueue}d total` : '—'}</span>
+                {daysInBuildQueue !== null && (
+                  <span title="Days since it entered the build queue">· {daysInBuildQueue}d in queue</span>
+                )}
               </div>
               <DurationFlag
                 tier={job.duration_tier}

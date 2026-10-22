@@ -91,6 +91,11 @@ def _enrich_with_latest_note(job: Job, db: Session) -> dict:
     crew = db.get(Crew, job.planned_crew_id) if job.planned_crew_id else None
     job_dict["days_suggestion"] = build_days.suggestion(job, crew.name if crew else None)
 
+    # When it entered the build queue, the same date the customer emails count from
+    from backend.models.email import EmailState
+    state = db.query(EmailState).filter(EmailState.job_id == job.id, EmailState.mode == "live").first()
+    job_dict["entered_queue_at"] = state.entered_queue_at if state else None
+
     # Secondary trade aging
     aging = _compute_secondary_aging(job, db)
     job_dict.update(aging)

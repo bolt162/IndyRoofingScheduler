@@ -7,6 +7,7 @@ import { useCrews, usePMs } from '@/api/settings';
 import { ReadyCheckBadge } from '@/components/jobs/ReadyCheckBadge';
 import { NoBuildDatesBadge } from '@/components/jobs/NoBuildDatesBadge';
 import { cn } from '@/lib/utils';
+import { JobName } from '@/components/jobs/JobName';
 import type { Job } from '@/types';
 
 /**
@@ -68,7 +69,7 @@ export function SuggestedJobCard({ job }: { job: Job }) {
         title={`Suggested, not saved${job.suggested_why ? ` (${job.suggested_why})` : ''}. Keep it, drag it to another day, or dismiss it.`}
       >
         <div className="flex items-center justify-between gap-2 pr-2">
-          <span className="truncate text-xs font-semibold">{job.customer_name}</span>
+          <JobName job={job} className="text-xs font-semibold" />
           <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-violet-100 px-1 py-px text-[9px] font-medium text-violet-800">
             <Sparkles className="h-2.5 w-2.5" />
             Suggested

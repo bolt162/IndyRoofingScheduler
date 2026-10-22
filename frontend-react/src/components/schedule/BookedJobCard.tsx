@@ -1,5 +1,6 @@
 import { CloudRain, HardHat, Lock, MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { JobName } from '@/components/jobs/JobName';
 import type { Job } from '@/types';
 import { MoveBookingButton } from './MoveBookingButton';
 
@@ -29,7 +30,7 @@ export function BookedJobCard({ job }: { job: Job }) {
       title="Booked in JobNimbus. Use Move to change the day; it updates JobNimbus and tells the customer."
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-xs font-semibold">{job.customer_name}</span>
+        <JobName job={job} className="text-xs font-semibold" />
         <span className="inline-flex shrink-0 items-center gap-0.5 rounded bg-slate-200/80 px-1 py-px text-[9px] font-medium text-slate-700">
           <Lock className="h-2.5 w-2.5" />
           Booked

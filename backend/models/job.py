@@ -135,6 +135,7 @@ class Job(Base):
 
     # JN data
     jn_status: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    jn_number: Mapped[str | None] = mapped_column(String(50), nullable=True)  # JobNimbus job number (26426)
     jn_notes_raw: Mapped[str | None] = mapped_column(Text, nullable=True)  # raw notes from JN
     ai_note_scan_result: Mapped[str | None] = mapped_column(Text, nullable=True)  # Claude's extraction
 

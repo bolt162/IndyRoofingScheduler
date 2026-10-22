@@ -294,6 +294,8 @@ def _migrate_job_columns():
             "suggested_pm_id": "INTEGER",
             "suggested_days": "INTEGER",
             "suggested_why": "VARCHAR(255)",
+            # Job number on the cards (2026-10-22)
+            "jn_number": "VARCHAR(50)",
         }
         for name, col_type in columns.items():
             if name in existing:

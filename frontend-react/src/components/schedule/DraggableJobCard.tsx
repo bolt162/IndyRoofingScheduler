@@ -8,6 +8,7 @@ import { useUpdateJob } from '@/api/jobs';
 import { useCrews } from '@/api/settings';
 import { CrewNotesButton } from './CrewNotesButton';
 import { cn } from '@/lib/utils';
+import { JobName } from '@/components/jobs/JobName';
 import type { Crew, Job } from '@/types';
 
 /** Active crews that do this job's trade (a roof repair is still roofing), best rank first. */
@@ -151,7 +152,7 @@ export function DraggableJobCard({
         title="Planned here, not sent to JobNimbus yet. Drag to another day, or back to the list to remove."
       >
         <div className="flex items-center justify-between gap-2 pr-2">
-          <span className="truncate text-xs font-semibold">{job.customer_name}</span>
+          <JobName job={job} className="text-xs font-semibold" />
           <span className="shrink-0 rounded bg-primary/10 px-1 py-px text-[9px] font-medium text-primary">Planned</span>
         </div>
         <p className="mt-0.5 flex items-center gap-1 truncate text-[11px] text-muted-foreground">

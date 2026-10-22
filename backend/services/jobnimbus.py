@@ -448,6 +448,7 @@ def map_jn_job_to_model(jn_data: dict) -> dict:
         "duration_tier": tier,
         "crew_requirement_flag": crew_flag,
         "jn_status": jn_status,
+        "jn_number": str(jn_data.get("number") or "") or None,
         "bucket": bucket,
         "jn_notes_raw": description,
     }
@@ -543,7 +544,7 @@ def sync_jobs_from_jn(db: Session) -> dict:
                 # Update fields that may have changed
                 for field in ["customer_name", "address", "latitude", "longitude",
                               "payment_type", "material_type", "square_footage",
-                              "sales_rep", "jn_status", "bucket", "duration_tier",
+                              "sales_rep", "jn_status", "jn_number", "bucket", "duration_tier",
                               "duration_confirmed", "crew_requirement_flag"]:
                     # Days a person set by hand stay confirmed (the size tiers used to undo that every sync)
                     if field == "duration_confirmed" and (existing.duration_source or "").startswith("Set by "):

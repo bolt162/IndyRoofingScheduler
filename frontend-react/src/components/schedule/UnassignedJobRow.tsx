@@ -7,6 +7,7 @@ import { WeatherBadge } from '@/components/jobs/WeatherBadge';
 import { NoBuildDatesBadge } from '@/components/jobs/NoBuildDatesBadge';
 import { ReadyCheckBadge } from '@/components/jobs/ReadyCheckBadge';
 import { cn } from '@/lib/utils';
+import { JobName } from '@/components/jobs/JobName';
 import type { Job } from '@/types';
 
 /**
@@ -29,6 +30,9 @@ export function UnassignedJobRow({ job }: { job: Job }) {
   const daysInQueue = job.date_entered
     ? differenceInDays(new Date(), parseISO(job.date_entered))
     : null;
+  const daysInBuildQueue = job.entered_queue_at
+    ? differenceInDays(new Date(), parseISO(job.entered_queue_at))
+    : null;
 
   return (
     <div
@@ -45,7 +49,7 @@ export function UnassignedJobRow({ job }: { job: Job }) {
     >
       {/* Line 1: name + score */}
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold truncate">{job.customer_name}</span>
+        <JobName job={job} className="text-xs font-semibold" />
         <Badge variant="outline" className="font-mono text-[10px] tabular-nums shrink-0 px-1 py-0">
           {job.score.toFixed(0)}
         </Badge>
@@ -73,9 +77,14 @@ export function UnassignedJobRow({ job }: { job: Job }) {
         )}
         <NoBuildDatesBadge windows={job.no_build_dates} small />
         {daysInQueue !== null && (
-          <Badge variant="outline" className="text-[9px] px-1 py-0 gap-0.5 text-muted-foreground">
+          <Badge variant="outline" className="text-[9px] px-1 py-0 gap-0.5 text-muted-foreground" title="Days since the job was created in JobNimbus">
             <Clock className="h-2.5 w-2.5" />
-            {daysInQueue}d
+            {daysInQueue}d total
+          </Badge>
+        )}
+        {daysInBuildQueue !== null && (
+          <Badge variant="outline" className="text-[9px] px-1 py-0 text-muted-foreground" title="Days since it entered the build queue">
+            {daysInBuildQueue}d in queue
           </Badge>
         )}
         <WeatherBadge
