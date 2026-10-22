@@ -107,10 +107,18 @@ def test_skips_flagged_on_hold_planned_and_test_jobs(db):
 def test_crews_only_get_their_trade_and_test_crews_are_never_used(db):
     setup(db, crews=(("Peoples Gutters", ["gutters"], 1), ("IRR Test Crew", ["roofing"], 1)))
     roof = job(db, "Roof")
-    gutters = job(db, "Gutters", primary_trade="gutters")
     run(db)
     assert roof.suggested_date is None
-    assert gutters.suggested_date == MON
+
+
+def test_only_full_roofs_are_suggested(db):
+    setup(db, crews=(("DCT", ["roofing"], 1), ("Peoples Gutters", ["gutters"], 2), ("Leon", ["siding"], 3)))
+    roof = job(db, "Full roof", score=10)
+    others = [job(db, n, score=90, primary_trade=t) for n, t in
+              (("Repair", "roofing_repair"), ("Gutters", "gutters"), ("Siding", "siding"))]
+    run(db)
+    assert roof.suggested_date == MON
+    assert all(o.suggested_date is None for o in others)
 
 
 def test_a_multi_day_build_must_fit_inside_the_week(db):

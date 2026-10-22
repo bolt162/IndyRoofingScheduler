@@ -8,6 +8,7 @@ never sees them.
 How a week is filled, Monday to Friday, from tomorrow on:
   - Jobs planned here or booked in JobNimbus stay put; their crews and PMs count as busy those days
     (a 2-day build keeps its crew busy both days).
+  - Full roofs only (Aaron, 2026-10-22): repairs, siding and gutters are placed by hand.
   - Waiting jobs (To Schedule / Not Built, no plan yet) go in order: must-build first, then the same
     score the Unassigned list sorts by. Jobs the ready check flagged or put on hold are skipped.
   - Each crew does its own trade, one build at a time, and the whole build fits inside Mon to Fri.
@@ -26,6 +27,7 @@ logger = logging.getLogger("suggest")
 
 WAITING = ("to_schedule", "not_built")
 BLOCKED_READY = ("flagged", "hold")
+SUGGESTED_TRADES = ("roofing",)  # full roofs
 
 
 def _is_test(name: str | None) -> bool:
@@ -164,7 +166,8 @@ def suggest_week(db: Session, week_start: date, pm_ids: list[int] | None = None,
 
     # Not already suggested for another week (this week's were just cleared)
     waiting = [j for j in db.query(Job).filter(Job.bucket.in_(WAITING), Job.planned_date.is_(None),
-                                               Job.suggested_date.is_(None)).all()
+                                               Job.suggested_date.is_(None),
+                                               Job.primary_trade.in_(SUGGESTED_TRADES)).all()
                if j.ready_status not in BLOCKED_READY and not _is_test(j.customer_name)]
     waiting.sort(key=lambda j: (not j.must_build, -(j.score or 0), j.id))
     forecasts = forecasts or _Forecasts(db)
