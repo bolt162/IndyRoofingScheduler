@@ -7,7 +7,7 @@ export function JobName({ job, className }: { job: Job; className?: string }) {
     <span className="flex min-w-0 items-baseline gap-1">
       <span className={cn('truncate', className)}>{job.customer_name}</span>
       {job.jn_number && (
-        <span className="shrink-0 text-[10px] font-normal tabular-nums text-muted-foreground">#{job.jn_number}</span>
+        <span className="shrink-0 text-xs font-normal tabular-nums text-muted-foreground">{job.jn_number}</span>
       )}
     </span>
   );
