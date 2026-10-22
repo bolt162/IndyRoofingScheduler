@@ -141,9 +141,7 @@ def position_block(ctx: EmailContext) -> str:
     if not shows_count(ctx):
         text = C.POSITION_NEAR_FRONT
         if last is not None and n < last and ctx.builds_completed_week > 0:
-            unit = ("roof", "roofs") if ctx.track == "roof" else ("project", "projects")
-            text += " " + C.POSITION_DROPPED_BUILDS.format(
-                builds_completed=_plural(ctx.builds_completed_week, *unit))
+            text += " " + C.POSITION_DROPPED_BUILDS
         return text
     if last is None:
         return C.POSITION_FIRST.format(ahead_count=_ahead_count(n, ctx.track))
@@ -153,11 +151,7 @@ def position_block(ctx: EmailContext) -> str:
         return C.POSITION_SAME.format(ahead_count=_ahead_count(n, ctx.track))
     text = C.POSITION_DROPPED.format(ahead_now=_ahead_now(n, ctx.track), delta=last - n)
     if ctx.builds_completed_week > 0:
-        unit = {"roof": ("roof", "roofs")}.get(
-            ctx.track, ("repair", "repairs") if is_repair(ctx.track) else ("project", "projects"))
-        text += " " + C.POSITION_DROPPED_BUILDS.format(
-            builds_completed=_plural(ctx.builds_completed_week, *unit)
-        )
+        text += " " + C.POSITION_DROPPED_BUILDS
     return text
 
 

@@ -32,7 +32,8 @@ FOOTER_NO_REP = (
 # {position_block}
 # ---------------------------------------------------------------------------
 POSITION_DROPPED = "{ahead_now}, {delta} fewer than last week."
-POSITION_DROPPED_BUILDS = "Our crews finished {builds_completed} this week."
+# No number (Aaron, 2026-10-22): customers did the math ("12 ahead, 10 built a week") and expected a date.
+POSITION_DROPPED_BUILDS = "Our crews got more done this week, and you're getting closer."
 POSITION_SAME = (
     "You're holding strong with {ahead_count}. Our crews spent this week on some bigger, more "
     "detailed projects, and your spot is locked in."

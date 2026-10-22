@@ -68,12 +68,14 @@ def ctx(**kw):
 
 def test_position_dropped():
     assert K.position_block(ctx(jobs_ahead=18, jobs_ahead_last_week=23, builds_completed_week=11)) == (
-        "There are 18 builds ahead of you now, 5 fewer than last week. Our crews finished 11 roofs this week.")
+        "There are 18 builds ahead of you now, 5 fewer than last week. Our crews got more done this week, and you're getting closer.")
 
 
-def test_position_dropped_siding_says_projects():
+def test_position_dropped_never_says_how_many_were_built():
+    """Aaron (2026-10-22): no completed-builds number; customers do the math and expect a date."""
     text = K.position_block(replace(SAMPLES["siding"], jobs_ahead=10, jobs_ahead_last_week=12))
-    assert "11 projects this week" in text
+    assert "Our crews got more done this week, and you're getting closer." in text
+    assert "11" not in text
 
 
 def test_position_same():
