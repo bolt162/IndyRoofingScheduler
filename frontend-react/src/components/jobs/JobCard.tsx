@@ -376,10 +376,14 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
               </div>
               <div className="flex items-center gap-1">
                 <Calendar className="h-3 w-3" />
-                <span title="Days since the job was created in JobNimbus">{daysInQueue !== null ? `${daysInQueue}d total` : '—'}</span>
                 {daysInBuildQueue !== null && (
-                  <span title="Days since it entered the build queue">· {daysInBuildQueue}d in queue</span>
+                  <span className="font-medium text-foreground" title="Days waiting in the build queue. This is what sets their place in line.">
+                    {daysInBuildQueue}d in queue
+                  </span>
                 )}
+                <span className="opacity-70" title="Days since the job was created in JobNimbus (includes sales and supplementing)">
+                  {daysInQueue !== null ? `${daysInBuildQueue !== null ? '· ' : ''}${daysInQueue}d total` : '—'}
+                </span>
               </div>
               <DurationFlag
                 tier={job.duration_tier}

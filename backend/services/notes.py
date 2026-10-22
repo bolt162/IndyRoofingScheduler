@@ -14,6 +14,7 @@ from backend.models.note_log import NoteLog
 from backend.models.job import Job
 from backend.models.schedule import SchedulePlan
 from backend.models.settings import SystemSettings
+from backend.services.scoring import days_in_queue
 
 
 # Fallback templates used when DB has no setting (e.g. first run before seed)
@@ -79,13 +80,9 @@ def _render_note(db: Session, template_key: str, context: dict) -> tuple[str, da
 
 def generate_scheduling_note(db: Session, job: Job, plan: SchedulePlan | None = None, pm_name: str = "") -> NoteLog:
     """Generate a scheduling decision note for a job."""
-    days_in_queue = 0
-    if job.date_entered:
-        days_in_queue = (datetime.utcnow() - job.date_entered).days
-
     context = {
         "date_scheduled": job.date_scheduled or "TBD",
-        "days_in_queue": days_in_queue,
+        "days_in_queue": days_in_queue(db, job),
         "payment_type": job.payment_type or "unknown",
         "trade_desc": "single" if not job.secondary_trades else "multi",
         "primary_trade": job.primary_trade or "unknown",
@@ -199,7 +196,7 @@ def generate_standalone_rule_note(db: Session, job: Job, option: str) -> NoteLog
     context = {
         "option_desc": "Saturday Build" if option == "saturday_build" else f"Sales Rep Managed ({job.sales_rep or 'TBD'})",
         "payment_type": job.payment_type or "unknown",
-        "days_in_queue": (datetime.utcnow() - job.date_entered).days if job.date_entered else "unknown",
+        "days_in_queue": days_in_queue(db, job),
     }
 
     note_text, template_version = _render_note(db, "note_template_standalone_rule", context)

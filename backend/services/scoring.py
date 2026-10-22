@@ -29,6 +29,15 @@ def _get_weight(db: Session, key: str) -> float:
     return float(_get_setting(db, key, "10"))
 
 
+def days_in_queue(db: Session, job: Job) -> int:
+    """Days since the job entered the build queue (same date the customer emails use), not since
+    it was created in JobNimbus: a customer we first talked to years ago mustn't jump the line."""
+    from backend.models.email import EmailState
+    state = db.query(EmailState).filter(EmailState.job_id == job.id, EmailState.mode == "live").first()
+    start = (state.entered_queue_at if state else None) or job.date_entered
+    return (datetime.utcnow() - start).days if start else 0
+
+
 def compute_deterministic_score(
     job: Job,
     db: Session,
@@ -42,15 +51,13 @@ def compute_deterministic_score(
     # 1. Days in queue vs rolling average
     avg_days = float(_get_setting(db, "sit_time_rolling_avg_days", "38"))
     weight_queue = _get_weight(db, "weight_days_in_queue")
-    days_in_queue = 0
-    if job.date_entered:
-        days_in_queue = (datetime.utcnow() - job.date_entered).days
+    queue_days = days_in_queue(db, job)
     if avg_days > 0:
-        queue_factor = (days_in_queue / avg_days) * weight_queue
+        queue_factor = (queue_days / avg_days) * weight_queue
     else:
         queue_factor = 0
     score += queue_factor
-    explanations.append(f"Queue: {days_in_queue}d (avg {avg_days:.0f}d) -> +{queue_factor:.1f}")
+    explanations.append(f"Queue: {queue_days}d (avg {avg_days:.0f}d) -> +{queue_factor:.1f}")
 
     # 2. Payment type
     weight_payment = _get_weight(db, "weight_payment_type")
@@ -513,7 +520,7 @@ def run_scoring_engine(db: Session, pm_ids: list[int] | None = None, target_date
             "material_type": job.material_type,
             "primary_trade": job.primary_trade,
             "secondary_trades": job.secondary_trades or [],
-            "days_in_queue": (datetime.utcnow() - job.date_entered).days if job.date_entered else 0,
+            "days_in_queue": days_in_queue(db, job),
             "must_build": job.must_build,
             "must_build_deadline": str(job.must_build_deadline) if job.must_build_deadline else None,
             "duration_days": job.duration_days,

@@ -76,15 +76,15 @@ export function UnassignedJobRow({ job }: { job: Job }) {
           </Badge>
         )}
         <NoBuildDatesBadge windows={job.no_build_dates} small />
-        {daysInQueue !== null && (
-          <Badge variant="outline" className="text-[9px] px-1 py-0 gap-0.5 text-muted-foreground" title="Days since the job was created in JobNimbus">
+        {daysInBuildQueue !== null && (
+          <Badge variant="outline" className="text-[9px] px-1 py-0 gap-0.5 font-medium" title="Days waiting in the build queue. This is what sets their place in line.">
             <Clock className="h-2.5 w-2.5" />
-            {daysInQueue}d total
+            {daysInBuildQueue}d in queue
           </Badge>
         )}
-        {daysInBuildQueue !== null && (
-          <Badge variant="outline" className="text-[9px] px-1 py-0 text-muted-foreground" title="Days since it entered the build queue">
-            {daysInBuildQueue}d in queue
+        {daysInQueue !== null && (
+          <Badge variant="outline" className="text-[9px] px-1 py-0 text-muted-foreground opacity-70" title="Days since the job was created in JobNimbus (includes sales and supplementing)">
+            {daysInQueue}d total
           </Badge>
         )}
         <WeatherBadge
