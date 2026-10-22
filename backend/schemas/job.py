@@ -45,6 +45,7 @@ class JobResponse(JobBase):
     score_explanation: str | None = None
     jn_status: str | None = None
     jn_number: str | None = None
+    siding_before_gutters: bool = False
     jn_notes_raw: str | None = None
     ai_note_scan_result: str | None = None
     weather_status: str | None = None
@@ -134,6 +135,7 @@ class JobUpdate(BaseModel):
     planned_pm_id: int | None = None
     planned_crew_id: int | None = None
     planned_days: int | None = None
+    siding_before_gutters: bool | None = None
 
 
 class CrewNotesRequest(BaseModel):

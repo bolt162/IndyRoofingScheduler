@@ -296,6 +296,8 @@ def _migrate_job_columns():
             "suggested_why": "VARCHAR(255)",
             # Job number on the cards (2026-10-22)
             "jn_number": "VARCHAR(50)",
+            # Siding before gutters switch (2026-10-22)
+            "siding_before_gutters": "BOOLEAN NOT NULL DEFAULT FALSE",
         }
         for name, col_type in columns.items():
             if name in existing:

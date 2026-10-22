@@ -40,6 +40,13 @@ const PAYMENT_COLORS: Record<string, string> = {
   insurance: 'bg-gray-100 text-gray-700',
 };
 
+/** Gutters and siding are both on the job (as trades or work orders). */
+function hasGuttersAndSiding(job: Job) {
+  const trades = [job.primary_trade, ...(job.secondary_trades ?? []), ...(job.jn_work_orders ?? []).map((w) => w.trade)]
+    .map((t) => (t ?? '').toLowerCase());
+  return trades.includes('gutters') && trades.includes('siding');
+}
+
 export function JobCard({ job, compact = false }: { job: Job; compact?: boolean }) {
   const daysInQueue = job.date_entered
     ? differenceInDays(new Date(), parseISO(job.date_entered))
@@ -551,6 +558,29 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
                 {clearMustBuild.isPending ? 'Removing…' : 'Remove Must-Build'}
               </Button>
             </div>
+          )}
+
+          {/* Row 8c: gutters and siding both on the job: which goes first (normally gutters) */}
+          {!compact && hasGuttersAndSiding(job) && (
+            <label
+              className="flex items-center gap-1.5 pt-1 border-t text-[11px] text-muted-foreground"
+              onClick={(e) => e.stopPropagation()}
+              title="Normally the gutters go on before the siding. Check this when the house's layout means siding first."
+            >
+              <input
+                type="checkbox"
+                className="h-3 w-3"
+                checked={job.siding_before_gutters}
+                disabled={updateJob.isPending}
+                onChange={(e) =>
+                  updateJob.mutate(
+                    { id: job.id, update: { siding_before_gutters: e.target.checked } },
+                    { onError: () => toast.error("Couldn't save that. Try again.") },
+                  )
+                }
+              />
+              Siding before gutters
+            </label>
           )}
 
           {/* Row 9: Action buttons — only for To Schedule jobs */}

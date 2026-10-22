@@ -65,6 +65,9 @@ def reschedule_category(reason: str | None) -> str:
     return "Other"
 
 GUTTERS = "gutters"
+SIDING = "siding"
+# Trades booked on their own work order once the main trade is done (Other Trades in JobNimbus)
+FOLLOW_UP_TRADES = (GUTTERS, SIDING)
 
 
 def booked_in_jn(job: Job) -> bool:
@@ -72,22 +75,31 @@ def booked_in_jn(job: Job) -> bool:
     return any((w.get("status") or "").strip().lower() == WO_PENDING for w in job.jn_work_orders or [])
 
 
-def gutters_after_roof(job: Job) -> bool:
-    """A roof job whose roof is done (Other Trades in JobNimbus) with its Gutters work order still to build.
-    Gutters always go on after the roof, or the re-roof can damage them (Aaron, 2026-10-22)."""
-    return job.bucket == "other_trades" and any(
-        (w.get("trade") or "").strip().lower() == GUTTERS
-        and not any(x in (w.get("status") or "").lower() for x in CLOSED_WO_WORDS)
-        for w in job.jn_work_orders or [])
+def follow_up_trade(job: Job) -> str | None:
+    """The trade to book next on a job whose main trade is done (Other Trades in JobNimbus), or None.
+    Order (Aaron, 2026-10-22): gutters only after the roof (the re-roof can damage them), then siding;
+    the job's "Siding before gutters" switch flips gutters and siding. One already at Pending Start is
+    the one in play, so Move and Not Built act on it."""
+    if job.bucket != "other_trades":
+        return None
+    open_wos = [w for w in job.jn_work_orders or []
+                if (w.get("trade") or "").strip().lower() in FOLLOW_UP_TRADES
+                and not any(x in (w.get("status") or "").lower() for x in CLOSED_WO_WORDS)]
+    for w in open_wos:
+        if (w.get("status") or "").strip().lower() == WO_PENDING:
+            return (w.get("trade") or "").strip().lower()
+    order = (SIDING, GUTTERS) if getattr(job, "siding_before_gutters", False) else (GUTTERS, SIDING)
+    trades = {(w.get("trade") or "").strip().lower() for w in open_wos}
+    return next((t for t in order if t in trades), None)
 
 
 def work_trade(job: Job) -> str | None:
-    """The trade being booked: the gutters on a roof that's done, else the job's main trade."""
-    return GUTTERS if gutters_after_roof(job) else job.primary_trade
+    """The trade being booked: the follow-up trade on a job whose main trade is done, else the main trade."""
+    return follow_up_trade(job) or job.primary_trade
 
 
 def plannable(job: Job) -> bool:
-    return job.bucket in PLANNABLE_BUCKETS or gutters_after_roof(job)
+    return job.bucket in PLANNABLE_BUCKETS or follow_up_trade(job) is not None
 
 
 # The work order that carries each trade's build, best match first
@@ -336,8 +348,16 @@ def build_days(job: Job, crew: Crew | None) -> int:
     from backend.services import build_days as bd
     if job.planned_days:
         return job.planned_days
-    if work_trade(job) == GUTTERS:
+    trade = work_trade(job)
+    if trade == GUTTERS:
         return 1  # the work order's estimate is the roof's size
+    if trade == SIDING:
+        if (job.duration_source or "").startswith(bd.SET_BY_PERSON):
+            return job.duration_days or 1
+        # hook: a siding estimate from the Siding work order goes here once it's fit
+        if follow_up_trade(job):
+            return 1  # the job's days are the roof's
+        return job.duration_days or 1
     sug = bd.suggestion(job, crew.name if crew else None)
     return (sug or {}).get("days") or job.duration_days or 1
 
@@ -405,8 +425,8 @@ def book_job(db: Session, job: Job, who: str, jn: JN | None = None, lookups: Loo
     from backend import activity
     jn = jn or JN()
     lookups = lookups or Lookups(jn)
-    # Gutters after a roof: only the Gutters work order is booked; the job stays at Other Trades
-    follow_up = gutters_after_roof(job)
+    # Gutters or siding after the main trade: only that work order is booked; the job stays at Other Trades
+    follow_up = follow_up_trade(job) is not None
     d = job.planned_date
     if in_progress(job) and (job.jn_push_steps or {}).get("date"):
         d = date.fromisoformat(job.jn_push_steps["date"])
@@ -486,7 +506,7 @@ def book_job(db: Session, job: Job, who: str, jn: JN | None = None, lookups: Loo
             _done(db, job, "work_order_status")
 
         if not st.get("job_status") and follow_up:
-            _done(db, job, "job_status", "gutters after the roof: job stays at Other Trades")
+            _done(db, job, "job_status", "after the main trade: job stays at Other Trades")
         elif not st.get("job_status"):
             body = {
                 "status": lookups.status_id("job", jn_job.get("record_type_name") or "", JOB_PENDING),
@@ -507,9 +527,9 @@ def book_job(db: Session, job: Job, who: str, jn: JN | None = None, lookups: Loo
             _done(db, job, "rep_note")
 
         if not st.get("build_block") and follow_up:
-            _done(db, job, "build_block", "not for gutters after the roof")
+            _done(db, job, "build_block", "not for a trade after the main one")
         if not st.get("tasks") and follow_up:
-            _done(db, job, "tasks", "not for gutters after the roof")
+            _done(db, job, "tasks", "not for a trade after the main one")
         st = job.jn_push_steps or {}
         if not st.get("build_block"):
             if rep_id:
@@ -743,8 +763,8 @@ def _move_in_place(db: Session, job: Job, booked: list[dict], new_day: date, cre
     for w in sorted(booked, key=lambda w: w is main):  # the main one last, after the others are quiet
         jn.put(f"v2/workorders/{w['jnid']}", {"jnid": w["jnid"], **dates,
                RESCHEDULE_FIELD: reschedule_category(reason) if w is main else ""})
-    follow_up = gutters_after_roof(job)
-    if not follow_up:  # gutters after the roof: the job's own date is the roof's, leave it
+    follow_up = follow_up_trade(job) is not None
+    if not follow_up:  # a trade after the main one: the job's own date is the main trade's, leave it
         body = dict(dates)
         if (jn_job.get("date_end") or 0) and jn_job["date_end"] < start:
             body["date_end"] = 0  # an old end date before the new start makes JobNimbus fail (500)

@@ -102,7 +102,7 @@ def push_to_jobnimbus(request: PushRequest, db: Session = Depends(get_db),
 class SuggestRequest(BaseModel):
     week_start: date
     pm_ids: list[int] | None = None
-    kind: Literal["roofs", "gutters"] = "roofs"
+    kind: Literal["roofs", "gutters", "siding"] = "roofs"
 
 
 class SuggestionsRequest(BaseModel):

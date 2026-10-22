@@ -545,4 +545,43 @@ def test_not_built_on_gutters_after_the_roof_keeps_the_job_out_of_the_queue(db, 
     out = R.mark_not_built(job.id, NotBuiltRequest(reason="Weather"), db=db, user=ClerkUser({"sub": "u", "email": "g@x"}))
     assert calls == ["Weather"]
     assert out["bucket"] == "other_trades" and job.planned_date is None
-    assert B.gutters_after_roof(job) and not B.booked_in_jn(job)
+    assert B.follow_up_trade(job) == "gutters" and not B.booked_in_jn(job)
+
+
+def test_siding_after_the_roof_books_only_the_siding_work_order(db):
+    done = [{"number": "WO-11853", "trade": "Roofing", "status": "Completed"},
+            {"number": "WO-11855", "trade": "Siding", "status": "New"}]
+    job = planned_job(db, bucket="other_trades", jn_status="Other Trades", jn_work_orders=done)
+    jn = FakeJN(wo_status="Completed", job_status="Other Trades",
+                extra_wos=[{"jnid": "wo3", "number": "WO-11855", "record_type_name": "Siding",
+                            "status_name": "New", "is_active": True}])
+    jn_get = jn.get
+
+    def get(endpoint, params=None):
+        out = jn_get(endpoint, params)
+        if endpoint == "account/settings":
+            out["workflows"].append({"object_type": "workorder", "name": "Siding",
+                                     "status": [{"id": 491, "name": "Pending Start"}]})
+        if endpoint == "v2/workorders":  # this job has no gutters
+            out["results"] = [w for w in out["results"] if w["record_type_name"] != "Gutters"]
+        return out
+    jn.get = get
+    result = B.push(db, "Greg Russell", jn=jn)
+    assert result["booked"] == 1, result
+    w = jn.writes()
+    assert [c[1] for c in w] == ["v2/workorders/wo3", "v2/workorders/wo3", "activities"]
+    assert w[1][2] == {"jnid": "wo3", "status": 491}
+    assert w[2][2]["note"] == "@PatRep siding scheduled Tuesday 10/29"
+
+
+def test_follow_up_order_and_the_siding_first_switch(db):
+    both = [{"trade": "Roofing", "status": "Completed"}, {"trade": "Gutters", "status": "New"},
+            {"trade": "Siding", "status": "New"}]
+    job = planned_job(db, bucket="other_trades", jn_work_orders=both)
+    assert B.follow_up_trade(job) == "gutters"
+    job.siding_before_gutters = True
+    assert B.follow_up_trade(job) == "siding"
+    job.jn_work_orders = [both[0], {"trade": "Gutters", "status": "Pending Start"}, both[2]]
+    assert B.follow_up_trade(job) == "gutters"  # the booked one is the one in play
+    job.bucket = "to_schedule"
+    assert B.follow_up_trade(job) is None and B.work_trade(job) == "roofing"

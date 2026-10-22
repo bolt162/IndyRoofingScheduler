@@ -230,3 +230,57 @@ def test_each_button_only_replaces_its_own_suggestions(db):
     run(db)
     assert gutters.suggested_date == MON
     assert S.keep(db, [gutters.id], "Greg") == 1 and gutters.planned_date == MON
+
+
+# --- Suggest siding ---
+
+def wos(**statuses):
+    """Work orders: Roofing done, plus the given trades and statuses (gutters="New", siding="New")."""
+    out = [{"number": "1", "trade": "Roofing", "status": "Completed", "start": None, "crews": [], "pm": None,
+            "internal_note": "", "customer_note": ""}]
+    for i, (trade, status) in enumerate(statuses.items(), 2):
+        out.append({"number": str(i), "trade": trade.capitalize(), "status": status, "start": None, "crews": [],
+                    "pm": None, "internal_note": "", "customer_note": ""})
+    return out
+
+
+def run_siding(db):
+    return S.suggest_week(db, MON, today=TODAY, forecasts=NoWeather(), kind="siding")
+
+
+def test_siding_full_jobs_and_after_the_main_trade_with_siding_crews_only(db):
+    setup(db, crews=(("DCT", ["roofing"], 1), ("Leon", ["siding"], 2)))
+    full = job(db, "Full siding", primary_trade="siding", duration_days=3)
+    repair = job(db, "Siding repair", primary_trade="siding_repair")
+    roof_waiting = job(db, "Roof not done", secondary_trades=["siding"])
+    after_roof = job(db, "Roof done", bucket="other_trades", jn_work_orders=wos(siding="New"))
+    run_siding(db)
+    leon = db.query(Crew).filter_by(name="Leon").one()
+    assert full.suggested_crew_id == leon.id and full.suggested_days == 3
+    assert after_roof.suggested_date is not None and after_roof.suggested_days == 1
+    assert repair.suggested_date is None and roof_waiting.suggested_date is None
+
+
+def test_siding_waits_for_the_gutters_unless_the_switch_says_siding_first(db):
+    setup(db, crews=(("Alpha", ["gutters"], 1), ("Leon", ["siding"], 2)))
+    normal = job(db, "Gutters first", bucket="other_trades", jn_work_orders=wos(gutters="New", siding="New"))
+    flipped = job(db, "Siding first", bucket="other_trades", siding_before_gutters=True,
+                  jn_work_orders=wos(gutters="New", siding="New"))
+    gutters_done = job(db, "Gutters done", bucket="other_trades",
+                       jn_work_orders=wos(gutters="Completed", siding="New"))
+    run_siding(db)
+    assert normal.suggested_date is None and gutters_done.suggested_date is not None
+    assert flipped.suggested_date is not None
+    run_gutters(db)
+    assert normal.suggested_date is not None  # gutters go first
+    assert S._kind(flipped) == "siding"  # its gutters wait for the siding
+
+
+def test_gutters_suggestions_survive_suggest_siding(db):
+    setup(db, crews=(("Alpha", ["gutters"], 1), ("Leon", ["siding"], 2)))
+    g = job(db, "Gutters", bucket="other_trades", jn_work_orders=wos(gutters="New"))
+    s = job(db, "Siding", primary_trade="siding")
+    run_gutters(db)
+    run_siding(db)
+    run_siding(db)
+    assert g.suggested_date == MON and s.suggested_date == MON

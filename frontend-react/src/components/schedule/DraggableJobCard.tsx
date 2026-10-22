@@ -14,7 +14,7 @@ import type { Crew, Job } from '@/types';
 /** Active crews that do this job's trade (a roof repair is still roofing), best rank first. */
 function crewsForJob(crews: Crew[] | undefined, job: Job) {
   const active = (crews ?? []).filter((c) => c.is_active);
-  const booking = job.work_trade ?? job.primary_trade ?? '';  // gutters after a roof: gutter crews
+  const booking = job.work_trade ?? job.primary_trade ?? '';  // gutters or siding after the main trade: that trade's crews
   const trade = booking.replace(/_repair$/, '');
   const fit = active.filter((c) => !trade || c.trades.includes(trade) || c.trades.includes(booking));
   return (fit.length ? fit : active).sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name));

@@ -115,9 +115,11 @@ export interface Job {
   score_explanation: string | null;
   jn_status: string | null;
   jn_number: string | null;
-  // Roof done (Other Trades) with the Gutters work order still to build; work_trade is what gets booked
-  gutters_after_roof: boolean;
+  // Main trade done (Other Trades): the gutters or siding to book next; work_trade is what gets booked
+  follow_up_trade: 'gutters' | 'siding' | null;
   work_trade: string | null;
+  // This job's siding goes on before its gutters (normally gutters first)
+  siding_before_gutters: boolean;
   // When it entered the build queue (same date the customer emails count from)
   entered_queue_at: string | null;
   jn_notes_raw: string | null;
@@ -223,6 +225,7 @@ export interface JobCreate {
 
 export interface JobUpdate {
   must_build?: boolean;
+  siding_before_gutters?: boolean;
   must_build_deadline?: string;
   must_build_reason?: string;
   bucket?: JobBucket;

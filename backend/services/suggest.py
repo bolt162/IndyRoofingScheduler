@@ -8,9 +8,10 @@ never sees them.
 How a week is filled, Monday to Friday, from tomorrow on:
   - Jobs planned here or booked in JobNimbus stay put; their crews and PMs count as busy those days
     (a 2-day build keeps its crew busy both days).
-  - Two buttons (Aaron, 2026-10-22). Suggest roofs: full roofs only; repairs and siding are placed by hand.
-    Suggest gutters: gutter-only jobs, and the Gutters work order on roofs that are done (never before
-    the roof, or the re-roof can damage them), longest wait first.
+  - Three buttons (Aaron, 2026-10-22). Suggest roofs: full roofs only; repairs are placed by hand.
+    Suggest gutters / Suggest siding: gutter-only or full siding jobs, and that trade's work order on jobs
+    whose main trade is done, longest wait first. Never before the roof; gutters before siding unless the
+    job's "Siding before gutters" switch is on (jn_booking.follow_up_trade).
   - Waiting jobs (To Schedule / Not Built, no plan yet) go in order: must-build first, then the same
     score the Unassigned list sorts by. Jobs the ready check flagged or put on hold are skipped.
   - Each crew does its own trade, one build at a time, and the whole build fits inside Mon to Fri.
@@ -57,17 +58,20 @@ def _days_for(job: Job, crew: Crew) -> int:
     return build_days(job, crew)
 
 
+KINDS = {"gutters": "gutters", "siding": "siding"}  # Suggest button -> trade; anything else is "roofs"
+
+
 def _kind(job: Job) -> str:
-    from backend.services.jn_booking import GUTTERS, work_trade
-    return "gutters" if work_trade(job) == GUTTERS else "roofs"
+    from backend.services.jn_booking import work_trade
+    return KINDS.get(work_trade(job) or "", "roofs")
 
 
 def _waiting_days(db: Session, job: Job, today: date) -> int:
-    """Gutters after a roof: days since the roof was done. Gutter-only jobs: days in the build queue."""
+    """After the main trade: days since it was done. Gutter-only / siding-only jobs: days in the build queue."""
     from backend.models.email import JobEvent
-    from backend.services.jn_booking import gutters_after_roof
+    from backend.services.jn_booking import follow_up_trade
     from backend.services.scoring import days_in_queue
-    if not gutters_after_roof(job):
+    if not follow_up_trade(job):
         return days_in_queue(db, job)
     ev = (db.query(JobEvent).filter(JobEvent.job_id == job.id, JobEvent.to_bucket == "other_trades")
           .order_by(JobEvent.created_at.desc()).first())
@@ -77,22 +81,23 @@ def _waiting_days(db: Session, job: Job, today: date) -> int:
 
 def _candidates(db: Session, kind: str, today: date) -> list[tuple[Job, str]]:
     """Jobs to place, best first, with the reason shown on the card."""
-    from backend.services.jn_booking import GUTTERS, booked_in_jn, gutters_after_roof
+    from backend.services.jn_booking import booked_in_jn, follow_up_trade
     open_q = db.query(Job).filter(Job.planned_date.is_(None), Job.suggested_date.is_(None))
-    if kind == "gutters":
+    trade = KINDS.get(kind)
+    if trade:
         jobs = [j for j in open_q.filter(Job.bucket.in_(WAITING + ("other_trades",))).all()
-                if (j.primary_trade == GUTTERS and j.bucket in WAITING)
-                or (gutters_after_roof(j) and not booked_in_jn(j))]
+                if (j.primary_trade == trade and j.bucket in WAITING)
+                or (follow_up_trade(j) == trade and not booked_in_jn(j))]
     else:
         jobs = open_q.filter(Job.bucket.in_(WAITING), Job.primary_trade == "roofing").all()  # full roofs
     jobs = [j for j in jobs if j.ready_status not in BLOCKED_READY and not _is_test(j.customer_name)]
     out = []
-    if kind == "gutters":
+    if trade:
         waited = {j.id: _waiting_days(db, j, today) for j in jobs}
         jobs.sort(key=lambda j: (not j.must_build, -waited[j.id], j.id))
         for j in jobs:
             w = waited[j.id]
-            why = ("roof done" + (f" {w} days ago" if w != 999 else "") if gutters_after_roof(j)
+            why = ("roof done" + (f" {w} days ago" if w != 999 else "") if follow_up_trade(j)
                    else f"waiting {w} days")
             out.append((j, ", ".join((["must build"] if j.must_build else []) + [why])))
     else:
@@ -106,7 +111,7 @@ def _candidates(db: Session, kind: str, today: date) -> list[tuple[Job, str]]:
 
 def clear(db: Session, week_start: date | None = None, job_ids: list[int] | None = None,
           kind: str | None = None) -> int:
-    """Dismiss suggestions: one week's, or just these jobs'. kind: only roofs' or only gutters'."""
+    """Dismiss suggestions: one week's, or just these jobs'. kind: only that button's (roofs, gutters, siding)."""
     q = db.query(Job).filter(Job.suggested_date.isnot(None))
     if job_ids is not None:
         q = q.filter(Job.id.in_(job_ids))
@@ -179,7 +184,7 @@ class _Forecasts:
 
 def suggest_week(db: Session, week_start: date, pm_ids: list[int] | None = None, today: date | None = None,
                  forecasts: _Forecasts | None = None, kind: str = "roofs") -> dict:
-    """kind: "roofs" (Suggest roofs) or "gutters" (Suggest gutters). Each replaces only its own suggestions."""
+    """kind: "roofs", "gutters" or "siding" (one per Suggest button). Each replaces only its own suggestions."""
     from backend.services import no_build
     from backend.services.jn_booking import booked_in_jn, build_days, crew_for_names, work_trade
     today = today or no_build.local_today()
