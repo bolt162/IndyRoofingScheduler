@@ -63,3 +63,26 @@ def to_text(text: str) -> str:
         else:
             out.append("\n".join(_inline_text(l) for l in lines))
     return "\n\n".join(out)
+
+
+# --- Lists of items (customers, jobs): a real table in HTML, one small block each in plain text ---
+
+_CELL = "padding:8px 10px;border-bottom:1px solid #e5e7eb;vertical-align:top;font-size:14px;line-height:20px;"
+_HEAD = _CELL + "text-align:left;background:#f3f4f6;color:#003C58;font-weight:bold;"
+
+
+def table_html(cols: list[str], rows: list[list[str]]) -> str:
+    ths = "".join(f'<th style="{_HEAD}">{html.escape(c)}</th>' for c in cols)
+    trs = "".join("<tr>" + "".join(f'<td style="{_CELL}">{html.escape(v or "")}</td>' for v in r) + "</tr>"
+                  for r in rows)
+    return ('<table role="presentation" cellpadding="0" cellspacing="0" '
+            f'style="width:100%;border-collapse:collapse;margin:0 0 16px 0;"><tr>{ths}</tr>{trs}</table>')
+
+
+def blocks_text(cols: list[str], rows: list[list[str]]) -> str:
+    """First column on its own line, then the other columns as indented "Label: value" lines."""
+    out = []
+    for r in rows:
+        lines = [r[0]] + [f"   {c}: {v}" for c, v in zip(cols[1:], r[1:]) if v]
+        out.append("\n".join(lines))
+    return "\n\n".join(out)

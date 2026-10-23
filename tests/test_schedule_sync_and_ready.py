@@ -210,12 +210,12 @@ def test_morning_email_lists_open_flags_for_office_and_greg(db, monkeypatch):
     res = R.run_ready_digest(db, mode="live")
     assert res["jobs"] == 1 and res["on_hold"] == 1
     mail = sent[0]
-    assert mail["subject"] == "Check before scheduling: 1"
+    assert mail["subject"] == "1 job to check before scheduling"
     assert mail["to"] == ["greg.russell@indyroofandrestoration.com", "nikka.samson@indyroofandrestoration.com",
                           "ross.manlapaz@indyroofandrestoration.com"]
-    assert "Pat Doe, 1 Main St: Gutter color not picked yet" in mail["text"]
-    assert "Lee Roe, 2 Oak Ave: On hold: Waiting on HOA approval" in mail["text"]
-    assert "Scheduler: https://indyscheduler.top/plan" in mail["text"]
+    assert "Pat Doe, 1 Main St\n   What to check: Gutter color not picked yet\n   Status: Needs a decision" in mail["text"]
+    assert "Lee Roe, 2 Oak Ave\n   What to check: Waiting on HOA approval\n   Status: On hold" in mail["text"]
+    assert "Open the Scheduler\nhttps://indyscheduler.top/plan" in mail["text"]
     assert a.ready_status == "flagged"
 
 

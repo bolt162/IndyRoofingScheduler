@@ -436,7 +436,8 @@ def compose(key: str, ctx: EmailContext, rotation_index: int = 0,
     if key == INTERNAL_SECOND_RESCHEDULE:
         if not v["rep_name"]:
             v["rep_name"] = "Sales Rep"
-        from backend.emails.internal import team_email
+        from backend.emails.internal import person, team_email
+        v["customer_name"] = person(v["customer_name"])
         return team_email(
             key, C.INTERNAL_SECOND_RESCHEDULE_SUBJECT.format_map(v), C.INTERNAL_SECOND_RESCHEDULE_WHAT.format_map(v),
             C.INTERNAL_SECOND_RESCHEDULE_ACTION,
@@ -474,9 +475,10 @@ def compose(key: str, ctx: EmailContext, rotation_index: int = 0,
 
 
 def compose_office_flag(ctx: EmailContext, flag_text: str) -> ComposedEmail:
+    from backend.emails.internal import person, team_email
     v = _base_values(ctx)
     v["flag_text"] = _clean(flag_text)
-    subject = C.OFFICE_FLAG_SUBJECT.format_map(v)
-    body = C.OFFICE_FLAG_BODY.format_map(v)
-    return ComposedEmail(OFFICE_FLAG, subject, _wrap_html(markup.to_html(body), None, []),
-                         markup.to_text(body), is_customer=False)
+    v["customer_name"] = person(v["customer_name"])
+    return team_email(OFFICE_FLAG, C.OFFICE_FLAG_SUBJECT.format_map(v), C.OFFICE_FLAG_WHAT.format_map(v), "",
+                      [("Customer", v["customer_name"]), ("Address", v["job_address"]),
+                       ("JobNimbus", v["job_link"])])

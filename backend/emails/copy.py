@@ -625,15 +625,7 @@ SCHEDULED_FINISH_REPAIR = (
 )
 
 OFFICE_FLAG_SUBJECT = "Build queue email flag: {customer_name}"
-OFFICE_FLAG_BODY = """
-{flag_text}
-
-Customer: {customer_name}
-
-Address: {job_address}
-
-JobNimbus: {job_link}
-"""
+OFFICE_FLAG_WHAT = "{flag_text}"
 
 
 # ---------------------------------------------------------------------------
@@ -652,8 +644,8 @@ LONG_WAIT_REP_ACTION = (
 )
 
 # Daily check (Aaron, 2026-10-19, after Jenn Golding J-26426 got a "still on for 10/14" reminder on 10/18)
-PAST_DATE_SUBJECT = "Build date passed, still Pending Start: {count}"
-PAST_DATE_LEAD = "These jobs still say Pending Start in JobNimbus, but their start date has already passed."
+PAST_DATE_SUBJECT = "{count} {jobs} still {say} Pending Start with a date that has passed"
+PAST_DATE_LEAD = "{count} {jobs} still {say} Pending Start in JobNimbus, but the start date has already passed."
 PAST_DATE_ACTION = (
     "**What to do:** for each one, put the new date on the work order, save, then move it back to Pending Start. "
     "If there's no new date yet, move the work order off Pending Start so the customer doesn't get a reminder "
@@ -661,41 +653,32 @@ PAST_DATE_ACTION = (
 )
 
 # Morning list of ready check flags (Aaron, 2026-10-19). To Nikka, Ross and Greg.
-READY_SUBJECT = "Check before scheduling: {count}"
-READY_LEAD = "These jobs have something in their notes that could stop the build."
+READY_SUBJECT = "{count} {jobs} to check before scheduling"
+READY_LEAD = "{count} {jobs} {have} something in the notes that could stop the build."
 READY_ACTION = (
     "**What to do:** open each one in the Scheduler and pick OK to schedule (if a note is just missing) "
     "or Keep on hold."
 )
-READY_ON_HOLD = "On hold: {issue}"
 
 JN_EMAIL_MISSING_SUBJECT = "No scheduling email from JobNimbus: {customer_name}"
-JN_EMAIL_MISSING_WHAT = (
-    "JobNimbus didn't send {customer_name} its \"Project Update\" email with their date. "
-    "Our \"you're on the calendar\" email did go out{date_note}."
-)
-JN_EMAIL_MISSING_ACTION = """**What to do:** make sure the customer gets their date and build day details. To resend from JobNimbus:
+JN_EMAIL_MISSING_WHAT = "{customer_name} hasn't gotten JobNimbus's Project Update email with their build date{date_note}."
+JN_EMAIL_MISSING_ACTION = """**What to do:** resend it from JobNimbus.
 
 1. Check the work order's start date and save.
 2. Move the work order off Pending Start, then back to Pending Start."""
 
 RESEARCH_SUBJECT = "New shingle product researched: {product}"
 RESEARCH_SUBJECT_PENDING = "Please review: new shingle product {product}"
-RESEARCH_WHAT = (
-    "A material order had a shingle we didn't know, so the Scheduler looked it up. "
-    "Its impact rating picks the insurance tip in the customer's Week 2 email."
-)
+RESEARCH_WHAT = "We looked up a shingle that wasn't on our list: {product}."
+RESEARCH_WHAT_PENDING = "A shingle that wasn't on our list needs your OK: {product}."
 RESEARCH_ACTION_APPROVED = (
     "**What to do:** nothing unless something below looks wrong. To fix it, open Customer Email Alerts "
     "in the Scheduler (Products tab)."
 )
-RESEARCH_ACTION_PENDING = (
-    "**What to do:** review and approve it in the Scheduler (Customer Email Alerts, Products tab). "
-    "Until then, customers with this shingle get the insurance tip without an impact rating."
-)
+RESEARCH_ACTION_PENDING = "**What to do:** review and approve it in the Scheduler (Customer Email Alerts, Products tab)."
 
-PREVIEW_SUBJECT = "Thursday build queue emails: {count} going out"
-PREVIEW_REP_SUBJECT = "Your customers' Thursday emails: {count} going out"
+PREVIEW_SUBJECT = "{count} {customers} get their build queue email Thursday"
+PREVIEW_REP_SUBJECT = "{count} of your customers get their weekly email Thursday"
 
 # ---------------------------------------------------------------------------
 # Wednesday preview: plain English guide for reps (internal only)

@@ -31,7 +31,7 @@ from backend.emails import copy as C
 from backend.emails import markup, research, selector as S, team
 from backend.emails.compose import ComposedEmail, EmailContext, compose
 from backend.emails.config import email_mode, office_alert_recipient
-from backend.emails.internal import team_email
+from backend.emails.internal import person, team_email
 from backend.emails.events import DONE_BUCKETS, states_for
 from backend.emails.jn_data import JobDetails, fetch_job_details, jn_schedule_email_sent
 from backend.emails.sender import send
@@ -171,10 +171,15 @@ def build_context(rc: RunContext, job: Job, state: EmailState, jobs_ahead: int |
     d = rc.details(job)
     track = S.track_for(job.primary_trade)
     rep = team.rep_contact(rc.db, job.sales_rep)
-    notes = list(d.errors)
+    notes = []
+    for err in d.errors:
+        logger.warning(f"JobNimbus data problem for job {job.id}: {err}")
+        notes.append("We couldn't read the customer's contact details from JobNimbus" if err.startswith("job/contact")
+                     else "We couldn't read the material order from JobNimbus")
     product, flag = research.resolve_product(rc.db, d.materials.shingle_line, job_id=job.id) if track == "roof" else (None, False)
     if flag:
-        notes.append(f"unknown shingle product: {d.materials.shingle_line or '(none on material order)'}")
+        notes.append(f"The shingle on the material order isn't one we know yet ({d.materials.shingle_line})"
+                     if d.materials.shingle_line else "The material order doesn't list a shingle")
     pm = (team.active_pms(rc.db) or [None])[0]
     ctx = EmailContext(
         job_id=job.id, track=track,
@@ -373,12 +378,13 @@ def run_scheduled_emails(db: Session, now: datetime | None = None, mode: str | N
             st.scheduled_email_sent = True
             result["sent"] += 1
             if not jn_sent:
-                date_note = f" (with their date, {K._format_date(ctx.scheduled_date)})" if ctx.scheduled_date else ""
+                name = person(job.customer_name)
+                date_note = f" ({K._format_date(ctx.scheduled_date)})" if ctx.scheduled_date else ""
                 _office(rc, job, team_email(
-                    "internal", C.JN_EMAIL_MISSING_SUBJECT.format(customer_name=job.customer_name),
-                    C.JN_EMAIL_MISSING_WHAT.format(customer_name=job.customer_name, date_note=date_note), C.JN_EMAIL_MISSING_ACTION,
-                    [("Customer", job.customer_name), ("Address", job.address), ("Customer phone", ctx.customer_phone),
-                     ("Scheduled for", K._format_date(ctx.scheduled_date) if ctx.scheduled_date else "No date on the job"),
+                    "internal", C.JN_EMAIL_MISSING_SUBJECT.format(customer_name=name),
+                    C.JN_EMAIL_MISSING_WHAT.format(customer_name=name, date_note=date_note), C.JN_EMAIL_MISSING_ACTION,
+                    [("Customer", name), ("Address", job.address), ("Customer phone", ctx.customer_phone),
+                     ("Build date", K._format_date(ctx.scheduled_date) if ctx.scheduled_date else "No date on the job"),
                      ("Rep", ctx.rep_name), ("JobNimbus", ctx.job_link)]))
                 result["flags"] += 1
         db.commit()
@@ -416,14 +422,14 @@ def run_long_wait_alerts(db: Session, now: datetime | None = None, mode: str | N
             continue
         d = rc.details(job)
         rep = team.rep_contact(db, job.sales_rep)
-        v = {"weeks": weeks, "customer_name": job.customer_name, "job_address": job.address,
+        v = {"weeks": weeks, "customer_name": person(job.customer_name), "job_address": job.address,
              "project_word": K.project_word(S.track_for(job.primary_trade)), "job_link": d.job_link,
              "rescheduled_count": job.rescheduled_count or 0, "customer_phone": d.customer_phone or "(not on file)",
              "rep_name": rep["rep_name"], "rep_first": (rep["rep_name"] or "there").split()[0],
              "jn_rep": job.sales_rep or "none listed",
              "rep_label": rep["rep_name"] or "no active rep"}
         action = (C.LONG_WAIT_OPS_REP_LINE if rep["rep_name"] else C.LONG_WAIT_OPS_NO_REP_LINE).format(**v)
-        details = [("Customer", job.customer_name), ("Address", job.address), ("Customer phone", v["customer_phone"]),
+        details = [("Customer", v["customer_name"]), ("Address", job.address), ("Customer phone", v["customer_phone"]),
                    ("Project", v["project_word"].capitalize()), ("Weeks waiting", str(weeks)),
                    ("Times rescheduled", str(v["rescheduled_count"])), ("Rep", v["rep_label"]),
                    ("JobNimbus", d.job_link)]
@@ -469,15 +475,19 @@ def run_past_date_alerts(db: Session, now: datetime | None = None, mode: str | N
             continue
         wos = ", ".join(sorted({p[0] for p in dated if p[0]}))
         trades = ", ".join(sorted({p[1] for p in dated if p[1]}))
-        label = f"{job.customer_name} ({b.number})" if b.number else job.customer_name
-        when = max(dates).strftime("%a %b %-d")
-        rows.append((label, f"{when}" + (f", {wos}" if wos else "") + (f" ({trades})" if trades else "")))
+        label = f"{person(job.customer_name)} ({b.number})" if b.number else person(job.customer_name)
+        rows.append([label, K._format_date(max(dates)), wos, trades])
     if not rows:
         return {"jobs": 0}
+    rows.sort()
+    n = len(rows)
+    jobs_word = "job" if n == 1 else "jobs"
+    say = "says" if n == 1 else "say"
     to = sorted(set(_ops_emails(db) + [r.email for r in team.active_pms(db) if r.email]))
     if to:
-        deliver(rc, None, team_email("internal", C.PAST_DATE_SUBJECT.format(count=len(rows)), C.PAST_DATE_LEAD,
-                                     C.PAST_DATE_ACTION, sorted(rows)), to)
+        deliver(rc, None, team_email("internal", C.PAST_DATE_SUBJECT.format(count=n, jobs=jobs_word, say=say),
+                                     C.PAST_DATE_LEAD.format(count=n, jobs=jobs_word, say=say), C.PAST_DATE_ACTION, [],
+                                     items=(["Customer", "Start date that passed", "Work order", "Trade"], rows)), to)
     return {"jobs": len(rows), "to": to}
 
 
@@ -493,14 +503,16 @@ def run_ready_digest(db: Session, now: datetime | None = None, mode: str | None 
     rows = []
     for j in jobs:
         street = (j.address or "").split(",")[0].strip()
-        label = f"{j.customer_name}, {street}" if street else j.customer_name
-        issue = ready_check._issues(j.ready_flags)
-        rows.append((label, C.READY_ON_HOLD.format(issue=issue) if j.ready_status == "hold" else issue))
-    rows.append(("Scheduler", f"{base_url()}/plan"))
+        label = f"{person(j.customer_name)}, {street}" if street else person(j.customer_name)
+        issue = ready_check._issues(j.ready_flags).replace("; ", ". ")
+        rows.append([label, issue, "On hold" if j.ready_status == "hold" else "Needs a decision"])
     to = team.ready_recipients(db)
     if to:
-        deliver(rc, None, team_email("internal", C.READY_SUBJECT.format(count=len(waiting)), C.READY_LEAD,
-                                     C.READY_ACTION, rows), to)
+        n = len(waiting)
+        fill = dict(count=n, jobs="job" if n == 1 else "jobs", have="has" if n == 1 else "have")
+        deliver(rc, None, team_email("internal", C.READY_SUBJECT.format(**fill), C.READY_LEAD.format(**fill),
+                                     C.READY_ACTION, [("Scheduler", f"{base_url()}/plan")],
+                                     items=(["Job", "What to check", "Status"], rows)), to)
     return {"jobs": len(waiting), "on_hold": len(jobs) - len(waiting), "to": to}
 
 
@@ -599,6 +611,10 @@ def next_thursday_10am(now: datetime | None = None) -> datetime:
     return target.astimezone(timezone.utc).replace(tzinfo=None)
 
 
+def _cap(text: str) -> str:
+    return text[:1].upper() + text[1:]
+
+
 def _preview_sections(preview: dict, rep_jn_name: str | None = None) -> list[tuple[str, list[str], list[list[str]]]]:
     """The preview as (title, column headers, rows): one customer per row. Reps get only their
     own customers and no rep column; the full version adds the office-only sections."""
@@ -612,16 +628,17 @@ def _preview_sections(preview: dict, rep_jn_name: str | None = None) -> list[tup
 
     def who(r: dict) -> str:
         trade = (r.get("trade") or "").replace("_", " ").capitalize()
-        return f"{r['customer']} ({trade})" if trade else r["customer"]
+        name = person(r["customer"])
+        return f"{name} ({trade})" if trade else name
 
     going = [r for r in rows if r["template"]]
     skipped = [r for r in rows if not r["template"]]
-    sections = [(f"Going out Thursday ({len(going)})", ["Customer", *rep_col, "Email", "Their spot"],
-                 [[who(r), *rep(r), f"{r['label']}: {r['subject']}" if r["subject"] else r["label"],
+    sections = [(f"Going out Thursday ({len(going)})", ["Customer", *rep_col, "Email they get", "Their spot"],
+                 [[who(r), *rep(r), f"{r['label']}, subject \"{r['subject']}\"" if r["subject"] else r["label"],
                    r.get("spot") or ""] for r in going])]
     if skipped:
-        sections.append((f"Not getting an email ({len(skipped)})", ["Customer", *rep_col, "Why"],
-                         [[who(r), *rep(r), r["reason"]] for r in skipped]))
+        sections.append((f"Not getting an email ({len(skipped)})", ["Customer", *rep_col, "Why not"],
+                         [[who(r), *rep(r), _cap(r["reason"])] for r in skipped]))
     seen, guide = set(), []
     for r in going:
         text = _guide(r["template"], r.get("trade") or "")
@@ -635,14 +652,14 @@ def _preview_sections(preview: dict, rep_jn_name: str | None = None) -> list[tup
     if full:
         if preview["fix"]:
             sections.append(("Please fix in JobNimbus", ["Customer", "Rep", "Problem"],
-                             [[r["customer"], r["rep"] or "No rep", r["reason"]] for r in preview["fix"]]))
+                             [[person(r["customer"]), r["rep"] or "No rep", _cap(r["reason"])] for r in preview["fix"]]))
         if preview["long_wait"]:
-            sections.append(("Waiting 10+ weeks", ["Customer", "Rep", "Weeks"],
-                             [[r["customer"], r["rep"] or "No rep", f"{r['weeks']} weeks"] for r in preview["long_wait"]]))
+            sections.append(("Waiting 10+ weeks", ["Customer", "Rep", "Weeks waiting"],
+                             [[person(r["customer"]), r["rep"] or "No rep", str(r["weeks"])] for r in preview["long_wait"]]))
         flagged = [r for r in rows if r["notes"]]
         if flagged:
             sections.append(("Heads up", ["Customer", "Note"],
-                             [[r["customer"], "; ".join(r["notes"])] for r in flagged]))
+                             [[person(r["customer"]), ". ".join(n.rstrip(".") for n in r["notes"])] for r in flagged]))
     return sections
 
 
@@ -651,30 +668,21 @@ def _preview_intro(rep_jn_name: str | None) -> str:
 
 
 def preview_text(preview: dict, rep_jn_name: str | None = None) -> str:
-    """Plain text: a heading, then one line per customer."""
+    """Plain text: a heading per section, then one small block per customer."""
     out = []
-    for title, _cols, rows in _preview_sections(preview, rep_jn_name):
-        out.append(f"{title}:\n" + ("\n".join("- " + " | ".join(v for v in r if v) for r in rows) or "- none"))
-    return "\n\n".join(out)
+    for title, cols, rows in _preview_sections(preview, rep_jn_name):
+        out.append(f"{title}\n\n" + (markup.blocks_text(cols, rows) if rows else "None this week."))
+    return "\n\n\n".join(out)
 
 
 def preview_html(preview: dict, rep_jn_name: str | None = None) -> str:
-    """HTML: a heading and a table per section, one customer per row."""
+    """HTML: a heading and a table with column headers per section, one customer per row."""
     import html as h
-    cell = "padding:8px 10px;border-bottom:1px solid #e5e7eb;vertical-align:top;font-size:14px;line-height:20px;"
-    head = cell + "text-align:left;background:#f3f4f6;color:#374151;font-weight:bold;"
     parts = []
     for title, cols, rows in _preview_sections(preview, rep_jn_name):
-        parts.append(f'<h3 style="margin:24px 0 8px 0;font-size:17px;">{h.escape(title)}</h3>')
-        if not rows:
-            parts.append('<p style="margin:0 0 16px 0;color:#6b7280;">None this week.</p>')
-            continue
-        ths = "".join(f'<th style="{head}">{h.escape(c)}</th>' for c in cols)
-        trs = "".join("<tr>" + "".join(f'<td style="{cell}">{h.escape(v)}</td>' for v in r) + "</tr>"
-                      for r in rows)
-        parts.append(f'<table role="presentation" cellpadding="0" cellspacing="0" '
-                     f'style="width:100%;border-collapse:collapse;margin:0 0 8px 0;">'
-                     f"<tr>{ths}</tr>{trs}</table>")
+        parts.append(f'<h3 style="margin:24px 0 8px 0;font-size:17px;color:#003C58;">{h.escape(title)}</h3>')
+        parts.append(markup.table_html(cols, rows) if rows
+                     else '<p style="margin:0 0 16px 0;color:#6b7280;">None this week.</p>')
     return "".join(parts)
 
 
@@ -694,7 +702,7 @@ def send_preview(db: Session, now: datetime | None = None, mode: str | None = No
     rc = RunContext(db, now or datetime.utcnow(), mode)
     preview = build_preview(db, mode=rc.mode)
     full = team.full_preview_recipients(db)
-    deliver(rc, None, _preview_email(subject_prefix + C.PREVIEW_SUBJECT.format(count=preview["sending"]),
+    deliver(rc, None, _preview_email(subject_prefix + C.PREVIEW_SUBJECT.format(count=preview["sending"], customers="customer" if preview["sending"] == 1 else "customers"),
                                      preview, note=note), full)
     reps_sent = 0
     for rep in db.query(TeamContact).filter(TeamContact.is_active.is_(True), TeamContact.role == "rep").all():

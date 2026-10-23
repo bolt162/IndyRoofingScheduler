@@ -370,9 +370,10 @@ def test_preview_email_is_one_customer_per_row(db, jn, outbox):
     full = next(s for s in outbox if len(s["to"]) > 1)
     lines = full["text"].splitlines()
     i = next(n for n, l in enumerate(lines) if l.startswith("Going out Thursday (2)"))
-    # Each customer on their own line, alphabetical, with their rep
-    assert lines[i + 1].startswith("- Bob Jones") and "Joe Venn" in lines[i + 1]
-    assert lines[i + 2].startswith("- Jane Smith") and "Nick Smith" in lines[i + 2]
+    # Each customer is their own small block, alphabetical, with their rep on its own line
+    assert lines[i + 2].startswith("Bob Jones") and lines[i + 3] == "   Rep: Joe Venn"
+    assert any(l.startswith("Jane Smith") for l in lines[i + 3:]) and "   Rep: Nick Smith" in lines
+    assert "|" not in full["text"]
     assert full["html"].count("<tr>") >= 3  # header + one row per customer
     nick = next(s for s in outbox if s["to"] == ["nick.smith@indyroofandrestoration.com"])
     assert nick["text"].startswith("Hi Nick,") and "Bob Jones" not in nick["text"]
@@ -443,8 +444,9 @@ def test_past_date_alert_lists_jobs_whose_date_passed(db, jn, outbox):
     assert res["jobs"] == 1
     mail = outbox[0]
     assert sorted(mail["to"]) == ["greg.russell@indyroofandrestoration.com", "luke.mroz@indyroofandrestoration.com"]
-    assert "Jenn Golding (J-26426): Mon Oct 14" not in mail["text"]  # weekday is Wednesday
-    assert "Jenn Golding (J-26426): Wed Oct 14, WO-11791, WO-11792 (Roofing)" in mail["text"]
+    assert mail["subject"] == "1 job still says Pending Start with a date that has passed"
+    assert "Jenn Golding (J-26426)\n   Start date that passed: Wednesday, October 14" in mail["text"]
+    assert "   Work order: WO-11791, WO-11792" in mail["text"] and "   Trade: Roofing" in mail["text"]
     assert "Future Fred" not in mail["text"]
     assert "What to do:" in mail["text"]
 

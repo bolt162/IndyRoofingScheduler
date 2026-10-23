@@ -307,7 +307,7 @@ def review_email(row: ProductClassification):
                ("Impact rating", cls), ("Shingle type", comp), ("Confidence", row.confidence or "unknown")]
     details += [(f"Source {i}", u) for i, u in enumerate(srcs, 1)] or [("Sources", "none found")]
     subject = (C.RESEARCH_SUBJECT if approved else C.RESEARCH_SUBJECT_PENDING).format(product=name)
-    return team_email("internal", subject, C.RESEARCH_WHAT,
+    return team_email("internal", subject, (C.RESEARCH_WHAT if approved else C.RESEARCH_WHAT_PENDING).format(product=name),
                       C.RESEARCH_ACTION_APPROVED if approved else C.RESEARCH_ACTION_PENDING, details,
                       extra=[f"**What the research found:** {row.summary}"] if row.summary else None)
 
