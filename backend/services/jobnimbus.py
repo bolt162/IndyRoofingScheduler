@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from backend.config import settings
 from backend.services import schedule_sync
+from backend.services.geocoding import in_indiana, place_job
 from backend.models.job import Job, JobBucket, LOW_SLOPE_MATERIALS, SPECIALTY_MATERIALS, MaterialType, TradeType
 
 
@@ -349,6 +350,8 @@ def map_jn_job_to_model(jn_data: dict) -> dict:
     geo = jn_data.get("geo") or {}
     latitude = geo.get("lat")
     longitude = geo.get("lon")  # JN uses "lon" not "lng"
+    if not in_indiana(latitude, longitude):  # JN sends 0,0 for homes it couldn't place
+        latitude = longitude = None
 
     # Material type from "Roof Material Type" custom field, normalized to MaterialType enum.
     # NOTE: Siding is a TRADE not a material — never put "siding" in material_type.
@@ -490,6 +493,20 @@ def _apply_calendar(job: Job, jn_data: dict, work_orders: list[dict] | None,
         job.ready_input = schedule_sync.build_ready_input(description, activities, job.jn_work_orders or [])
 
 
+# Address lookups per sync, so the first sync after this change (every job, once) stays gentle on the quote's search
+GEOCODE_PER_SYNC = 100
+
+
+def _place(job, mapped: dict, lookups_left: int) -> int:
+    """Map spot for a synced job: our address lookup once per address, JobNimbus's pin as the backup.
+    Returns how many lookups it used (0 or 1)."""
+    if lookups_left > 0:
+        return int(place_job(job, mapped["latitude"], mapped["longitude"]))
+    if not in_indiana(job.latitude, job.longitude) and mapped["latitude"]:
+        job.latitude, job.longitude = mapped["latitude"], mapped["longitude"]
+    return 0
+
+
 def sync_jobs_from_jn(db: Session) -> dict:
     """
     Sync jobs from JN into our database. READ-ONLY — only creates/updates local records.
@@ -500,6 +517,7 @@ def sync_jobs_from_jn(db: Session) -> dict:
     updated = 0
     errors = []
     observed = []  # (job, bucket before this sync, raw JN data) for the email hooks
+    lookups_left = GEOCODE_PER_SYNC
 
     for jn_data in jn_jobs:
         try:
@@ -541,7 +559,8 @@ def sync_jobs_from_jn(db: Session) -> dict:
                     ai_relevant_changed = True
 
                 # Update fields that may have changed
-                for field in ["customer_name", "address", "latitude", "longitude",
+                # The map spot comes from our address lookup below, not from JobNimbus's pin
+                for field in ["customer_name", "address",
                               "payment_type", "material_type", "square_footage",
                               "sales_rep", "jn_status", "jn_number", "bucket", "duration_tier",
                               "duration_confirmed", "crew_requirement_flag"]:
@@ -561,12 +580,14 @@ def sync_jobs_from_jn(db: Session) -> dict:
                     existing.last_ai_analyzed_at = None
 
                 _apply_calendar(existing, jn_data, work_orders, activities, description)
+                lookups_left -= _place(existing, mapped, lookups_left)
                 existing.last_synced_at = datetime.utcnow()
                 updated += 1
             else:
                 mapped["jn_notes_raw"] = jn_notes_raw
                 job = Job(**mapped)
                 _apply_calendar(job, jn_data, work_orders, activities, description)
+                lookups_left -= _place(job, mapped, lookups_left)
                 job.last_synced_at = datetime.utcnow()
                 db.add(job)
                 observed.append((job, None, jn_data))

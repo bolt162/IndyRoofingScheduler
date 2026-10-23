@@ -11,6 +11,13 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def _no_address_lookups(monkeypatch):
+    """Tests never call the real address lookups; tests that need one put in their own."""
+    from backend.services import geocoding
+    monkeypatch.setattr(geocoding, "LOOKUPS", ())
+
+
+@pytest.fixture(autouse=True)
 def _clear_email_caches():
     from backend.emails import runner
     runner._details_cache.clear()

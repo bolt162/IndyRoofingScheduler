@@ -296,6 +296,8 @@ def _migrate_job_columns():
             "suggested_why": "VARCHAR(255)",
             # Job number on the cards (2026-10-22)
             "jn_number": "VARCHAR(50)",
+            # Map spots from the instant quote's address lookup (2026-10-23)
+            "geocoded_address": "VARCHAR(500)",
         }
         for name, col_type in columns.items():
             if name in existing:

@@ -85,6 +85,7 @@ class Job(Base):
     address: Mapped[str] = mapped_column(String(500))
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    geocoded_address: Mapped[str | None] = mapped_column(String(500), nullable=True)  # address the spot was looked up for
 
     # Job classification
     job_type: Mapped[str | None] = mapped_column(String(50), nullable=True)  # insurance / retail

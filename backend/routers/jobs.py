@@ -140,6 +140,7 @@ def create_job(data: JobCreate, db: Session = Depends(get_db)):
         address=data.address,
         latitude=lat,
         longitude=lng,
+        geocoded_address=data.address if coords else None,
         job_type=data.job_type,
         payment_type=data.payment_type,
         primary_trade=data.primary_trade,
@@ -278,6 +279,7 @@ def update_job(job_id: int, update: JobUpdate, db: Session = Depends(get_db),
         coords = geocode_address(job.address)
         if coords:
             job.latitude, job.longitude = coords
+            job.geocoded_address = job.address
 
     db.commit()
     db.refresh(job)
