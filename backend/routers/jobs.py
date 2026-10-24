@@ -405,16 +405,24 @@ def mark_not_built(job_id: int, request: NotBuiltRequest, db: Session = Depends(
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    jobnimbus_result = not_built(db, job, request.reason, request.detail, _person(db, user))
+    out = _enrich_with_latest_note(job, db)
+    out["jobnimbus"] = jobnimbus_result
+    return out
+
+
+def not_built(db: Session, job: Job, reason: str, detail: str | None, who: str) -> dict | None:
+    """Not Built, from the button or the weather "exclude" decision. Returns what JobNimbus did."""
     # Booked in JobNimbus: take it off JobNimbus's calendar too, or the next sync puts it right back
     # (seen 2026-10-20: Brooke Clark marked Not Built for weather, back to scheduled 15 minutes later)
     jobnimbus_result = None
     from backend.services import jn_booking
-    why = request.reason + (f": {request.detail}" if (request.detail or "").strip() else "")
+    why = reason + (f": {detail}" if (detail or "").strip() else "")
     if jn_booking.follow_up_trade(job):
         # Gutters or siding after the main trade: off JobNimbus's calendar (it sends the reschedule messages), plan cleared.
         # The job stays at Other Trades, so it isn't put back in the build queue or sent queue emails.
         if jn_booking.booked_in_jn(job):
-            jobnimbus_result = jn_booking.unbook(db, job, _person(db, user), why)
+            jobnimbus_result = jn_booking.unbook(db, job, who, why)
         job.planned_date = job.planned_pm_id = job.planned_crew_id = job.planned_by = job.planned_at = None
         job.planned_days = None
         job.jn_start_date = None
@@ -423,13 +431,11 @@ def mark_not_built(job_id: int, request: NotBuiltRequest, db: Session = Depends(
         job.rescheduled_count += 1
         db.commit()
         db.refresh(job)
-        out = _enrich_with_latest_note(job, db)
-        out["jobnimbus"] = jobnimbus_result
-        return out
+        return jobnimbus_result
     if (job.jn_status or "").strip().lower() == "pending start date":
-        jobnimbus_result = jn_booking.unbook(db, job, _person(db, user), why)
+        jobnimbus_result = jn_booking.unbook(db, job, who, why)
     job.bucket = JobBucket.NOT_BUILT.value
-    job.not_built_reason = request.reason
+    job.not_built_reason = reason
     # The day it was planned for is gone: back to the queue with no plan, or it stays counted in
     # Push to JobNimbus (the test job sat there after Greg's Not Built, 2026-10-21)
     job.planned_date = job.planned_pm_id = job.planned_crew_id = job.planned_by = job.planned_at = None
@@ -447,15 +453,13 @@ def mark_not_built(job_id: int, request: NotBuiltRequest, db: Session = Depends(
 
     # Note 2: Generate not-built note with reason
     from backend.services.notes import generate_not_built_note
-    generate_not_built_note(db, job, request.reason, request.detail or "")
+    generate_not_built_note(db, job, reason, detail or "")
 
     # Move back to to_schedule
     job.bucket = JobBucket.TO_SCHEDULE.value
     db.commit()
     db.refresh(job)
-    out = _enrich_with_latest_note(job, db)
-    out["jobnimbus"] = jobnimbus_result
-    return out
+    return jobnimbus_result
 
 
 class StandaloneOptionRequest(BaseModel):

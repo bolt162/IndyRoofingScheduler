@@ -348,31 +348,6 @@ def flag_do_not_build(db: Session, job: Job, detail: str, check: str) -> None:
                    detail=f"{job.customer_name}, {build_date(job)}: {detail}. Use Move or Not Built on the Weekly Plan.")
 
 
-def _auto_rollback_job(db: Session, job: Job, weather_detail: str):
-    """
-    Auto-move a scheduled job to Not Built due to weather.
-    Spec §6.3: "Automatically moves job to Not Built. Pre-fills reason as Weather."
-    """
-    from backend.services.notes import generate_weather_rollback_note
-
-    job.bucket = JobBucket.NOT_BUILT.value
-    job.not_built_reason = "Weather Pre-Build"
-    job.rescheduled_count += 1
-    job.priority_bump += 5.0
-    db.commit()
-
-    # Build queue emails: start the same-day reschedule check (never blocks the rollback)
-    from backend.emails import events as email_events
-    email_events.safely(email_events.on_reschedule, db, job)
-
-    # Generate weather rollback note (stored locally, pushed_to_jn=False)
-    generate_weather_rollback_note(db, job, weather_detail)
-
-    # Move back to to_schedule with elevated priority
-    job.bucket = JobBucket.TO_SCHEDULE.value
-    db.commit()
-
-
 # ---------------------------------------------------------------------------
 # Scheduler Decision — include or exclude a marginal job (spec §6.3 line 265)
 # ---------------------------------------------------------------------------
@@ -380,18 +355,15 @@ def _auto_rollback_job(db: Session, job: Job, weather_detail: str):
 def handle_scheduler_decision(db: Session, job_id: int, action: str) -> dict:
     """
     Handle scheduler's decision on a marginal weather job.
-    action: "include" (override, keep scheduled) or "exclude" (move to not built)
+    action: "include" (override, keep scheduled). "exclude" goes through Not Built (routers/weather.py).
     """
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         return {"error": "Job not found"}
 
-    from backend.services.notes import generate_weather_rollback_note
 
-    if action == "exclude":
-        _auto_rollback_job(db, job, f"Scheduler excluded: {job.weather_detail or 'marginal conditions'}")
-        return {"action": "excluded", "job_id": job.id}
-    elif action == "include":
+    # "exclude" is handled in routers/weather.py as Not Built, which also updates JobNimbus
+    if action == "include":
         job.weather_status = "clear"
         job.weather_detail = f"Scheduler override: included despite marginal conditions. Original: {job.weather_detail}"
         db.commit()

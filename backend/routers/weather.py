@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
+from backend.services.auth import ClerkUser, get_approved_user
 
 router = APIRouter()
 
@@ -28,15 +29,27 @@ class WeatherDecisionRequest(BaseModel):
 
 @router.post("/{job_id}/decision")
 def weather_decision(
-    job_id: int, request: WeatherDecisionRequest, db: Session = Depends(get_db)
+    job_id: int, request: WeatherDecisionRequest, db: Session = Depends(get_db),
+    user: ClerkUser = Depends(get_approved_user),
 ):
     """
     Scheduler Decision — confirm or exclude a marginal weather job (spec §6.3 line 265).
-    "include" keeps the job scheduled, "exclude" moves to Not Built.
+    "include" keeps the job scheduled. "exclude" is Not Built for weather: it takes the booking off
+    JobNimbus's calendar and tells the customer, exactly like the Not Built button.
     """
     from backend.services.weather import handle_scheduler_decision
     if request.action not in ("include", "exclude"):
         raise HTTPException(status_code=400, detail="Action must be 'include' or 'exclude'")
+    if request.action == "exclude":
+        from backend.models.job import Job
+        from backend.routers.jobs import _person, not_built
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+        detail = job.weather_detail or "marginal conditions"
+        job.weather_status = None  # decided; the flag shouldn't follow it back into the queue
+        result = not_built(db, job, "Weather Pre-Build", detail, _person(db, user))
+        return {"action": "excluded", "job_id": job.id, "jobnimbus": result}
     return handle_scheduler_decision(db, job_id, request.action)
 
 

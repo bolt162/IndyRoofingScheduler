@@ -585,3 +585,38 @@ def test_follow_up_order_and_the_siding_first_switch(db):
     assert B.follow_up_trade(job) == "gutters"  # the booked one is the one in play
     job.bucket = "to_schedule"
     assert B.follow_up_trade(job) is None and B.work_trade(job) == "roofing"
+
+
+def test_weather_exclude_takes_the_booking_off_jobnimbus_like_not_built(db, monkeypatch):
+    """Exclude on the weather "decide" screen used to mark Not Built in the app only, so JobNimbus and
+    the customer still thought the build was on (and the next sync put it back)."""
+    from backend.routers import jobs as R
+    from backend.routers import weather as W
+    from backend.services.auth import ClerkUser
+    job = planned_job(db, bucket="scheduled", jn_status="Pending Start Date", jn_start_date=BUILD,
+                      planned_date=None, rescheduled_count=0, priority_bump=0.0,
+                      weather_status="scheduler_decision", weather_detail="60% chance of rain after 11am")
+    calls = []
+    monkeypatch.setattr(B, "unbook", lambda db, job, who, why, **kw:
+                        calls.append((who, why)) or {"status": "unbooked", "customer_told": True})
+    monkeypatch.setattr(R, "_person", lambda db, user: "Greg Russell")
+    out = W.weather_decision(job.id, W.WeatherDecisionRequest(action="exclude"), db=db,
+                             user=ClerkUser({"sub": "u", "email": "greg@x"}))
+    db.refresh(job)
+    assert calls == [("Greg Russell", "Weather Pre-Build: 60% chance of rain after 11am")]
+    assert out["jobnimbus"]["status"] == "unbooked"
+    assert job.bucket == "to_schedule" and job.not_built_reason == "Weather Pre-Build"
+    assert job.rescheduled_count == 1 and job.priority_bump == 5.0
+    assert job.weather_status is None
+
+
+def test_weather_include_keeps_the_booking(db, monkeypatch):
+    from backend.routers import weather as W
+    from backend.services.auth import ClerkUser
+    job = planned_job(db, bucket="scheduled", jn_status="Pending Start Date", jn_start_date=BUILD,
+                      planned_date=None, weather_status="scheduler_decision", weather_detail="breezy")
+    monkeypatch.setattr(B, "unbook", lambda *a, **k: pytest.fail("include must not touch JobNimbus"))
+    W.weather_decision(job.id, W.WeatherDecisionRequest(action="include"), db=db,
+                       user=ClerkUser({"sub": "u", "email": "greg@x"}))
+    db.refresh(job)
+    assert job.bucket == "scheduled" and job.weather_status == "clear"

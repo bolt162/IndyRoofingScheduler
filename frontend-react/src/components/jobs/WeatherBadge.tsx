@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { Cloud, Sun, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -33,9 +34,24 @@ export function WeatherBadge({
 
   const handleDecision = (action: 'include' | 'exclude') => {
     if (!jobId) return;
+    const name = customerName || 'This job';
     weatherDecision.mutate(
       { jobId, action },
-      { onSuccess: () => setDecisionOpen(false) },
+      {
+        onSuccess: (res) => {
+          setDecisionOpen(false);
+          if (action === 'include') return;
+          const jn = res?.jobnimbus;
+          if (!jn || jn.status === 'unbooked') {
+            toast.success(`${name} marked Not Built for weather${jn ? ' and taken off the JobNimbus calendar' : ''}`);
+          } else if (jn.status === 'skipped') {
+            toast.warning(`${name} marked Not Built here. JobNimbus wasn't changed: ${jn.reason} Move it off Pending Start there.`);
+          } else {
+            toast.error(`${name} marked Not Built here, but JobNimbus didn't change: ${jn.reason}`);
+          }
+        },
+        onError: () => toast.error(`Couldn't save the weather decision for ${name}. Try again.`),
+      },
     );
   };
 
@@ -73,8 +89,9 @@ export function WeatherBadge({
           <DialogHeader>
             <DialogTitle>Weather Decision Required</DialogTitle>
             <DialogDescription>
-              Marginal weather conditions for {customerName || 'this job'}. Review the forecast
-              and decide whether to include or exclude from the schedule.
+              The forecast is borderline for {customerName || 'this job'}. Include keeps the build on.
+              Exclude takes it off its day in JobNimbus, tells the customer it's moved for weather, and
+              puts it back at the front of the queue.
             </DialogDescription>
           </DialogHeader>
 
