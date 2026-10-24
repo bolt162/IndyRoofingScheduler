@@ -292,3 +292,19 @@ def test_answering_a_flag_saves_it_and_notes_jobnimbus(client, monkeypatch):
     assert r.status_code == 200 and r.json()["job"]["ready_status"] == "ok" and r.json()["pushed_to_jn"]
     assert pushed[0][0] == "j1" and "Nikka Samson checked" in pushed[0][1]
     assert c.get("/api/jobs/ready/open").json() == []
+
+
+def test_blank_roof_material_in_jobnimbus_keeps_the_ai_answer_and_no_rescan(db, monkeypatch):
+    """19 jobs with a blank "Roof Material Type" were re-scanned (and paid for) every sync: the blank
+    overwrote the material the note scan found, which looked like a change, which cleared the scan."""
+    _sync(db, monkeypatch, "Schedule Job")
+    job = db.query(Job).one()
+    job.material_type = "slate"  # what the note scan found
+    job.ai_note_scan_result = '{"material_type_hint": "slate"}'
+    job.last_ai_analyzed_at = datetime(2026, 10, 24, 9, 0)
+    db.commit()
+    _sync(db, monkeypatch, "Schedule Job")
+    db.refresh(job)
+    assert job.material_type == "slate"
+    assert job.ai_note_scan_result is not None and job.last_ai_analyzed_at is not None
+    assert job.duration_tier == "tier_3" and job.crew_requirement_flag  # slate keeps its specialty tier

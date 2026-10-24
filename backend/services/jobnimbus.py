@@ -357,7 +357,9 @@ def map_jn_job_to_model(jn_data: dict) -> dict:
     # NOTE: Siding is a TRADE not a material — never put "siding" in material_type.
     # Siding-specific weather thresholds are applied via primary_trade in weather.py.
     raw_material = (jn_data.get("Roof Material Type") or "").lower()
-    material_type = _normalize_material(raw_material)
+    # Blank in JobNimbus = no answer (None), so the sync keeps what the note scan found instead of
+    # wiping it and paying for a fresh scan every 15 minutes (19 jobs did that until 2026-10-24)
+    material_type = _normalize_material(raw_material) or None
 
     # Square footage from "Roof Total Square" custom field
     # JN stores this in "squares" (1 square = 100 sq ft), so multiply by 100
@@ -569,6 +571,15 @@ def sync_jobs_from_jn(db: Session) -> dict:
                         continue
                     if mapped.get(field) is not None:
                         setattr(existing, field, mapped[field])
+                # JobNimbus has no material but the note scan found one: size the job by that one,
+                # the same way the scanner does, so a slate roof keeps its specialty tier
+                if mapped.get("material_type") is None and existing.material_type:
+                    tier, dur_confirmed, crew_flag = _classify_duration_tier(existing.material_type,
+                                                                             existing.square_footage)
+                    existing.duration_tier = tier
+                    if not (existing.duration_source or "").startswith("Set by "):
+                        existing.duration_confirmed = dur_confirmed
+                    existing.crew_requirement_flag = crew_flag
                 # Update notes only if they actually changed
                 if jn_notes_raw and jn_notes_raw != (existing.jn_notes_raw or ""):
                     existing.jn_notes_raw = jn_notes_raw
