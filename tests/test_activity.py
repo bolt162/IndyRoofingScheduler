@@ -128,6 +128,30 @@ def test_email_sends_are_logged_one_row_each(Session, monkeypatch):
     assert "Great news" not in (r[0].detail or "")  # never the body
 
 
+def test_customer_email_replies_go_to_production(Session, monkeypatch):
+    from backend.emails import sender
+    from backend.emails.compose import compose
+    from backend.emails.preview import SAMPLES
+    sent = []
+
+    class FakeSMTP:
+        def __init__(self, *a, **k): pass
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def starttls(self): pass
+        def login(self, *a): pass
+        def send_message(self, msg): sent.append(msg)
+
+    monkeypatch.setattr(sender.smtplib, "SMTP", FakeSMTP)
+    monkeypatch.setenv("SMTP_USER", "noreply@indyroofandrestoration.com")
+    monkeypatch.setenv("SMTP_PASS", "x")
+    monkeypatch.delenv("SMTP_REPLY_TO", raising=False)
+    email = compose("welcome", SAMPLES["roof_vista"])
+    assert sender.send(None, 7, email, ["jane@example.com"], customer_name="Jane Smith", mode="live")
+    assert sent[0]["Reply-To"] == "production@indyroofandrestoration.com"
+    assert "noreply@" in sent[0]["From"]
+
+
 def test_note_written_to_jobnimbus_is_logged(Session, monkeypatch):
     from backend.services import jobnimbus as jn
     monkeypatch.setattr(jn, "_jn_post", lambda endpoint, body: {"jnid": "n1"})

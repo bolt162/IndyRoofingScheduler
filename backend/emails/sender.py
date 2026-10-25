@@ -64,6 +64,8 @@ def send(db: Session | None, job_id: int | None, email: ComposedEmail, to: list[
     msg = EmailMessage()
     msg["From"] = formataddr((cfg["from_name"], cfg["user"]))
     msg["To"] = ", ".join(recipients)
+    if cfg["reply_to"]:
+        msg["Reply-To"] = cfg["reply_to"]
     msg["Subject"] = subject
     msg["Message-ID"] = make_msgid(domain=cfg["user"].split("@")[-1] or None)
     msg.set_content(email.text)

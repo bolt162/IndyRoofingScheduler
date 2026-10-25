@@ -30,6 +30,8 @@ def smtp_settings() -> dict:
         "user": _clean_env(os.getenv("SMTP_USER", "")),
         "password": _clean_env(os.getenv("SMTP_PASS", "")).replace(" ", ""),
         "from_name": os.getenv("SMTP_FROM_NAME", f"{COMPANY_NAME} (No Reply)"),
+        # A customer who replies anyway reaches Greg's production team instead of the unread sending mailbox.
+        "reply_to": _clean_env(os.getenv("SMTP_REPLY_TO", "production@indyroofandrestoration.com")),
     }
 
 
