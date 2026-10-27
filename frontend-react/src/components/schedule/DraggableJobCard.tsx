@@ -9,7 +9,7 @@ import { useCrews } from '@/api/settings';
 import { CrewNotesButton } from './CrewNotesButton';
 import { cn } from '@/lib/utils';
 import { JobName } from '@/components/jobs/JobName';
-import type { Crew, Job } from '@/types';
+import { roofSize, type Crew, type Job } from '@/types';
 
 /** Active crews that do this job's trade (a roof repair is still roofing), best rank first. */
 function crewsForJob(crews: Crew[] | undefined, job: Job) {
@@ -160,6 +160,7 @@ export function DraggableJobCard({
           <MapPin className="h-3 w-3 shrink-0" />
           {job.address}
         </p>
+        {roofSize(job) && <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{roofSize(job)}</p>}
         <div className="mt-1 flex flex-wrap items-center gap-1 empty:hidden">
           <ReadyCheckBadge job={job} small />
           <NoBuildDatesBadge windows={job.no_build_dates} small />

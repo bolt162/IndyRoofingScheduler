@@ -27,7 +27,7 @@ import { NoBuildDatesDialog } from './NoBuildDatesDialog';
 import { describeNoBuild, mustBuildDeadlineClash } from '@/lib/no-build';
 import { useSetMustBuild, useClearMustBuild, useUpdateJob, useSetStandaloneOption, usePushNote, useMarkPrimaryComplete, useUpdateSecondaryTradeStatus, useReanalyzeJob, closestTradeFor } from '@/api/jobs';
 import { toast } from 'sonner';
-import { MATERIAL_LABELS } from '@/types';
+import { roofSize } from '@/types';
 import { cn } from '@/lib/utils';
 import { JobFormDialog } from './JobFormDialog';
 import { JobName } from './JobName';
@@ -369,8 +369,7 @@ export function JobCard({ job, compact = false }: { job: Job; compact?: boolean 
             <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
               <div className="flex items-center gap-1">
                 <Layers className="h-3 w-3" />
-                {job.material_type ? MATERIAL_LABELS[job.material_type] ?? job.material_type : '—'}
-                {job.square_footage ? ` · ${job.square_footage} sq` : ''}
+                {roofSize(job) || '—'}
               </div>
               <div className="flex items-center gap-1">
                 <DollarSign className="h-3 w-3" />

@@ -8,7 +8,7 @@ import { NoBuildDatesBadge } from '@/components/jobs/NoBuildDatesBadge';
 import { ReadyCheckBadge } from '@/components/jobs/ReadyCheckBadge';
 import { cn } from '@/lib/utils';
 import { JobName } from '@/components/jobs/JobName';
-import type { Job } from '@/types';
+import { roofSize, type Job } from '@/types';
 
 /**
  * Slim, draggable job row purpose-built for the Weekly Plan unassigned sidebar.
@@ -67,6 +67,11 @@ export function UnassignedJobRow({ job }: { job: Job }) {
         {job.primary_trade && (
           <Badge variant="secondary" className="text-[9px] px-1 py-0 capitalize">
             {job.primary_trade}
+          </Badge>
+        )}
+        {roofSize(job) && (
+          <Badge variant="outline" className="text-[9px] px-1 py-0">
+            {roofSize(job)}
           </Badge>
         )}
         {job.must_build && (

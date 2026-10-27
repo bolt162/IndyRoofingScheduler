@@ -18,6 +18,13 @@ def _no_address_lookups(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_material_order_lookups(monkeypatch):
+    """The sync's material fill never calls the real JobNimbus; tests that need an order put in their own."""
+    from backend.services import material_fill
+    monkeypatch.setattr(material_fill, "fetch_material_items", lambda jnid: [])
+
+
+@pytest.fixture(autouse=True)
 def _clear_email_caches():
     from backend.emails import runner
     runner._details_cache.clear()

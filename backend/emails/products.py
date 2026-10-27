@@ -27,14 +27,14 @@ class ProductInfo:
         return {4: "A", 3: "B"}.get(self.impact_class, "C")
 
 
-# Confirmed by Aaron. Order matters: more specific names first ("duration flex" before
+# Confirmed by Aaron (2026-10-27: every Malarkey line and Duration FLEX are polymer modified). Order matters: more specific names first ("duration flex" before
 # "duration"). Keys are matched against the product text from JobNimbus material orders.
 _PRODUCTS: list[tuple[str, ProductInfo]] = [
-    ("vista", ProductInfo("Malarkey Vista", "Malarkey", 4, None)),
-    ("windsor", ProductInfo("Malarkey Windsor", "Malarkey", 4, None)),
-    ("legacy", ProductInfo("Malarkey Legacy", "Malarkey", 4, None)),
+    ("vista", ProductInfo("Malarkey Vista", "Malarkey", 4, POLYMER_MODIFIED)),
+    ("windsor", ProductInfo("Malarkey Windsor", "Malarkey", 4, POLYMER_MODIFIED)),
+    ("legacy", ProductInfo("Malarkey Legacy", "Malarkey", 4, POLYMER_MODIFIED)),
     ("highlander", ProductInfo("Malarkey Highlander", "Malarkey", 3, POLYMER_MODIFIED)),
-    ("duration flex", ProductInfo("Owens Corning Duration FLEX", "Owens Corning", 4, None)),
+    ("duration flex", ProductInfo("Owens Corning Duration FLEX", "Owens Corning", 4, POLYMER_MODIFIED)),
     ("duration", ProductInfo("Owens Corning Duration", "Owens Corning", 3, OXIDIZED)),
     ("oakridge", ProductInfo("Owens Corning Oakridge", "Owens Corning", None, OXIDIZED)),
 ]

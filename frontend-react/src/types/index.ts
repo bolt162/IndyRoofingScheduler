@@ -19,7 +19,7 @@ export type DurationTier = 'tier_1' | 'tier_2' | 'tier_3' | 'low_slope';
 export type MaterialType =
   | 'asphalt' | 'polymer_modified' | 'tpo' | 'duro_last'
   | 'epdm' | 'coating' | 'wood_shake' | 'slate'
-  | 'metal' | 'other';
+  | 'metal' | 'modbit' | 'other';
 export type TradeType =
   | 'roofing' | 'roofing_repair' | 'siding' | 'siding_repair'
   | 'gutters' | 'windows' | 'paint' | 'interior' | 'other';
@@ -62,8 +62,16 @@ export const MATERIAL_LABELS: Record<MaterialType, string> = {
   wood_shake: 'Wood Shake',
   slate: 'Slate',
   metal: 'Metal',
+  modbit: 'Modbit',
   other: 'Other',
 };
+
+/** "28 SQ · Polymer Modified": the roof's size (JobNimbus Square Count) and material, or '' when neither is known. */
+export function roofSize(job: Pick<Job, 'square_footage' | 'material_type'>): string {
+  const squares = job.square_footage ? `${Math.round(job.square_footage / 100)} SQ` : '';
+  const material = job.material_type ? MATERIAL_LABELS[job.material_type] ?? job.material_type : '';
+  return [squares, material].filter(Boolean).join(' · ');
+}
 
 // A date range the customer asked us not to build (ISO yyyy-MM-dd, both ends inclusive)
 export interface NoBuildWindow {

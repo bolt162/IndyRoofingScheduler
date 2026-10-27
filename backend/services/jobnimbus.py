@@ -237,17 +237,20 @@ def _normalize_trade(raw: str) -> str:
 
 
 MATERIAL_ALIASES = {
-    # Manufacturer brands (all produce asphalt shingles)
-    "oc": "asphalt", "owens corning": "asphalt",
-    "iko": "asphalt", "gaf": "asphalt",
-    "certainteed": "asphalt", "atlas": "asphalt",
-    "tamko": "asphalt", "malarkey": "asphalt",
+    # Old brand-only answers: OC, IKO and the rest sell oxidized and polymer modified lines, so these
+    # mean "not known" and the material order decides (services/material_fill.py). Malarkey is all
+    # polymer modified (Aaron 2026-10-27).
+    "oc": "", "owens corning": "", "iko": "", "gaf": "",
+    "certainteed": "", "atlas": "", "tamko": "",
+    "malarkey": "polymer_modified",
     # Direct enum matches
-    "asphalt": "asphalt", "shingle": "asphalt", "shingles": "asphalt",
+    "asphalt": "asphalt", "oxidized": "asphalt", "shingle": "asphalt", "shingles": "asphalt",
     "polymer_modified": "polymer_modified", "polymer modified": "polymer_modified",
-    "modified bitumen": "polymer_modified",
+    "modbit": "modbit", "modified bitumen": "modbit",
     "tpo": "tpo",
-    "duro_last": "duro_last", "duro-last": "duro_last", "durolast": "duro_last",
+    # Duro-Last is the PVC membrane we install
+    "duro_last": "duro_last", "duro-last": "duro_last", "durolast": "duro_last", "duralast": "duro_last",
+    "pvc": "duro_last",
     "epdm": "epdm",
     "coating": "coating",
     "wood_shake": "wood_shake", "wood shake": "wood_shake",
@@ -305,6 +308,11 @@ def _normalize_material(raw: str) -> str:
     return "other"
 
 
+def jn_material_text(jn_data: dict) -> str:
+    """The job's "Roof Material Type" box (Greg made a second copy, "Roof Material Type 2", in Oct 2026)."""
+    return (jn_data.get("Roof Material Type") or jn_data.get("Roof Material Type 2") or "").lower()
+
+
 def _classify_duration_tier(material_type: str | None, square_footage: float | None) -> tuple[str, bool, bool]:
     """Returns (tier, duration_confirmed, crew_requirement_flag)."""
     mat = material_type.lower() if material_type else ""
@@ -356,14 +364,14 @@ def map_jn_job_to_model(jn_data: dict) -> dict:
     # Material type from "Roof Material Type" custom field, normalized to MaterialType enum.
     # NOTE: Siding is a TRADE not a material — never put "siding" in material_type.
     # Siding-specific weather thresholds are applied via primary_trade in weather.py.
-    raw_material = (jn_data.get("Roof Material Type") or "").lower()
+    raw_material = jn_material_text(jn_data)
     # Blank in JobNimbus = no answer (None), so the sync keeps what the note scan found instead of
     # wiping it and paying for a fresh scan every 15 minutes (19 jobs did that until 2026-10-24)
     material_type = _normalize_material(raw_material) or None
 
-    # Square footage from "Roof Total Square" custom field
+    # Square footage from "Square Count" (the roof report robot fills it), else the older "Roof Total Square"
     # JN stores this in "squares" (1 square = 100 sq ft), so multiply by 100
-    raw_squares = jn_data.get("Roof Total Square")
+    raw_squares = jn_data.get("Square Count") or jn_data.get("Roof Total Square")
     square_footage = None
     if raw_squares:
         try:
@@ -613,6 +621,13 @@ def sync_jobs_from_jn(db: Session) -> dict:
     # Wrapped so an email problem can never break the sync.
     from backend.emails import events as email_events
     email_events.safely(email_events.after_sync, db, observed)
+
+    # Roof material from the material order where JobNimbus's box is blank (services/material_fill.py)
+    from backend.services import material_fill
+    try:
+        material_fill.fill(db, observed)
+    except Exception:
+        logger.exception("material fill failed")
 
     # --- Orphan reconciliation pass ---
     # Any job in our DB whose jn_job_id was NOT returned in this sync may have

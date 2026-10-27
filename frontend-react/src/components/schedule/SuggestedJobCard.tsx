@@ -8,7 +8,7 @@ import { ReadyCheckBadge } from '@/components/jobs/ReadyCheckBadge';
 import { NoBuildDatesBadge } from '@/components/jobs/NoBuildDatesBadge';
 import { cn } from '@/lib/utils';
 import { JobName } from '@/components/jobs/JobName';
-import type { Job } from '@/types';
+import { roofSize, type Job } from '@/types';
 
 /**
  * A build "Suggest builds" pencilled in. Not a plan and never sent to JobNimbus: Keep turns it
@@ -87,6 +87,7 @@ export function SuggestedJobCard({ job }: { job: Job }) {
         <p className="mt-0.5 flex items-center gap-1 text-[11px] text-slate-800">
           <CalendarDays className="h-3 w-3 shrink-0" />
           {days} day{days > 1 ? 's' : ''}
+          {roofSize(job) && <span className="truncate text-muted-foreground">· {roofSize(job)}</span>}
         </p>
         <div className="mt-1 flex flex-wrap items-center gap-1 empty:hidden">
           <ReadyCheckBadge job={job} small />

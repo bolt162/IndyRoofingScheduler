@@ -162,6 +162,7 @@ def check_material_thresholds(
         "tpo": ("weather_tpo_min_temp", "weather_tpo_max_wind"),
         "duro_last": ("weather_tpo_min_temp", "weather_tpo_max_wind"),
         "epdm": ("weather_tpo_min_temp", "weather_tpo_max_wind"),
+        "modbit": ("weather_tpo_min_temp", "weather_tpo_max_wind"),
         "coating": ("weather_coating_min_temp", "weather_coating_max_wind"),
         "wood_shake": ("weather_wood_shake_min_temp", "weather_wood_shake_max_wind"),
         "slate": ("weather_slate_min_temp", "weather_slate_max_wind"),

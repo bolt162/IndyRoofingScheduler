@@ -54,6 +54,7 @@ class MaterialType(str, enum.Enum):
     WOOD_SHAKE = "wood_shake"
     SLATE = "slate"
     METAL = "metal"
+    MODBIT = "modbit"
     SIDING = "siding"
     OTHER = "other"
 
@@ -70,7 +71,8 @@ class TradeType(str, enum.Enum):
     OTHER = "other"
 
 
-LOW_SLOPE_MATERIALS = {MaterialType.TPO, MaterialType.DURO_LAST, MaterialType.EPDM, MaterialType.COATING}
+LOW_SLOPE_MATERIALS = {MaterialType.TPO, MaterialType.DURO_LAST, MaterialType.EPDM, MaterialType.MODBIT,
+                       MaterialType.COATING}
 SPECIALTY_MATERIALS = {MaterialType.WOOD_SHAKE, MaterialType.SLATE, MaterialType.METAL}
 
 
