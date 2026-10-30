@@ -457,3 +457,43 @@ def test_past_date_alert_quiet_when_nothing_passed(db, jn, outbox):
     res = R.run_past_date_alerts(db, datetime(2026, 10, 19, 12, 0), mode="live",
                                  fetch=lambda jnid: BuildDates("J-1", date(2026, 10, 30), []))
     assert res == {"jobs": 0} and outbox == []
+
+
+def _bam(status, issues=(), **f):
+    forecast = {"temp_min": 38.4, "temp_max": 55.1, "wind_max": 12, "wind_gust": 24, "precipitation": 0.31,
+                "tstorm_am": 0, "tstorm_pm": 40, "source": "claritywx", **f}
+    return {"status": status, "issues": list(issues), "forecast": forecast, "source": forecast["source"]}
+
+
+def test_weather_report_goes_to_greg_and_luke_with_problems_first(db, jn, outbox):
+    good = add_job(db, jn, "Amy Good", bucket="scheduled")
+    bad = add_job(db, jn, "Bob Mcclellan", bucket="scheduled")
+    bad.address = "9 Oak Ln, Carmel, IN"
+    lost = add_job(db, jn, "Cal Nomap", bucket="scheduled")
+    checked = [(good, _bam("clear", precipitation=0, tstorm_pm=0, wind_gust=0)),
+               (bad, _bam("do_not_build", ["Low of 38.4°F, under the 40°F limit", "Rain 0.31 in expected"])),
+               (lost, {"error": "Job has no coordinates — geocoding needed"})]
+    res = R.run_weather_report(db, checked, datetime(2026, 10, 30, 10, 0), mode="live")
+    assert res["jobs"] == 3 and res["flagged"] == 2
+    mail = outbox[0]
+    assert mail["to"] == ["greg.russell@indyroofandrestoration.com", "luke.mroz@indyroofandrestoration.com"]
+    assert mail["subject"] == "Weather: 2 of today's 3 builds need a look"
+    text = mail["text"]
+    assert "every build booked today, Friday, October 30." in text
+    assert "Forecast from: BAM Weather" in text
+    assert text.index("Bob McClellan, 9 Oak Ln") < text.index("Cal Nomap") < text.index("Amy Good")
+    assert ("   Weather: Don't build\n   Forecast: 38 to 55°F, wind 12 mph, gusts 24 mph, rain 0.31 in, "
+            "storm chance 40%\n   Why: Low of 38.4°F, under the 40°F limit. Rain 0.31 in expected") in text
+    assert "   Weather: No forecast\n   Why: The address isn't on the map yet" in text
+    assert "Amy Good St\n   Weather: Good to build\n   Forecast: 38 to 55°F, wind 12 mph\n" in text
+    assert "Move or Not Built" in text
+
+
+def test_weather_report_clear_day_and_quiet_with_no_builds(db, jn, outbox):
+    job = add_job(db, jn, "Amy Good", bucket="scheduled")
+    assert R.run_weather_report(db, [], datetime(2026, 10, 30, 10, 0), mode="live") == {"jobs": 0}
+    assert outbox == []
+    R.run_weather_report(db, [(job, _bam("clear", source="openmeteo"))], datetime(2026, 10, 30, 10, 0), mode="live")
+    assert outbox[0]["subject"] == "Weather looks good for today's 1 build"
+    assert "What to do: nothing." in outbox[0]["text"]
+    assert "Forecast from: The free forecast (BAM Weather didn't answer)" in outbox[0]["text"]

@@ -55,16 +55,18 @@ def test_night_before_uses_bam_and_the_jobnimbus_date_and_flags_without_pulling(
     assert j.bucket == "scheduled" and j.weather_status == "do_not_build"   # flagged, still booked
 
 
-def test_five_am_uses_bam_and_morning_uses_the_free_forecast(db, monkeypatch):
-    calls = []
+def test_five_am_uses_bam_and_emails_the_report_and_morning_leaves_today_alone(db, monkeypatch):
+    calls, reports = [], []
     monkeypatch.setattr(WS, "check_weather_for_job", fake_check(calls, status="good"))
+    monkeypatch.setattr("backend.emails.runner.run_weather_report",
+                        lambda db, checked: reports.append([(j.customer_name, r["status"]) for j, r in checked]))
     a = booked(db, "Today", TODAY)
     b = booked(db, "Tomorrow", date(2030, 11, 5))
     WS.five_am_spot_check()
-    assert calls == [(a.id, "2030-11-04", True)]
+    assert calls == [(a.id, "2030-11-04", True)] and reports == [[("Today", "good")]]
     calls.clear()
     WS.morning_weather_check()
-    assert sorted(calls) == sorted([(a.id, "2030-11-04", False), (b.id, "2030-11-05", False)])
+    assert calls == [(b.id, "2030-11-05", False)] and len(reports) == 1   # today keeps the 5 AM BAM result
 
 
 def test_free_forecast_by_default_and_bam_only_when_asked(monkeypatch):
@@ -80,3 +82,15 @@ def test_free_forecast_by_default_and_bam_only_when_asked(monkeypatch):
 def test_bam_without_that_day_falls_back_instead_of_using_another_day(monkeypatch):
     monkeypatch.setattr(W.claritywx, "get_daily_forecast", lambda lat, lon: [{"validAt": "2030-11-04T00:00"}])
     assert W._get_claritywx_forecast(1, 2, "2030-11-09") is None
+
+
+def test_every_weather_reason_reads_plainly(db):
+    bad = {"temp_min": 30, "temp_max": 41.5, "wind_max": 25, "wind_gust": 33, "precipitation": 0.456,
+           "humidity": 92, "tstorm_am": 60, "tstorm_pm": None, "snow": 1.2, "ice": 0.1, "source": "claritywx"}
+    rain = {"rain_expected": True, "hours_checked": 48, "total_rain": 0.2}
+    coating = W.check_material_thresholds(db, "coating", bad, rain)
+    assert coating["status"] == "do_not_build" and coating["issues"] == [
+        "Low of 30°F, under the 40°F limit", "Wind 25 mph, over the 20 mph limit", "Rain 0.46 in expected",
+        "Snow 1.2 in expected", "Ice 0.1 in expected", "Thunderstorm chance 60% morning, 0% afternoon",
+        "Humidity 92%, over the 85% limit for coatings", "Rain 0.2 in within the next 48 hours (needs a dry stretch)"]
+    assert "Gusts 33 mph, over the 20 mph limit for siding" in W.check_material_thresholds(db, "siding", bad)["issues"]

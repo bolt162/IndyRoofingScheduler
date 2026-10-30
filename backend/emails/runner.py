@@ -400,6 +400,11 @@ def _ops_emails(db: Session) -> list[str]:
                                                           TeamContact.role == "ops").all() if r.email]
 
 
+def _ops_and_pms(db: Session) -> list[str]:
+    """Greg and Luke."""
+    return sorted(set(_ops_emails(db) + [r.email for r in team.active_pms(db) if r.email]))
+
+
 def _office_recipients(db: Session) -> list[str]:
     return [office_alert_recipient()] if office_alert_recipient() else team.full_preview_recipients(db)
 
@@ -483,7 +488,7 @@ def run_past_date_alerts(db: Session, now: datetime | None = None, mode: str | N
     n = len(rows)
     jobs_word = "job" if n == 1 else "jobs"
     say = "says" if n == 1 else "say"
-    to = sorted(set(_ops_emails(db) + [r.email for r in team.active_pms(db) if r.email]))
+    to = _ops_and_pms(db)
     if to:
         deliver(rc, None, team_email("internal", C.PAST_DATE_SUBJECT.format(count=n, jobs=jobs_word, say=say),
                                      C.PAST_DATE_LEAD.format(count=n, jobs=jobs_word, say=say), C.PAST_DATE_ACTION, [],
@@ -514,6 +519,60 @@ def run_ready_digest(db: Session, now: datetime | None = None, mode: str | None 
                                      C.READY_ACTION, [("Scheduler", f"{base_url()}/plan")],
                                      items=(["Job", "What to check", "Status"], rows)), to)
     return {"jobs": len(waiting), "on_hold": len(jobs) - len(waiting), "to": to}
+
+
+_WEATHER_CALL = {"do_not_build": "Don't build", "scheduler_decision": "Borderline", "clear": "Good to build"}
+_WEATHER_ORDER = {"Don't build": 0, "No forecast": 1, "Borderline": 2, "Good to build": 3}
+
+
+def _forecast_words(f: dict) -> str:
+    parts = [f"{f.get('temp_min', 0):.0f} to {f.get('temp_max', 0):.0f}°F", f"wind {f.get('wind_max', 0):.0f} mph"]
+    if (f.get("wind_gust") or 0) > (f.get("wind_max") or 0):
+        parts.append(f"gusts {f['wind_gust']:.0f} mph")
+    if (f.get("precipitation") or 0) > 0:
+        parts.append(f"rain {round(f['precipitation'], 2):g} in")
+    storm = max(f.get("tstorm_am") or 0, f.get("tstorm_pm") or 0)
+    if storm > 0:
+        parts.append(f"storm chance {storm:.0f}%")
+    return ", ".join(parts)
+
+
+def run_weather_report(db: Session, checked: list[tuple[Job, dict]], now: datetime | None = None,
+                       mode: str | None = None) -> dict:
+    """Greg and Luke, right after the 5 AM BAM check: today's builds and their forecast, problems first.
+    checked is (job, check_weather_for_job result) for each build. No builds today, no email."""
+    from backend.emails.unsubscribe import _base_url as base_url
+    if not checked:
+        return {"jobs": 0}
+    rc = RunContext(db, now or datetime.utcnow(), mode)
+    rows = []
+    for job, r in checked:
+        street = (job.address or "").split(",")[0].strip()
+        label = f"{person(job.customer_name)}, {street}" if street else person(job.customer_name)
+        call = _WEATHER_CALL.get(r.get("status"), "No forecast")
+        forecast = _forecast_words(r["forecast"]) if r.get("forecast") else ""
+        if r.get("error"):
+            why = ("The address isn't on the map yet" if "coordinates" in r["error"]
+                   else "The weather service didn't answer")
+        else:
+            why = ". ".join(r.get("issues") or [])
+        rows.append([label, call, forecast, why])
+    rows.sort(key=lambda row: (_WEATHER_ORDER[row[1]], row[0]))
+    sources = {r.get("source") for _, r in checked if r.get("forecast")}
+    source = ("BAM Weather" if sources == {"claritywx"} else
+              "BAM Weather, plus the free forecast where BAM didn't answer" if "claritywx" in sources else
+              "The free forecast (BAM Weather didn't answer)" if sources else "")
+    n, flagged = len(rows), sum(row[1] != "Good to build" for row in rows)
+    fill = dict(count=n, builds="build" if n == 1 else "builds", flagged=flagged,
+                need="needs" if flagged == 1 else "need", day=K._format_date(_indy_today(rc.now)))
+    to = _ops_and_pms(db)
+    if to:
+        deliver(rc, None, team_email(
+            "internal", (C.WEATHER_REPORT_SUBJECT if flagged else C.WEATHER_REPORT_SUBJECT_CLEAR).format(**fill),
+            C.WEATHER_REPORT_LEAD.format(**fill), C.WEATHER_REPORT_ACTION if flagged else C.WEATHER_REPORT_CLEAR_ACTION,
+            [("Forecast from", source), ("Scheduler", f"{base_url()}/plan")],
+            items=(["Build", "Weather", "Forecast", "Why"], rows)), to)
+    return {"jobs": n, "flagged": flagged, "to": to}
 
 
 def run_research(db: Session, now: datetime | None = None, mode: str | None = None, client=None) -> dict:

@@ -180,38 +180,38 @@ def check_material_thresholds(
 
     # --- Core checks (all materials) ---
     if temp_min < min_temp_threshold:
-        issues.append(f"Temp {temp_min}°F below {min_temp_threshold}°F threshold")
+        issues.append(f"Low of {temp_min:g}°F, under the {min_temp_threshold:g}°F limit")
     if wind_max > max_wind_threshold:
-        issues.append(f"Wind {wind_max}mph exceeds {max_wind_threshold}mph threshold")
+        issues.append(f"Wind {wind_max:g} mph, over the {max_wind_threshold:g} mph limit")
     if precip > 0.1:
-        issues.append(f"Precipitation: {precip} inches")
+        issues.append(f"Rain {round(precip, 2):g} in expected")
 
     # --- Gust check for siding (spec §6.5: gust matters more than sustained) ---
     if mat == "siding" and wind_gust > max_wind_threshold:
-        issues.append(f"Wind gust {wind_gust}mph exceeds {max_wind_threshold}mph threshold")
+        issues.append(f"Gusts {wind_gust:g} mph, over the {max_wind_threshold:g} mph limit for siding")
 
     # --- Snow / ice (any material — hard stop) ---
     if snow > 0.1:
-        issues.append(f"Snow: {snow} inches expected")
+        issues.append(f"Snow {round(snow, 2):g} in expected")
     if ice > 0:
-        issues.append(f"Ice accumulation: {ice} inches")
+        issues.append(f"Ice {round(ice, 2):g} in expected")
 
     # --- Thunderstorm probability (Clarity Wx only) ---
     if source == "claritywx" and (tstorm_am > 50 or tstorm_pm > 50):
-        issues.append(f"Thunderstorm risk: AM {tstorm_am}%, PM {tstorm_pm}%")
+        issues.append(f"Thunderstorm chance {tstorm_am or 0:g}% morning, {tstorm_pm or 0:g}% afternoon")
 
     # --- Humidity check for coatings (spec §6.5 line 279) ---
     if mat == "coating" and source == "claritywx":
         max_humidity = float(_get_setting(db, "weather_coating_max_humidity", "85"))
         if humidity > max_humidity:
-            issues.append(f"Humidity {humidity}% exceeds {max_humidity}% threshold for coatings")
+            issues.append(f"Humidity {humidity:g}%, over the {max_humidity:g}% limit for coatings")
 
     # --- Multi-day rain window for TPO/EPDM and Coatings ---
     if rain_window_result and rain_window_result.get("rain_expected"):
         window_hrs = rain_window_result.get("hours_checked", 0)
         total_rain = rain_window_result.get("total_rain", 0)
         issues.append(
-            f"Rain expected within {window_hrs}hr window: {total_rain} inches"
+            f"Rain {total_rain:g} in within the next {window_hrs} hours (needs a dry stretch)"
         )
 
     # --- Determine status ---
