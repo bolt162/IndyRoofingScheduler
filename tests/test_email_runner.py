@@ -508,3 +508,18 @@ def test_night_before_weather_report_is_about_tomorrow(db, jn, outbox):
     assert mail["subject"] == "Weather: 1 of tomorrow's 1 build needs a look"
     assert "Here's tonight's forecast for the address of every build booked tomorrow, Friday, October 30." in mail["text"]
     assert "To take one off tomorrow, use Move or Not Built" in mail["text"]
+
+
+def test_send_one_catches_up_one_customer_and_counts_it(db, jn, outbox):
+    from backend.emails.send_one import send_one
+    sat = THU + timedelta(days=2)
+    jane = add_job(db, jn, "Jane Smith", jn_number="26001", entered=sat)
+    add_job(db, jn, "Bob Jones", jn_number="26002", entered=sat)
+    R.run_welcomes(db, sat, mode="live")
+    outbox.clear()
+    fri = THU + timedelta(days=8)  # the day after a Thursday that skipped them
+    r = send_one(db, "J-26001", now=fri, mode="live")
+    assert r["sent"] == 1 and [m["to"] for m in outbox] == [["jane@example.com"]]
+    assert send_one(db, "26001", now=fri, mode="live")["sent"] == 0  # no double send
+    assert send_one(db, "99999", now=fri, mode="live") == {"sent": 0, "why": "job not in the build queue"}
+    assert st(db, jane, "live").last_counted_email_at == fri
