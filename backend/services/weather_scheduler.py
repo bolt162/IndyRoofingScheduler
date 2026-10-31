@@ -5,7 +5,8 @@ Three scheduled checks of builds booked in JobNimbus (their work order date):
 1. Morning check (default 6:00 AM): builds tomorrow, free forecast (Open-Meteo). Not today: the 5 AM
    BAM result stays on today's cards and matches the report Greg and Luke got.
 2. Night-before check (default 8:00 PM): builds tomorrow, BAM Wx (Clarity Wx) for the address
-3. 5am spot check: today's builds, BAM Wx for the address, then the weather report email to Greg and Luke
+3. 5am spot check: today's builds, BAM Wx for the address
+Both BAM checks then email Greg and Luke the weather report for that day's builds (Aaron, 2026-10-30).
 BAM Wx is only for those two address checks; weekly looks use the free forecast (Aaron, 2026-10-21).
 
 A do-not-build forecast flags the build (weather.flag_do_not_build) instead of pulling it in the
@@ -61,7 +62,7 @@ def run_check(name: str, days_from_today: tuple[int, ...], bamwx: bool, report: 
         logger.info(f"{name} complete: {checked} checked, {changed} changed, {flagged} flagged")
         if report:
             from backend.emails.runner import run_weather_report
-            run_weather_report(db, results)
+            run_weather_report(db, results, tomorrow=min(days_from_today) > 0)
     except Exception as e:
         logger.error(f"{name} failed: {e}")
     finally:
@@ -75,8 +76,8 @@ def morning_weather_check():
 
 
 def night_before_check():
-    """Tomorrow's builds, BAM Wx for the address (spec §6.4, final authority)."""
-    return run_check("Night-before weather check", (1,), bamwx=True)
+    """Tomorrow's builds, BAM Wx for the address (spec §6.4, final authority), emailed to Greg and Luke."""
+    return run_check("Night-before weather check", (1,), bamwx=True, report=True)
 
 
 def five_am_spot_check():

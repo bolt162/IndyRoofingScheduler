@@ -486,7 +486,7 @@ def test_weather_report_goes_to_greg_and_luke_with_problems_first(db, jn, outbox
             "storm chance 40%\n   Why: Low of 38.4°F, under the 40°F limit. Rain 0.31 in expected") in text
     assert "   Weather: No forecast\n   Why: The address isn't on the map yet" in text
     assert "Amy Good St\n   Weather: Good to build\n   Forecast: 38 to 55°F, wind 12 mph\n" in text
-    assert "Move or Not Built" in text
+    assert "To take one off today, use Move or Not Built" in text
 
 
 def test_weather_report_clear_day_and_quiet_with_no_builds(db, jn, outbox):
@@ -497,3 +497,14 @@ def test_weather_report_clear_day_and_quiet_with_no_builds(db, jn, outbox):
     assert outbox[0]["subject"] == "Weather looks good for today's 1 build"
     assert "What to do: nothing." in outbox[0]["text"]
     assert "Forecast from: The free forecast (BAM Weather didn't answer)" in outbox[0]["text"]
+
+
+def test_night_before_weather_report_is_about_tomorrow(db, jn, outbox):
+    job = add_job(db, jn, "Bob Rain", bucket="scheduled")
+    # 8 PM Thursday in Indianapolis is already Friday in UTC; the report still names Friday as tomorrow
+    R.run_weather_report(db, [(job, _bam("do_not_build", ["Rain 0.31 in expected"]))],
+                         datetime(2026, 10, 30, 0, 0), mode="live", tomorrow=True)
+    mail = outbox[0]
+    assert mail["subject"] == "Weather: 1 of tomorrow's 1 build needs a look"
+    assert "Here's tonight's forecast for the address of every build booked tomorrow, Friday, October 30." in mail["text"]
+    assert "To take one off tomorrow, use Move or Not Built" in mail["text"]

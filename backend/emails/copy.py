@@ -660,13 +660,14 @@ READY_ACTION = (
     "or Keep on hold."
 )
 
-# Morning weather report after the 5 AM BAM check (Aaron, 2026-10-30). To Greg and Luke.
-WEATHER_REPORT_SUBJECT = "Weather: {flagged} of today's {count} {builds} {need} a look"
-WEATHER_REPORT_SUBJECT_CLEAR = "Weather looks good for today's {count} {builds}"
-WEATHER_REPORT_LEAD = "Here's this morning's forecast for the address of every build booked today, {day}."
+# Weather report after the 8 PM night-before and 5 AM BAM checks (Aaron, 2026-10-30). To Greg and Luke.
+# {when} is "today" or "tomorrow", {checked} is "this morning's" or "tonight's".
+WEATHER_REPORT_SUBJECT = "Weather: {flagged} of {when}'s {count} {builds} {need} a look"
+WEATHER_REPORT_SUBJECT_CLEAR = "Weather looks good for {when}'s {count} {builds}"
+WEATHER_REPORT_LEAD = "Here's {checked} forecast for the address of every build booked {when}, {day}."
 WEATHER_REPORT_ACTION = (
     "**What to do:** talk with the crew about each build marked Don't build, Borderline or No forecast. "
-    "To take one off today, use Move or Not Built on its Weekly Plan card. That updates JobNimbus and "
+    "To take one off {when}, use Move or Not Built on its Weekly Plan card. That updates JobNimbus and "
     "tells the customer."
 )
 WEATHER_REPORT_CLEAR_ACTION = "**What to do:** nothing. Every build is inside its weather limits."

@@ -13,6 +13,7 @@ from backend.services import weather as W
 from backend.services import weather_scheduler as WS
 
 TODAY = date(2030, 11, 4)
+REPORTS = []  # (customer names, tomorrow) for each weather report email the checks asked for
 
 
 @pytest.fixture
@@ -23,6 +24,9 @@ def db(monkeypatch):
     monkeypatch.setattr(WS, "SessionLocal", Session)
     monkeypatch.setattr(WS, "_today", lambda: TODAY)
     monkeypatch.setattr("backend.activity.write", lambda *a, **k: None)
+    monkeypatch.setattr("backend.emails.runner.run_weather_report",
+                        lambda db, checked, tomorrow: REPORTS.append(([j.customer_name for j, _ in checked], tomorrow)))
+    REPORTS.clear()
     s = Session()
     yield s
     s.close()
@@ -50,23 +54,22 @@ def test_night_before_uses_bam_and_the_jobnimbus_date_and_flags_without_pulling(
     booked(db, "Later", date(2030, 11, 7))
     out = WS.night_before_check()
     assert calls == [(tomorrow.id, "2030-11-05", True)] and out["flagged"] == 1
+    assert REPORTS == [(["Tomorrow"], True)]   # Greg and Luke get tomorrow's report
     db.expire_all()
     j = db.get(Job, tomorrow.id)
     assert j.bucket == "scheduled" and j.weather_status == "do_not_build"   # flagged, still booked
 
 
 def test_five_am_uses_bam_and_emails_the_report_and_morning_leaves_today_alone(db, monkeypatch):
-    calls, reports = [], []
+    calls = []
     monkeypatch.setattr(WS, "check_weather_for_job", fake_check(calls, status="good"))
-    monkeypatch.setattr("backend.emails.runner.run_weather_report",
-                        lambda db, checked: reports.append([(j.customer_name, r["status"]) for j, r in checked]))
     a = booked(db, "Today", TODAY)
     b = booked(db, "Tomorrow", date(2030, 11, 5))
     WS.five_am_spot_check()
-    assert calls == [(a.id, "2030-11-04", True)] and reports == [[("Today", "good")]]
+    assert calls == [(a.id, "2030-11-04", True)] and REPORTS == [(["Today"], False)]
     calls.clear()
     WS.morning_weather_check()
-    assert calls == [(b.id, "2030-11-05", False)] and len(reports) == 1   # today keeps the 5 AM BAM result
+    assert calls == [(b.id, "2030-11-05", False)] and len(REPORTS) == 1   # today keeps the 5 AM BAM result
 
 
 def test_free_forecast_by_default_and_bam_only_when_asked(monkeypatch):

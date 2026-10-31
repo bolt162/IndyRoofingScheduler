@@ -538,9 +538,10 @@ def _forecast_words(f: dict) -> str:
 
 
 def run_weather_report(db: Session, checked: list[tuple[Job, dict]], now: datetime | None = None,
-                       mode: str | None = None) -> dict:
-    """Greg and Luke, right after the 5 AM BAM check: today's builds and their forecast, problems first.
-    checked is (job, check_weather_for_job result) for each build. No builds today, no email."""
+                       mode: str | None = None, tomorrow: bool = False) -> dict:
+    """Greg and Luke, right after a BAM check: that day's builds and their forecast, problems first.
+    5 AM covers today; the 8 PM night-before check covers tomorrow (tomorrow=True).
+    checked is (job, check_weather_for_job result) for each build. No builds that day, no email."""
     from backend.emails.unsubscribe import _base_url as base_url
     if not checked:
         return {"jobs": 0}
@@ -564,12 +565,15 @@ def run_weather_report(db: Session, checked: list[tuple[Job, dict]], now: dateti
               "The free forecast (BAM Weather didn't answer)" if sources else "")
     n, flagged = len(rows), sum(row[1] != "Good to build" for row in rows)
     fill = dict(count=n, builds="build" if n == 1 else "builds", flagged=flagged,
-                need="needs" if flagged == 1 else "need", day=K._format_date(_indy_today(rc.now)))
+                need="needs" if flagged == 1 else "need", when="tomorrow" if tomorrow else "today",
+                checked="tonight's" if tomorrow else "this morning's",
+                day=K._format_date(_indy_today(rc.now) + timedelta(days=1 if tomorrow else 0)))
     to = _ops_and_pms(db)
     if to:
         deliver(rc, None, team_email(
             "internal", (C.WEATHER_REPORT_SUBJECT if flagged else C.WEATHER_REPORT_SUBJECT_CLEAR).format(**fill),
-            C.WEATHER_REPORT_LEAD.format(**fill), C.WEATHER_REPORT_ACTION if flagged else C.WEATHER_REPORT_CLEAR_ACTION,
+            C.WEATHER_REPORT_LEAD.format(**fill),
+            (C.WEATHER_REPORT_ACTION if flagged else C.WEATHER_REPORT_CLEAR_ACTION).format(**fill),
             [("Forecast from", source), ("Scheduler", f"{base_url()}/plan")],
             items=(["Build", "Weather", "Forecast", "Why"], rows)), to)
     return {"jobs": n, "flagged": flagged, "to": to}
