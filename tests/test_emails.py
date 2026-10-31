@@ -197,8 +197,20 @@ def test_late_add_near_front_still_gets_getting_close():
 
 
 def test_one_email_per_week():
-    st = welcomed_state(last_counted_email_at=NOW - timedelta(days=1))
+    st = welcomed_state(sequence_week=3, last_counted_email_at=NOW - timedelta(days=1))
     assert S.weekly_decision(ctx(), st, job(), NOW).template is None
+
+
+def test_welcome_earlier_in_the_week_still_gets_first_thursday():
+    # The Welcome promises an update every Thursday (Oct 2026: Sat-Wed welcomes were skipped on their first Thursday)
+    for days_before in (5, 1):
+        st = welcomed_state(last_counted_email_at=NOW - timedelta(days=days_before))
+        assert S.weekly_decision(ctx(jobs_ahead=20), st, job(), NOW).template == "week_1"
+
+
+def test_second_weekly_run_same_day_sends_nothing_after_welcome():
+    st = welcomed_state(last_counted_email_at=NOW)  # Thursday entrant: the weekly run itself sent the Welcome
+    assert S.weekly_decision(ctx(jobs_ahead=20), st, job(), NOW + timedelta(hours=2)).template is None
 
 
 def test_weather_slowdown_replaces_weekly():

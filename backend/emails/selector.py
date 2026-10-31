@@ -27,6 +27,8 @@ DONE_BUCKETS = {"other_trades", "primary_completed", "completed", "archived"}
 
 # A counted email in the last 6 days means "already emailed this week"
 WEEK_WINDOW = timedelta(days=6)
+# The Welcome promises an update every Thursday, so a Welcome earlier in the week only blocks a same-day rerun
+WELCOME_ONLY_WINDOW = timedelta(hours=12)
 
 
 def weeks_waiting(state: EmailState, job, now: datetime) -> int:
@@ -97,7 +99,9 @@ def weekly_decision(ctx: EmailContext, state: EmailState, job, now: datetime,
         return Decision(None, reason)
     if not in_queue(job, state, now.date()):
         return Decision(None, "not in queue")
-    if state.last_counted_email_at and now - state.last_counted_email_at < WEEK_WINDOW:
+    only_welcome = state.welcome_sent and not (state.sequence_week or state.rotation_index or state.getting_close_sent)
+    window = WELCOME_ONLY_WINDOW if only_welcome else WEEK_WINDOW
+    if state.last_counted_email_at and now - state.last_counted_email_at < window:
         return Decision(None, "already emailed this week")
 
     if state.reschedule_track:  # already scheduled once: never the new-customer Welcome
