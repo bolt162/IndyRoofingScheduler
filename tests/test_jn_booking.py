@@ -135,12 +135,12 @@ def test_books_the_job_with_gregs_steps_in_order(db):
     # 4. rep note
     assert w[3][:2] == ("POST", "activities")
     assert w[3][2]["note"] == "@PatRep roof scheduled Tuesday 10/29"
-    # 5. Build Block for the rep, 4:00 to 4:59pm build day
+    # 5. Build Block for the rep at 4:00pm build day, 0 minutes (never blocks the rep's calendar)
     assert w[4][:2] == ("POST", "tasks")
     bb = w[4][2]
     assert bb["record_type"] == 23 and bb["title"] == "Build Block" and bb["owners"] == [{"id": "rep1"}]
     assert datetime.fromtimestamp(bb["date_start"], TZ).strftime("%H:%M") == "16:00"
-    assert datetime.fromtimestamp(bb["date_end"], TZ).strftime("%H:%M") == "16:59"
+    assert bb["date_end"] == bb["date_start"]
     # 6. only the two open tasks Greg closes
     assert w[5:] == [("PUT", "tasks/t1", {"is_completed": True}), ("PUT", "tasks/t2", {"is_completed": True})]
 

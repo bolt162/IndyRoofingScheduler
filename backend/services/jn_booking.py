@@ -8,7 +8,8 @@ Greg's steps (seen on two jobs he booked on 2026-10-19), per job:
      "you're on the calendar" text an hour later, so it must happen exactly once, after the date.
   3. Job status -> Pending Start Date, with the same start date and subcontractors.
   4. Note to the rep: "@FirstLast roof scheduled Tuesday 10/27".
-  5. Build Block task for the rep, 4:00 to 4:59pm on build day.
+  5. Build Block task for the rep at 4:00pm on build day, 0 minutes long: JobNimbus copies tasks to the rep's Google
+     Calendar as busy time, and Lead Dispatch reads that calendar, so a longer block hides the rep from leads (Aaron 11/2).
   6. Complete the open "Send Work Order & Add Job Date to Job File" and
      "Order Materials & begin trade prep" tasks.
 
@@ -646,7 +647,7 @@ def _build_block_body(job: Job, rep_id: str, d: date, lookups: "Lookups") -> dic
     return {
         **({"record_type": tid} if (tid := lookups.task_type_id(BUILD_BLOCK_TYPE)) else {}),
         "record_type_name": BUILD_BLOCK_TYPE, "title": BUILD_BLOCK_TYPE, "description": "",
-        "date_start": local_ts(d, 16), "date_end": local_ts(d, 16, 59), "all_day": False,
+        "date_start": local_ts(d, 16), "date_end": local_ts(d, 16), "all_day": False,
         "owners": [{"id": rep_id}], "related": [{"id": job.jn_job_id, "type": "job"}],
     }
 
