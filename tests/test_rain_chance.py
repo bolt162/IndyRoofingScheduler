@@ -26,19 +26,21 @@ def test_sunrise_and_sunset_in_zionsville():
 def test_only_daylight_hours_count():
     # 90% overnight and 80% at 6 AM and 7 PM: outside sunrise to sunset, so left out
     words = rain_chance_words(_hours({6: 80, 7: 30, 9: 20, 12: 30, 19: 80}), *ZIONSVILLE, MONDAY, NIGHT_BEFORE)
-    assert words == "Up to 30% until 1 PM, then under 10% (sunrise 7:16 AM, sunset 5:43 PM)"
+    assert words == ("7 AM to 8 AM: 30%\n8 AM to 9 AM: 0%\n9 AM to 10 AM: 20%\n10 AM to Noon: 0%\n"
+                     "Noon to 1 PM: 30%\n1 PM to 6 PM: 0%\nSunrise 7:16 AM, sunset 5:43 PM")
 
 
-def test_dry_day_and_a_middle_shower():
-    assert rain_chance_words(_hours({}), *ZIONSVILLE, MONDAY, NIGHT_BEFORE).startswith("Under 10% all day (")
-    words = rain_chance_words(_hours({11: 40, 12: 60, 13: 55}), *ZIONSVILLE, MONDAY, NIGHT_BEFORE)
-    assert words.startswith("Under 10% until 11 AM, then up to 40% from 11 AM to Noon, "
-                            "then up to 60% from Noon to 2 PM, then under 10% (")
+def test_hours_with_the_same_chance_make_one_block():
+    assert rain_chance_words(_hours({}), *ZIONSVILLE, MONDAY, NIGHT_BEFORE) == (
+        "7 AM to 6 PM: 0%\nSunrise 7:16 AM, sunset 5:43 PM")
+    # 12% and 8% both round to 10%, 25% rounds up to 30%
+    words = rain_chance_words(_hours({10: 12, 11: 8, 12: 25, 13: 30, 14: 30}), *ZIONSVILLE, MONDAY, NIGHT_BEFORE)
+    assert words.startswith("7 AM to 10 AM: 0%\n10 AM to Noon: 10%\nNoon to 3 PM: 30%\n3 PM to 6 PM: 0%\n")
 
 
 def test_times_without_a_zone_are_read_from_where_the_forecast_starts():
     hourly = _hours({8: 30}, z=False)
-    assert rain_chance_words(hourly, *ZIONSVILLE, MONDAY, NIGHT_BEFORE).startswith("Under 10% until 8 AM, then up to 30%")
+    assert rain_chance_words(hourly, *ZIONSVILLE, MONDAY, NIGHT_BEFORE).startswith("7 AM to 8 AM: 0%\n8 AM to 9 AM: 30%\n")
 
 
 def test_nothing_to_say_without_hours():
