@@ -28,6 +28,8 @@ const CLOSEOUTS_URL = 'https://closeout.indyscheduler.top';
 // Onboarding portal (its own emailed-code sign-in); the link only shows for Aaron and Greg
 const ONBOARDING_URL = 'https://onboarding.indyscheduler.top/office';
 const ONBOARDING_EMAILS = ['aaron@indyroofandrestoration.com', 'greg.russell@indyroofandrestoration.com'];
+// Sales Coach (its own sign-in); the link only shows for the owner and admins
+const SALES_COACH_URL = 'https://coach.indyscheduler.top';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
@@ -138,6 +140,15 @@ export function Sidebar({ mobileCompact = false, onNavigate }: SidebarProps) {
           >
             <ExternalLink className="h-4 w-4 shrink-0" />
             {expanded && <span className="truncate">Open Onboarding</span>}
+          </a>
+        )}
+        {me?.owner_or_admin && (
+          <a
+            href={SALES_COACH_URL}
+            className="mx-2 flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <ExternalLink className="h-4 w-4 shrink-0" />
+            {expanded && <span className="truncate">Open Sales Coach</span>}
           </a>
         )}
 
