@@ -471,7 +471,7 @@ def test_weather_report_goes_to_greg_and_luke_with_problems_first(db, jn, outbox
     bad.address = "9 Oak Ln, Carmel, IN"
     lost = add_job(db, jn, "Cal Nomap", bucket="scheduled")
     checked = [(good, {**_bam("clear", precipitation=0, tstorm_pm=0, wind_gust=0),
-                       "rain_chance": "Up to 30% until 1 PM, then under 10% (sunrise 7:16 AM, sunset 5:43 PM)"}),
+                       "rain_chance": "7 AM to 1 PM: 30%\n1 PM to 6 PM: 0%\nSunrise 7:16 AM, sunset 5:43 PM"}),
                (bad, _bam("do_not_build", ["Low of 38.4°F, under the 40°F limit", "Rain 0.31 in expected"])),
                (lost, {"error": "Job has no coordinates — geocoding needed"})]
     res = R.run_weather_report(db, checked, datetime(2026, 10, 30, 10, 0), mode="live")
@@ -487,7 +487,8 @@ def test_weather_report_goes_to_greg_and_luke_with_problems_first(db, jn, outbox
             "storm chance 40%\n   Why: Low of 38.4°F, under the 40°F limit. Rain 0.31 in expected") in text
     assert "   Weather: No forecast\n   Why: The address isn't on the map yet" in text
     assert ("Amy Good St\n   Weather: Good to build\n   Forecast: 38 to 55°F, wind 12 mph\n"
-            "   Rain chance: Up to 30% until 1 PM, then under 10% (sunrise 7:16 AM, sunset 5:43 PM)") in text
+            "   Rain chance: 7 AM to 1 PM: 30%\n      1 PM to 6 PM: 0%\n      Sunrise 7:16 AM, sunset 5:43 PM") in text
+    assert "7 AM to 1 PM: 30%<br>1 PM to 6 PM: 0%<br>Sunrise" in mail["html"]
     assert "To take one off today, use Move or Not Built" in text
 
 

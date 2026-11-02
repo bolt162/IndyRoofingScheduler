@@ -73,7 +73,7 @@ _HEAD = _CELL + "text-align:left;background:#f3f4f6;color:#003C58;font-weight:bo
 
 def table_html(cols: list[str], rows: list[list[str]]) -> str:
     ths = "".join(f'<th style="{_HEAD}">{html.escape(c)}</th>' for c in cols)
-    trs = "".join("<tr>" + "".join(f'<td style="{_CELL}">{html.escape(v or "")}</td>' for v in r) + "</tr>"
+    trs = "".join("<tr>" + "".join(f'<td style="{_CELL}">{html.escape(v or "").replace(chr(10), "<br>")}</td>' for v in r) + "</tr>"
                   for r in rows)
     return ('<table role="presentation" cellpadding="0" cellspacing="0" '
             f'style="width:100%;border-collapse:collapse;margin:0 0 16px 0;"><tr>{ths}</tr>{trs}</table>')
@@ -83,6 +83,6 @@ def blocks_text(cols: list[str], rows: list[list[str]]) -> str:
     """First column on its own line, then the other columns as indented "Label: value" lines."""
     out = []
     for r in rows:
-        lines = [r[0]] + [f"   {c}: {v}" for c, v in zip(cols[1:], r[1:]) if v]
+        lines = [r[0]] + [f"   {c}: {v}".replace("\n", "\n      ") for c, v in zip(cols[1:], r[1:]) if v]
         out.append("\n".join(lines))
     return "\n\n".join(out)
