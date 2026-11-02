@@ -15,6 +15,7 @@ from backend.config import settings as app_settings
 from backend.models.job import Job, JobBucket
 from backend.models.settings import SystemSettings
 from backend.services import claritywx
+from backend.services.rain_chance import rain_chance_words
 
 
 # Open-Meteo (Stage 1 — free, no API key needed)
@@ -264,13 +265,18 @@ def check_weather_for_job(
     if not forecast:
         return {"error": "Could not retrieve forecast"}
 
+    # BAM checks also get the hourly forecast: rain chance sunrise to sunset for the weather email
+    hourly = None
+    if force_bamwx and claritywx.is_configured():
+        hourly = claritywx.get_hourly_forecast(job.latitude, job.longitude)
+
     # Check rain window for TPO/EPDM/Coatings (spec §6.5)
     rain_window_result = None
     mat = (job.material_type or "").lower()
     if mat in ("tpo", "duro_last", "epdm", "coating") and claritywx.is_configured():
         hours = 24 if mat in ("tpo", "duro_last", "epdm") else 48
         rain_window_result = claritywx.check_rain_window_hours(
-            job.latitude, job.longitude, hours
+            job.latitude, job.longitude, hours, hourly
         )
 
     result = check_material_thresholds(
@@ -285,6 +291,8 @@ def check_weather_for_job(
 
     result["job_id"] = job.id
     result["customer_name"] = job.customer_name
+    day = date.fromisoformat(target_date) if target_date else date.today()
+    result["rain_chance"] = rain_chance_words(hourly, job.latitude, job.longitude, day)
     return result
 
 

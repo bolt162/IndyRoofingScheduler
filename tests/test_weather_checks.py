@@ -97,3 +97,20 @@ def test_every_weather_reason_reads_plainly(db):
         "Snow 1.2 in expected", "Ice 0.1 in expected", "Thunderstorm chance 60% morning, 0% afternoon",
         "Humidity 92%, over the 85% limit for coatings", "Rain 0.2 in within the next 48 hours (needs a dry stretch)"]
     assert "Gusts 33 mph, over the 20 mph limit for siding" in W.check_material_thresholds(db, "siding", bad)["issues"]
+
+
+def test_bam_check_gets_rain_chance_with_one_hourly_call(db, monkeypatch):
+    calls = []
+    monkeypatch.setattr(W.claritywx, "is_configured", lambda: True)
+    monkeypatch.setattr(W, "get_forecast", lambda *a, **k: {"temp_min": 50, "temp_max": 60, "precipitation": 0,
+                                                            "wind_max": 5, "source": "claritywx"})
+    monkeypatch.setattr(W.claritywx, "get_hourly_forecast", lambda lat, lon: calls.append(1) or [])
+    monkeypatch.setattr(W, "rain_chance_words", lambda hourly, lat, lon, day: f"words for {day}")
+    tpo = booked(db, "Flat Roof", TODAY)
+    tpo.material_type = "tpo"
+    db.commit()
+    assert W.check_weather_for_job(db, tpo.id, "2030-11-04", force_bamwx=True)["rain_chance"] == "words for 2030-11-04"
+    assert calls == [1]   # the TPO dry-stretch check reused it
+    calls.clear()
+    assert W.check_weather_for_job(db, tpo.id, "2030-11-04")["rain_chance"] == "words for 2030-11-04"
+    assert calls == [1]   # free-forecast check: only the TPO dry-stretch check calls BAM, as before

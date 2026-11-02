@@ -548,8 +548,8 @@ def run_weather_report(db: Session, checked: list[tuple[Job, dict]], now: dateti
     rc = RunContext(db, now or datetime.utcnow(), mode)
     rows = []
     for job, r in checked:
-        street = (job.address or "").split(",")[0].strip()
-        label = f"{person(job.customer_name)}, {street}" if street else person(job.customer_name)
+        place = ", ".join(p.strip() for p in (job.address or "").split(",")[:2] if p.strip())  # street, town
+        label = f"{person(job.customer_name)}, {place}" if place else person(job.customer_name)
         call = _WEATHER_CALL.get(r.get("status"), "No forecast")
         forecast = _forecast_words(r["forecast"]) if r.get("forecast") else ""
         if r.get("error"):
@@ -557,8 +557,10 @@ def run_weather_report(db: Session, checked: list[tuple[Job, dict]], now: dateti
                    else "The weather service didn't answer")
         else:
             why = ". ".join(r.get("issues") or [])
-        rows.append([label, call, forecast, why])
+        rows.append([label, call, forecast, r.get("rain_chance") or "", why])
     rows.sort(key=lambda row: (_WEATHER_ORDER[row[1]], row[0]))
+    cols = ["Build", "Weather", "Forecast", "Rain chance", "Why"]
+    table = (cols, rows) if any(row[4] for row in rows) else (cols[:4], [row[:4] for row in rows])  # no empty Why column
     sources = {r.get("source") for _, r in checked if r.get("forecast")}
     source = ("BAM Weather" if sources == {"claritywx"} else
               "BAM Weather, plus the free forecast where BAM didn't answer" if "claritywx" in sources else
@@ -575,7 +577,7 @@ def run_weather_report(db: Session, checked: list[tuple[Job, dict]], now: dateti
             C.WEATHER_REPORT_LEAD.format(**fill),
             (C.WEATHER_REPORT_ACTION if flagged else C.WEATHER_REPORT_CLEAR_ACTION).format(**fill),
             [("Forecast from", source), ("Scheduler", f"{base_url()}/plan")],
-            items=(["Build", "Weather", "Forecast", "Why"], rows)), to)
+            items=table), to)
     return {"jobs": n, "flagged": flagged, "to": to}
 
 

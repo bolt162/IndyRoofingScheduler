@@ -157,14 +157,16 @@ def normalize_daily_forecast(day: dict, target_date: str | None = None) -> dict:
     }
 
 
-def check_rain_window_hours(lat: float, lon: float, hours: int) -> dict:
+def check_rain_window_hours(lat: float, lon: float, hours: int, hourly: list[dict] | None = None) -> dict:
     """
     Check if rain is expected in the next N hours using hourly forecast.
     Used for TPO (24hr) and Coatings (48hr) rain window requirements.
+    Pass hourly when it was already fetched, to save a BAM call.
 
     Returns: { "rain_expected": bool, "total_rain": float, "rain_hours": list[str] }
     """
-    hourly = get_hourly_forecast(lat, lon)
+    if hourly is None:
+        hourly = get_hourly_forecast(lat, lon)
     if not hourly:
         return {"rain_expected": False, "total_rain": 0, "rain_hours": [], "source": "unavailable"}
 
