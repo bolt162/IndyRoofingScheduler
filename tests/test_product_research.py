@@ -198,6 +198,7 @@ def test_pause_turn_is_continued(db):
     R.run_pending_research(db, client=client)
     assert len(client.research_calls) == 2
     assert client.research_calls[1]["messages"][1]["role"] == "assistant"
+    assert all(c["cache_control"] == {"type": "ephemeral"} for c in client.research_calls)
 
 
 def test_research_failure_retries_then_stops(db):

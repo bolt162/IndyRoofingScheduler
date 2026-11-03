@@ -133,6 +133,8 @@ def research_product(product_text: str, client=None) -> dict:
                 fallbacks="default",
                 tools=WEB_TOOLS,
                 messages=messages,
+                # Each pause_turn continuation resends the search results; cache them
+                cache_control={"type": "ephemeral"},
             )
         if response.stop_reason != "pause_turn":
             break
