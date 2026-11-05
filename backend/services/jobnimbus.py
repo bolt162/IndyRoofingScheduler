@@ -281,8 +281,12 @@ JN_STATUS_TO_BUCKET = {
     "Pending Start Date": "scheduled",
     "Job In Progress": "scheduled",
     "In Production": "scheduled",
-    # Other Trades — primary trade done. No app-side split by open secondaries.
+    # Secondary trades — primary trade done. No app-side split by open secondaries.
+    # Nov 4 2026: Insurance and Retail renamed "Other Trades" to "Scheduling Secondary Trades" and
+    # added "All Trades Scheduled"; the other workflows still say "Other Trades". Keep all three.
     "Other Trades": "other_trades",
+    "Scheduling Secondary Trades": "other_trades",
+    "All Trades Scheduled": "other_trades",
     # Primary Completed — review-style tab pulling COC/Punch List + Job Complete.
     "COC / Punch List": "primary_completed",
     "Job Complete (Job Review)": "primary_completed",

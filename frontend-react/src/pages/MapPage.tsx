@@ -430,7 +430,7 @@ export function MapPage() {
                 <SelectItem value="all">All Buckets</SelectItem>
                 <SelectItem value="to_schedule">To Schedule</SelectItem>
                 <SelectItem value="scheduled">Scheduled</SelectItem>
-                <SelectItem value="other_trades">Other Trades</SelectItem>
+                <SelectItem value="other_trades">Secondary Trades</SelectItem>
                 <SelectItem value="primary_completed">Primary Completed</SelectItem>
               </SelectContent>
             </Select>

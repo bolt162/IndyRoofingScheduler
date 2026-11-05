@@ -21,6 +21,7 @@ How a week is filled, Monday to Friday, from tomorrow on:
 import logging
 from datetime import date, datetime, timedelta
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from backend.models.job import Job
@@ -73,7 +74,9 @@ def _waiting_days(db: Session, job: Job, today: date) -> int:
     from backend.services.scoring import days_in_queue
     if not follow_up_trade(job):
         return days_in_queue(db, job)
-    ev = (db.query(JobEvent).filter(JobEvent.job_id == job.id, JobEvent.to_bucket == "other_trades")
+    # Coming back from archived isn't a new roof done (the Nov 4 status rename archived these jobs for a day)
+    ev = (db.query(JobEvent).filter(JobEvent.job_id == job.id, JobEvent.to_bucket == "other_trades",
+                                    or_(JobEvent.from_bucket.is_(None), JobEvent.from_bucket != "archived"))
           .order_by(JobEvent.created_at.desc()).first())
     # Roofs finished before we started watching have waited longest
     return (today - ev.created_at.date()).days if ev else 999

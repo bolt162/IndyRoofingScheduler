@@ -46,7 +46,7 @@ export const BUCKET_LABELS: Record<JobBucket, string> = {
   to_schedule: 'To Schedule',
   scheduled: 'Scheduled',
   not_built: 'Not Built',
-  other_trades: 'Other Trades',
+  other_trades: 'Secondary Trades',
   primary_completed: 'Primary Completed',
   completed: 'Completed',
   archived: 'Archived',

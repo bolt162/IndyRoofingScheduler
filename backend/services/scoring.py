@@ -453,7 +453,7 @@ def run_scoring_engine(db: Session, pm_ids: list[int] | None = None, target_date
     if not jobs:
         return {
             "recommendations": [], "clusters": [],
-            "ai_explanation": "No jobs eligible for scheduling (To Schedule / Other Trades).",
+            "ai_explanation": "No jobs eligible for scheduling (To Schedule / Secondary Trades).",
             "weather_blocked": [], "weather_blocked_count": 0,
             "no_build_blocked": [], "no_build_blocked_count": 0,
         }
