@@ -583,6 +583,15 @@ def sync_jobs_from_jn(db: Session) -> dict:
                         continue
                     if mapped.get(field) is not None:
                         setattr(existing, field, mapped[field])
+                # Trades follow JobNimbus's Trade boxes (a job queued as Roofing and changed to Siding Repair
+                # kept getting roof countdown emails). A blank Trade #1 keeps what we have, not the roofing default.
+                if (jn_data.get("Trade #1") or jn_data.get("cf_string_11") or "").strip():
+                    if (existing.primary_trade, existing.secondary_trades or []) != (
+                            mapped["primary_trade"], mapped["secondary_trades"]):
+                        logger.info(f"Trade changed in JobNimbus for {existing.jn_number}: "
+                                    f"{existing.primary_trade} -> {mapped['primary_trade']}")
+                    existing.primary_trade = mapped["primary_trade"]
+                    existing.secondary_trades = mapped["secondary_trades"]
                 # JobNimbus has no material but the note scan found one: size the job by that one,
                 # the same way the scanner does, so a slate roof keeps its specialty tier
                 if mapped.get("material_type") is None and existing.material_type:

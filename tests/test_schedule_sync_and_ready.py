@@ -75,9 +75,9 @@ def test_ready_input_has_work_order_notes_and_dated_notes_newest_first():
 
 # --- the sync: JobNimbus wins, plans survive ---
 
-def _sync(db, monkeypatch, status, wos=(), acts=()):
+def _sync(db, monkeypatch, status, wos=(), acts=(), **fields):
     job = {"jnid": "j1", "name": "Mike Bray - J-26819", "status_name": status, "Trade #1": "Roofing",
-           "record_type_name": "Retail", "date_status_change": 1790000000, "date_start": TS_OCT_27}
+           "record_type_name": "Retail", "date_status_change": 1790000000, "date_start": TS_OCT_27, **fields}
     monkeypatch.setattr(jn, "fetch_jobs_at_tracked_statuses", lambda: [job])
     monkeypatch.setattr(jn, "fetch_activities_for_job", lambda jid: list(acts))
     monkeypatch.setattr(jn, "fetch_work_orders_for_job", lambda jid: list(wos))
@@ -107,6 +107,22 @@ def test_jobnimbus_booking_replaces_the_plan(db, monkeypatch):
     assert job.bucket == "scheduled" and job.planned_date is None and job.planned_pm_id is None
     assert job.jn_start_date == date(2026, 10, 27) and job.jn_crews == ["A&M Home Improvement LLC - Roof Crew"]
     assert job.jn_pm == "Luke Mroz" and job.jn_work_orders[0]["number"] == "WO-11853"
+
+
+def test_a_trade_changed_in_jobnimbus_reaches_the_scheduler(db, monkeypatch):
+    # J-25770: queued as Roofing + Siding, then Greg changed it to Siding Repair; it kept getting roof emails
+    _sync(db, monkeypatch, "Schedule Job", **{"Trade #2": "Siding"})
+    job = db.query(Job).one()
+    assert job.primary_trade == "roofing" and job.secondary_trades == ["siding"]
+    _sync(db, monkeypatch, "Schedule Job", **{"Trade #1": "Siding Repair", "Trade #2": ""})
+    db.refresh(job)
+    assert job.primary_trade == "siding_repair" and job.secondary_trades == []
+
+
+def test_a_blank_trade_box_keeps_the_trade_the_scheduler_has(db, monkeypatch):
+    _sync(db, monkeypatch, "Schedule Job", **{"Trade #1": "Siding"})
+    _sync(db, monkeypatch, "Schedule Job", **{"Trade #1": ""})
+    assert db.query(Job).one().primary_trade == "siding"  # not the "roofing" default for a blank box
 
 
 def test_sync_stores_the_ready_input(db, monkeypatch):
