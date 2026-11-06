@@ -11,7 +11,7 @@ def test_a_mold_job_waiting_on_its_clearance_test_lands_in_primary_completed_not
     assert mapped["bucket"] == "primary_completed"
 
 
-@pytest.mark.parametrize("name", ["Drying - Equipment On Site", "Dry Standard Met - Pull Equipment",
+@pytest.mark.parametrize("name", ["Stabilization", "Drying - Equipment On Site", "Drying Goal Met - Pull Equipment",
                                   "Scope and Paperwork Review", "Waiting on Carrier Review", "Report and Proposal Sent"])
 def test_water_drying_and_paperwork_statuses_are_not_pulled_into_the_scheduler(name):
     assert name not in JN.TRACKED_JN_STATUSES
