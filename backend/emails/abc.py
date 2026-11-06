@@ -72,7 +72,7 @@ def parse_order(o: dict) -> dict | None:
     job = next((r for r in o.get("related") or [] if r.get("type") == "job"), {})
     number = job.get("number") or ""
     customer = _clean(job.get("name") or "")
-    customer = customer.rsplit(" - ", 1)[0] if customer.endswith(number) and " - " in customer else customer
+    customer = re.sub(r"\s+-\s+J-\d+.*$", "", customer)   # "David Boyd - J-25770 (1)" -> "David Boyd"
     ids = [str(x["id"]) for x in sup.get("logs") or [] if x.get("id")]
     a = o.get("address") or {}
     ts = o.get("date_materialorder") or 0

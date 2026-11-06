@@ -67,6 +67,8 @@ def test_parse_order_skips_drafts_and_reads_abc_number():
             "address": {"address_line1": "3 Rd", "city": "Roachdale"}, "date_materialorder": 1794243600}
     p = abc.parse_order(base)
     assert (p["job_number"], p["customer"], p["abc_order"], p["day"]) == ("J-26802", "Susan Priest", "C12-9", date(2026, 11, 9))
+    dup = {**base, "related": [{"type": "job", "id": "j", "number": "J-25770", "name": "David Boyd - J-25770 (1)"}]}
+    assert abc.parse_order(dup)["customer"] == "David Boyd"
     assert abc.parse_order({**base, "status_name": "Draft"}) is None
     assert abc.parse_order({**base, "supplier": {"type": "Beacon"}}) is None
 
