@@ -290,6 +290,11 @@ JN_STATUS_TO_BUCKET = {
     # Primary Completed — review-style tab pulling COC/Punch List + Job Complete.
     "COC / Punch List": "primary_completed",
     "Job Complete (Job Review)": "primary_completed",
+    # Nov 5 2026: Mold Remediation hides COC / Punch List and Job Complete and ends the work at "Waiting on Clearance Test".
+    # Mold still uses Schedule Job and Job In Progress, so without this the job would be archived the moment its work is done.
+    # Water Mitigation hides Schedule Job and Job In Progress, and its drying statuses are deliberately NOT listed here:
+    # water jobs leave the Scheduler once Dave moves them out of those two.
+    "Waiting on Clearance Test": "primary_completed",
     # Completed — terminal state (not surfaced as a dashboard tab).
     "Completed": "completed",
 }
