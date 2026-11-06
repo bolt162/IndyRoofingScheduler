@@ -156,16 +156,15 @@ def run_abc_daily(db: Session, now: datetime | None = None, mode: str | None = N
     booked = {j.jn_job_id for j in db.query(Job).filter(Job.bucket.in_(OFF_THE_LIST_BUCKETS)).all()}
     found = sorted((d for d in found if d["jn_job_id"] not in booked), key=lambda d: (d["day"], d["job_number"]))
     when = " and ".join(_day(d) for d in days)
-    if found:
-        lead = f"This is a heads-up on the material deliveries we have scheduled for {when}."
-        multi = len(days) > 1
-        cols = (["Day"] if multi else []) + ["Job #", "ABC order #", "Customer", "Address"]
-        rows = [([_day(d["day"])] if multi else []) + [d["job_number"], d["abc_order"] or "Pending", person(d["customer"]),
-                                                       d["address"]] for d in found]
-        items = (cols, rows)
-    else:
-        lead = f"We don't have any material showing to go out on {when}."
-        items = None
+    if not found:  # no deliveries, no email (Aaron, 2026-11-05)
+        _log(db, DAILY, mode, "skipped", f"no deliveries for {when}")
+        return {"sent": False, "why": "no deliveries"}
+    lead = f"This is a heads-up on the material deliveries we have scheduled for {when}."
+    multi = len(days) > 1
+    cols = (["Day"] if multi else []) + ["Job #", "ABC order #", "Customer", "Address"]
+    rows = [([_day(d["day"])] if multi else []) + [d["job_number"], d["abc_order"] or "Pending", person(d["customer"]),
+                                                   d["address"]] for d in found]
+    items = (cols, rows)
     email = team_email(DAILY, f"Material deliveries for {when}", lead, contacts,
                        [], extra=["This is a reminder of upcoming deliveries. Changes may still come from our PM or a "
                                   "separate postponement notice. Questions? Contact Luke or Greg above."], items=items)

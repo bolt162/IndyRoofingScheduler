@@ -86,9 +86,8 @@ def test_daily_friday_splits_days_and_empty_day_still_sends(db, outbox):
     fri = at(outbox, date(2026, 11, 6))
     abc.run_abc_daily(db, now=fri, mode="test", fetch=lambda days: [delivery(day=date(2026, 11, 7)), delivery("J-2", date(2026, 11, 9))])
     assert "Saturday, Nov 7" in outbox[0]["text"] and "Monday, Nov 9" in outbox[0]["text"]
-    mon = at(outbox, date(2026, 11, 9))
-    abc.run_abc_daily(db, now=mon, mode="test", fetch=lambda days: [])
-    assert "don't have any material" in outbox[1]["text"]
+    assert abc.run_abc_daily(db, now=at(outbox, date(2026, 11, 9)), mode="test", fetch=lambda days: [])["why"] == "no deliveries"
+    assert len(outbox) == 1
 
 
 def test_daily_skips_weekend_and_jobs_back_in_the_queue(db, outbox):
@@ -96,7 +95,7 @@ def test_daily_skips_weekend_and_jobs_back_in_the_queue(db, outbox):
     db.add(Job(jn_job_id="a", jn_number="J-1", customer_name="Pat Smith", address="x", bucket="to_schedule", primary_trade="roofing"))
     db.commit()
     abc.run_abc_daily(db, now=at(outbox, date(2026, 11, 9)), mode="test", fetch=lambda days: [delivery()])
-    assert "don't have any material" in outbox[0]["text"]
+    assert not outbox
 
 
 def test_daily_missing_phone_or_failed_jobnimbus_sends_nothing_and_doesnt_retry(db, outbox):
