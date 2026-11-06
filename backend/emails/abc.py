@@ -33,6 +33,11 @@ DAILY = "abc_daily"
 POSTPONED = "abc_postponed"
 NO_POSTPONE_REASON = "Weather Mid-Build"   # material is already on site
 NOT_SENT_STATUSES = ("draft", "cancelled", "canceled")
+DELIVERED_STATUSES = ("fulfilled", "delivered", "invoiced")
+# Labor orders (JobNimbus work orders) whose build uses ABC material. Gutters never email ABC.
+ABC_TRADES = ("roofing", "siding")
+# Buckets where a booked labor order is a real build (scheduled roofs, follow-up siding)
+BUILD_BUCKETS = ("scheduled", "other_trades")
 # Where bucket says the build is not booked, so ABC was already told (or will be) it moved
 OFF_THE_LIST_BUCKETS = ("to_schedule", "not_built")
 
@@ -79,6 +84,7 @@ def parse_order(o: dict) -> dict | None:
     a = o.get("address") or {}
     ts = o.get("date_materialorder") or 0
     return {"jn_job_id": job.get("id"), "job_number": number, "customer": customer,
+            "open": (o.get("status_name") or "").lower() not in DELIVERED_STATUSES,
             "address": ", ".join(p for p in (a.get("address_line1"), a.get("city")) if p),
             "abc_order": ids[-1] if ids else "", "day": datetime.fromtimestamp(ts, TZ).date() if ts else None}
 
@@ -95,10 +101,53 @@ def fetch_deliveries(days: list[date]) -> list[dict]:
     return [p for p in _orders(rng) if p["day"] in days]
 
 
+def fetch_job_orders(jn_job_id: str) -> list[dict]:
+    """Every sent ABC order on the job, newest first."""
+    return _orders({"must": [{"term": {"related.id": jn_job_id}}]})
+
+
 def fetch_job_order(jn_job_id: str) -> dict | None:
-    """The newest confirmed ABC order on the job (one with an ABC order number), or None."""
-    orders = _orders({"must": [{"term": {"related.id": jn_job_id}}]})
-    return next((o for o in orders if o["abc_order"]), None)
+    """The newest confirmed ABC order on the job that ABC hasn't delivered yet (else the newest confirmed one)."""
+    orders = [o for o in fetch_job_orders(jn_job_id) if o["abc_order"]]
+    return next((o for o in orders if o["open"]), orders[0] if orders else None)
+
+
+def labor_day(job: Job) -> date | None:
+    """The day the job's roofing or siding labor order is booked (Pending Start), or None. When Greg moves a
+    build, this date moves; the material order's date can't (JobNimbus locks it once ABC has it)."""
+    days = [w.get("start") for w in job.jn_work_orders or []
+            if (w.get("trade") or "").strip().lower() in ABC_TRADES
+            and (w.get("status") or "").strip().lower() == "pending start" and w.get("start")]
+    return date.fromisoformat(min(days)) if days else None
+
+
+def deliveries(db: Session, days: list[date], by_date: list[dict], job_orders) -> list[dict]:
+    """What ABC should bring on `days` (Aaron, 2026-11-06):
+      1. every build booked on those days (its roofing or siding labor order), with its open ABC order; a build
+         moved from another day says so, because its material order still shows the old day
+      2. every ABC order dated those days, unless its build is now booked for another day or is back in the queue
+    A booked build with no ABC order is left out (it may use another supplier) and noted in the Activity Log."""
+    jobs = {j.jn_job_id: j for j in db.query(Job).filter(Job.jn_job_id.isnot(None)).all()}
+    out, seen = [], set()
+    for j in jobs.values():
+        day = labor_day(j)
+        if day not in days or j.bucket not in BUILD_BUCKETS:
+            continue
+        orders = [o for o in job_orders(j.jn_job_id) if o["abc_order"] and o["open"]]
+        order = next((o for o in orders if o["day"] == day), orders[0] if orders else None)
+        if not order:
+            _log(db, DAILY, "", "skipped", f"{j.customer_name}: booked for {_day(day)} but no open ABC order", j.id)
+            continue
+        moved = order["day"] and order["day"] != day
+        out.append({**order, "day": day, "moved_from": order["day"] if moved else None})
+        seen.add(j.jn_job_id)
+    for o in by_date:
+        j = jobs.get(o["jn_job_id"])
+        if o["jn_job_id"] in seen or (j and (j.bucket in OFF_THE_LIST_BUCKETS or labor_day(j) not in (None, o["day"]))):
+            continue
+        out.append({**o, "moved_from": None})
+        seen.add(o["jn_job_id"])
+    return sorted(out, key=lambda d: (d["day"], d["job_number"]))
 
 
 # --- Contacts and sending -------------------------------------------------------------------------------
@@ -133,7 +182,8 @@ def _contacts_block(db: Session) -> str | None:
             f"- {greg.display_name}: {format_phone(greg.phone)}")
 
 
-def run_abc_daily(db: Session, now: datetime | None = None, mode: str | None = None, fetch=None) -> dict:
+def run_abc_daily(db: Session, now: datetime | None = None, mode: str | None = None, fetch=None,
+                  fetch_job=None) -> dict:
     from backend.emails.config import email_mode
     mode = mode or email_mode()
     now = now or datetime.utcnow()
@@ -149,22 +199,22 @@ def run_abc_daily(db: Session, now: datetime | None = None, mode: str | None = N
         _log(db, DAILY, mode, "failed", "Luke's or Greg's phone number is missing on the Team tab", at=now)
         return {"sent": False, "why": "missing phone"}
     try:
-        found = (fetch or fetch_deliveries)(days)
+        found = deliveries(db, days, (fetch or fetch_deliveries)(days), fetch_job or fetch_job_orders)
     except Exception as e:  # noqa: BLE001
         _log(db, DAILY, mode, "failed", f"JobNimbus didn't answer ({type(e).__name__}); no reminder sent", at=now)
         _tell_ops(db, mode, "JobNimbus didn't answer, so the ABC delivery reminder did not go out today.")
         return {"sent": False, "why": "jobnimbus"}
-    booked = {j.jn_job_id for j in db.query(Job).filter(Job.bucket.in_(OFF_THE_LIST_BUCKETS)).all()}
-    found = sorted((d for d in found if d["jn_job_id"] not in booked), key=lambda d: (d["day"], d["job_number"]))
     when = " and ".join(_day(d) for d in days)
     if not found:  # no deliveries, no email (Aaron, 2026-11-05)
         _log(db, DAILY, mode, "skipped", f"no deliveries for {when}")
         return {"sent": False, "why": "no deliveries"}
     lead = f"This is a heads-up on the material deliveries we have scheduled for {when}."
     multi = len(days) > 1
-    cols = (["Day"] if multi else []) + ["Job #", "ABC order #", "Customer", "Address"]
+    notes = any(d["moved_from"] for d in found)
+    cols = (["Day"] if multi else []) + ["Job #", "ABC order #", "Customer", "Address"] + (["Note"] if notes else [])
     rows = [([_day(d["day"])] if multi else []) + [d["job_number"], d["abc_order"] or "Pending", person(d["customer"]),
-                                                   d["address"]] for d in found]
+                                                   d["address"]]
+            + ([f"Rescheduled from {_day(d['moved_from'])}" if d["moved_from"] else ""] if notes else []) for d in found]
     items = (cols, rows)
     email = team_email(DAILY, f"Material deliveries for {when}", lead, "**Contacts**",
                        [], extra=[contacts, "This is a reminder of upcoming deliveries. Changes may still come from our PM or a "
