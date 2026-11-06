@@ -511,6 +511,7 @@ def _add_email_jobs(scheduler, CronTrigger):
         ("run_weekly", CronTrigger(day_of_week="thu", hour=10, minute=0, timezone=SCHEDULER_TZ), "Email: Thursday weekly update"),
         ("run_welcomes", CronTrigger(day_of_week="mon-wed,fri-sun", hour=10, minute=0, timezone=SCHEDULER_TZ), "Email: welcomes"),
         ("send_preview", CronTrigger(day_of_week="wed", hour=14, minute=0, timezone=SCHEDULER_TZ), "Email: Wednesday preview"),
+        ("run_abc_daily", CronTrigger(day_of_week="mon-fri", hour=12, minute=0, timezone=SCHEDULER_TZ), "Email: ABC delivery reminder"),
         ("run_reschedule_checks", CronTrigger(hour=17, minute=0, timezone=SCHEDULER_TZ), "Email: same-day reschedule check"),
         ("run_scheduled_emails", CronTrigger(hour="8-19", minute="*/30", timezone=SCHEDULER_TZ), "Email: you're on the calendar"),
     ]

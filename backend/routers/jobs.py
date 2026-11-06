@@ -451,6 +451,13 @@ def not_built(db: Session, job: Job, reason: str, detail: str | None, who: str) 
     email_events.safely(email_events.on_reschedule, db, job,
                         customer_told=bool((jobnimbus_result or {}).get("customer_told")))
 
+    # Added 2026-11-05 (Greg): the rep and PM get a JobNimbus note even when nothing was booked (a booked job
+    # already got one from unbook), and ABC is told the delivery is postponed. Neither can block this save.
+    if (jobnimbus_result or {}).get("status") != "unbooked":
+        email_events.safely(jn_booking.not_built_note, db, job, reason, detail, who)
+    from backend.emails import abc
+    email_events.safely(abc.send_postponed, db, job, reason)
+
     # Note 2: Generate not-built note with reason
     from backend.services.notes import generate_not_built_note
     generate_not_built_note(db, job, reason, detail or "")

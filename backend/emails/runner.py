@@ -581,6 +581,11 @@ def run_weather_report(db: Session, checked: list[tuple[Job, dict]], now: dateti
     return {"jobs": n, "flagged": flagged, "to": to}
 
 
+def run_abc_daily(db: Session, **kw) -> dict:
+    from backend.emails import abc
+    return abc.run_abc_daily(db, **kw)
+
+
 def run_research(db: Session, now: datetime | None = None, mode: str | None = None, client=None) -> dict:
     rc = RunContext(db, now or datetime.utcnow(), mode)
     rows = research.run_pending_research(db, client=client)

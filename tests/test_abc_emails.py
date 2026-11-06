@@ -1,0 +1,147 @@
+"""ABC Supply emails: the daily delivery reminder and the Not Built postponement. Nothing leaves the machine."""
+import pathlib
+from datetime import date, datetime
+
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from backend.database import Base
+from backend.emails import abc
+from backend.models.email import EmailLog, TeamContact
+from backend.models.job import Job
+
+
+@pytest.fixture
+def db():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, autocommit=False, autoflush=False)()
+    s.add_all([TeamContact(jn_name="Luke Mroz", display_name="Luke Mroz", role="pm", email="l@x.com", phone="3170000001"),
+               TeamContact(jn_name="Greg Russell", display_name="Greg Russell", role="ops", email="g@x.com", phone="3170000002")])
+    s.commit()
+    yield s
+    s.close()
+
+
+@pytest.fixture
+def outbox(monkeypatch):
+    class Box(list):
+        now = None
+    sent = Box()
+
+    def fake_send(db, job_id, email, to, customer_name="", mode=None):
+        sent.append({"template": email.template, "to": to, "subject": email.subject, "text": email.text, "mode": mode})
+        db.add(EmailLog(job_id=job_id, template=email.template, recipient=",".join(to), subject=email.subject,
+                        mode=mode, result="sent", created_at=sent.now))
+        db.commit()
+        return True
+    monkeypatch.setattr(abc, "send", fake_send)
+    return sent
+
+
+def delivery(job="J-1", day=date(2026, 11, 10), jn_job_id="a"):
+    return {"jn_job_id": jn_job_id, "job_number": job, "customer": "Pat Smith", "address": "1 Main St, Zionsville",
+            "abc_order": "C12-1", "day": day}
+
+
+def noon_utc(d: date) -> datetime:
+    return datetime(d.year, d.month, d.day, 17, 0)   # noon Indianapolis (EST or EDT is close enough: same day)
+
+
+def at(outbox, d: date) -> datetime:
+    outbox.now = noon_utc(d)
+    return outbox.now
+
+
+def test_holidays_2026():
+    h = abc.holidays(2026)
+    assert {date(2026, 5, 25), date(2026, 7, 4), date(2026, 9, 7), date(2026, 11, 26), date(2026, 12, 25), date(2026, 1, 1)} == h
+
+
+def test_days_covered():
+    assert abc.delivery_days(date(2026, 11, 9)) == [date(2026, 11, 10)]                     # Monday -> Tuesday
+    assert abc.delivery_days(date(2026, 11, 6)) == [date(2026, 11, 7), date(2026, 11, 9)]   # Friday -> Sat + Mon
+    assert abc.delivery_days(date(2026, 11, 7)) == []                                       # weekend
+    assert abc.delivery_days(date(2026, 11, 26)) == []                                      # Thanksgiving
+    assert abc.delivery_days(date(2026, 11, 25)) == [date(2026, 11, 27)]                    # day before skips the holiday
+    assert abc.delivery_days(date(2026, 9, 4)) == [date(2026, 9, 5), date(2026, 9, 8)]      # Monday holiday: Sat + Tue
+
+
+def test_parse_order_skips_drafts_and_reads_abc_number():
+    base = {"supplier": {"type": "ABC Supply", "logs": [{"id": "C12-9"}]}, "status_name": "Order Received",
+            "related": [{"type": "job", "id": "j", "number": "J-26802", "name": "‪Susan Priest - J-26802"}],
+            "address": {"address_line1": "3 Rd", "city": "Roachdale"}, "date_materialorder": 1794243600}
+    p = abc.parse_order(base)
+    assert (p["job_number"], p["customer"], p["abc_order"], p["day"]) == ("J-26802", "Susan Priest", "C12-9", date(2026, 11, 9))
+    assert abc.parse_order({**base, "status_name": "Draft"}) is None
+    assert abc.parse_order({**base, "supplier": {"type": "Beacon"}}) is None
+
+
+def test_daily_sends_once_and_lists_deliveries(db, outbox):
+    now = at(outbox, date(2026, 11, 9))
+    r = abc.run_abc_daily(db, now=now, mode="test", fetch=lambda days: [delivery()])
+    assert r == {"sent": True, "deliveries": 1}
+    body = outbox[0]["text"]
+    assert "J-1" in body and "C12-1" in body and "(317) 000-0001" in body and "(317) 000-0002" in body
+    assert "Lead PM" in body and "Tuesday, Nov 10" in outbox[0]["subject"]
+    assert abc.run_abc_daily(db, now=now, mode="test", fetch=lambda days: [delivery()])["why"] == "already sent today"
+    assert len(outbox) == 1
+
+
+def test_daily_friday_splits_days_and_empty_day_still_sends(db, outbox):
+    fri = at(outbox, date(2026, 11, 6))
+    abc.run_abc_daily(db, now=fri, mode="test", fetch=lambda days: [delivery(day=date(2026, 11, 7)), delivery("J-2", date(2026, 11, 9))])
+    assert "Saturday, Nov 7" in outbox[0]["text"] and "Monday, Nov 9" in outbox[0]["text"]
+    mon = at(outbox, date(2026, 11, 9))
+    abc.run_abc_daily(db, now=mon, mode="test", fetch=lambda days: [])
+    assert "don't have any material" in outbox[1]["text"]
+
+
+def test_daily_skips_holiday_and_jobs_back_in_the_queue(db, outbox):
+    assert abc.run_abc_daily(db, now=noon_utc(date(2026, 11, 26)), mode="test", fetch=lambda d: [])["sent"] is False
+    db.add(Job(jn_job_id="a", jn_number="J-1", customer_name="Pat Smith", address="x", bucket="to_schedule", primary_trade="roofing"))
+    db.commit()
+    abc.run_abc_daily(db, now=at(outbox, date(2026, 11, 9)), mode="test", fetch=lambda days: [delivery()])
+    assert "don't have any material" in outbox[0]["text"]
+
+
+def test_daily_missing_phone_or_failed_jobnimbus_sends_nothing_and_doesnt_retry(db, outbox):
+    def boom(days):
+        raise RuntimeError("down")
+    now = at(outbox, date(2026, 11, 9))
+    assert abc.run_abc_daily(db, now=now, mode="test", fetch=boom)["why"] == "jobnimbus"
+    assert all(m["template"] != abc.DAILY for m in outbox)           # only the note to Greg and Luke went
+    assert abc.run_abc_daily(db, now=now, mode="test", fetch=boom)["why"] == "already sent today"
+    db.query(TeamContact).filter(TeamContact.role == "ops").update({"phone": None})
+    db.commit()
+    assert abc.run_abc_daily(db, now=at(outbox, date(2026, 11, 10)), mode="test", fetch=boom)["why"] == "missing phone"
+
+
+def test_postponed(db, outbox):
+    job = Job(id=5, jn_job_id="a", jn_number="J-1", customer_name="Pat Smith", address="x", bucket="to_schedule", primary_trade="roofing")
+    assert abc.send_postponed(db, job, "Weather Mid-Build", mode="test", fetch=lambda j: delivery())["why"] == "mid-build"
+    assert abc.send_postponed(db, job, "Crew Unavailable", mode="test", fetch=lambda j: None)["why"] == "no order"
+    assert not outbox
+    assert abc.send_postponed(db, job, "Crew Unavailable", mode="test", fetch=lambda j: delivery())["sent"] is True
+    assert "C12-1" in outbox[0]["text"] and "postponed" in outbox[0]["text"]
+
+
+def test_gregs_number_is_never_in_the_code():
+    root = pathlib.Path(__file__).resolve().parents[1]
+    for f in list((root / "backend").rglob("*.py")) + list((root / "frontend-react" / "src").rglob("*.ts*")):
+        assert "945-7694" not in f.read_text(errors="ignore"), f
+
+
+def test_not_built_note_mentions_rep_and_pm(db, monkeypatch):
+    from backend.services import jn_booking as B
+    job = Job(id=7, jn_job_id="a", jn_number="J-1", customer_name="Pat", address="x", bucket="to_schedule",
+              primary_trade="roofing", sales_rep="Pat Rep", jn_pm="Luke Mroz")
+    assert B.moved_note_text(job, {"sales_rep_name": "Pat Rep"}, None, "Weather", mention_pm=True).startswith("@PatRep @LukeMroz ")
+    assert "@LukeMroz" not in B.moved_note_text(job, {"sales_rep_name": "Pat Rep"}, None, "Weather")
+    notes = []
+    monkeypatch.setattr(B, "allowed", lambda j: True)
+    import backend.services.jobnimbus as svc
+    monkeypatch.setattr(svc, "push_note_to_jn", lambda jid, text: notes.append(text))
+    B.not_built_note(db, job, "Crew Unavailable", "sick", "Greg Russell")
+    assert notes[0].startswith("[NOT BUILT] @PatRep @LukeMroz Build rescheduled. Reason: Crew Unavailable. Detail: sick. Marked by Greg Russell on ")

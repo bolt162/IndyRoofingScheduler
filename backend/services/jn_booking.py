@@ -619,15 +619,35 @@ def _first_status(lookups: "Lookups", object_type: str, workflow: str, names: tu
     raise BookingError(f"JobNimbus has no status to move {workflow or 'this'} back to.")
 
 
+def mentions(*names: str | None) -> str:
+    """JobNimbus @mentions: "@PatRep @LukeMroz" (names without spaces)."""
+    return " ".join("@" + "".join(n.split()) for n in names if (n or "").strip())
+
+
 def moved_note_text(job: Job, jn_job: dict, old_day: date | None, reason: str | None,
-                    moving_to: date | None = None) -> str:
-    """The rep's note: "@PatRep roof moved off Thursday 10/29 (Weather), moving to Monday 11/2"."""
+                    moving_to: date | None = None, mention_pm: bool = False) -> str:
+    """The rep's note: "@PatRep roof moved off Thursday 10/29 (Weather), moving to Monday 11/2".
+    mention_pm (Not Built): the job's PM is @mentioned too."""
     word = TRADE_WORD.get(work_trade(job) or "", "job")
-    rep = "".join((jn_job.get("sales_rep_name") or "").split())
+    who = mentions(jn_job.get("sales_rep_name"), job.jn_pm if mention_pm else None)
     when = f" off {old_day:%A} {old_day.month}/{old_day.day}" if old_day else ""
     to = f", moving to {moving_to:%A} {moving_to.month}/{moving_to.day}" if moving_to else ""
     why = f" ({reason.strip().rstrip('.')})" if (reason or "").strip() else ""
-    return f"{'@' + rep + ' ' if rep else ''}{word} moved{when}{why}{to}"
+    return f"{who + ' ' if who else ''}{word} moved{when}{why}{to}"
+
+
+def not_built_note(db, job: Job, reason: str, detail: str | None, who: str) -> None:
+    """Not Built on a job that wasn't booked in JobNimbus (unbook writes its own note): tell the rep and PM."""
+    from backend.emails.team import active_pms
+    from backend.services.jobnimbus import push_note_to_jn
+    if not job.jn_job_id or not allowed(job):
+        return
+    pm = job.jn_pm or next((p.jn_name for p in active_pms(db)), None)  # Luke is the only PM
+    d = datetime.now(LOCAL_TZ).date()
+    text = (f"[NOT BUILT] {mentions(job.sales_rep, pm)} Build rescheduled. Reason: {reason}. "
+            f"{'Detail: ' + detail.strip().rstrip('.') + '. ' if (detail or '').strip() else ''}"
+            f"Marked by {who} on {d:%b} {d.day}.").replace("  ", " ")
+    push_note_to_jn(job.jn_job_id, text)
 
 
 def _close_build_blocks(jn: "JN", filt: str, day: date | None) -> int:
@@ -690,7 +710,8 @@ def unbook(db: Session, job: Job, who: str, reason: str, jn: JN | None = None,
             jn.put(f"jobs/{job.jn_job_id}", {**cleared, "status": _first_status(
                 lookups, "job", jn_job.get("record_type_name") or "", JOB_BACK)})
         if booked or old_day:
-            jn.post("activities", note_body(job.jn_job_id, moved_note_text(job, jn_job, old_day, reason, moving_to)))
+            jn.post("activities", note_body(job.jn_job_id, moved_note_text(job, jn_job, old_day, reason, moving_to,
+                                                                           mention_pm=not moving_to)))
         closed = _close_build_blocks(jn, filt, old_day)
         job.jn_push_steps = None
         job.jn_push_error = None
