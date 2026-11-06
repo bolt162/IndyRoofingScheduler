@@ -54,18 +54,11 @@ def at(outbox, d: date) -> datetime:
     return outbox.now
 
 
-def test_holidays_2026():
-    h = abc.holidays(2026)
-    assert {date(2026, 5, 25), date(2026, 7, 4), date(2026, 9, 7), date(2026, 11, 26), date(2026, 12, 25), date(2026, 1, 1)} == h
-
-
 def test_days_covered():
     assert abc.delivery_days(date(2026, 11, 9)) == [date(2026, 11, 10)]                     # Monday -> Tuesday
     assert abc.delivery_days(date(2026, 11, 6)) == [date(2026, 11, 7), date(2026, 11, 9)]   # Friday -> Sat + Mon
     assert abc.delivery_days(date(2026, 11, 7)) == []                                       # weekend
-    assert abc.delivery_days(date(2026, 11, 26)) == []                                      # Thanksgiving
-    assert abc.delivery_days(date(2026, 11, 25)) == [date(2026, 11, 27)]                    # day before skips the holiday
-    assert abc.delivery_days(date(2026, 9, 4)) == [date(2026, 9, 5), date(2026, 9, 8)]      # Monday holiday: Sat + Tue
+    assert abc.delivery_days(date(2026, 11, 26)) == [date(2026, 11, 27)]                    # holidays don't matter
 
 
 def test_parse_order_skips_drafts_and_reads_abc_number():
@@ -98,8 +91,8 @@ def test_daily_friday_splits_days_and_empty_day_still_sends(db, outbox):
     assert "don't have any material" in outbox[1]["text"]
 
 
-def test_daily_skips_holiday_and_jobs_back_in_the_queue(db, outbox):
-    assert abc.run_abc_daily(db, now=noon_utc(date(2026, 11, 26)), mode="test", fetch=lambda d: [])["sent"] is False
+def test_daily_skips_weekend_and_jobs_back_in_the_queue(db, outbox):
+    assert abc.run_abc_daily(db, now=noon_utc(date(2026, 11, 7)), mode="test", fetch=lambda d: [])["sent"] is False
     db.add(Job(jn_job_id="a", jn_number="J-1", customer_name="Pat Smith", address="x", bucket="to_schedule", primary_trade="roofing"))
     db.commit()
     abc.run_abc_daily(db, now=at(outbox, date(2026, 11, 9)), mode="test", fetch=lambda days: [delivery()])
@@ -121,6 +114,7 @@ def test_daily_missing_phone_or_failed_jobnimbus_sends_nothing_and_doesnt_retry(
 def test_postponed(db, outbox):
     job = Job(id=5, jn_job_id="a", jn_number="J-1", customer_name="Pat Smith", address="x", bucket="to_schedule", primary_trade="roofing")
     assert abc.send_postponed(db, job, "Weather Mid-Build", mode="test", fetch=lambda j: delivery())["why"] == "mid-build"
+    assert abc.send_postponed(db, job, "Crew Unavailable", mode="test", fetch=lambda j: delivery(), trade="gutters")["why"] == "gutters"
     assert abc.send_postponed(db, job, "Crew Unavailable", mode="test", fetch=lambda j: None)["why"] == "no order"
     assert not outbox
     assert abc.send_postponed(db, job, "Crew Unavailable", mode="test", fetch=lambda j: delivery())["sent"] is True

@@ -418,7 +418,8 @@ def not_built(db: Session, job: Job, reason: str, detail: str | None, who: str) 
     jobnimbus_result = None
     from backend.services import jn_booking
     why = reason + (f": {detail}" if (detail or "").strip() else "")
-    if jn_booking.follow_up_trade(job):
+    follow_up = jn_booking.follow_up_trade(job)
+    if follow_up:
         # Gutters or siding after the main trade: off JobNimbus's calendar (it sends the reschedule messages), plan cleared.
         # The job stays at Other Trades, so it isn't put back in the build queue or sent queue emails.
         if jn_booking.booked_in_jn(job):
@@ -431,6 +432,8 @@ def not_built(db: Session, job: Job, reason: str, detail: str | None, who: str) 
         job.rescheduled_count += 1
         db.commit()
         db.refresh(job)
+        from backend.emails import abc, events as email_events
+        email_events.safely(abc.send_postponed, db, job, reason, trade=follow_up)  # siding only, and only with an ABC order
         return jobnimbus_result
     if (job.jn_status or "").strip().lower() == "pending start date":
         jobnimbus_result = jn_booking.unbook(db, job, who, why)

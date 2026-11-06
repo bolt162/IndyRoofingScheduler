@@ -3,7 +3,7 @@ Emails to ABC Supply (our shingle supplier), from Greg's 2026-11-05 specs. Both 
 
   send_postponed()  a build is marked Not Built: tell ABC the delivery is postponed (not for Weather Mid-Build,
                     the material is already on site)
-  run_abc_daily()   weekdays about noon: the next business day's deliveries (Friday: Saturday and the next business day)
+  run_abc_daily()   weekdays about noon: tomorrow's deliveries (Friday: Saturday and Monday)
 
 Where the data lives: JobNimbus material orders are sent straight to ABC. The delivery day is the order's
 date_materialorder, the job is in its "related" list, and the ABC order number is the id in supplier.logs once
@@ -44,33 +44,14 @@ def recipients() -> list[str]:
 
 # --- Days -----------------------------------------------------------------------------------------------
 
-def holidays(year: int) -> set[date]:
-    """Major holidays only (Greg's list). shortcut: a holiday on a weekend is not moved to the Friday or Monday."""
-    def nth_weekday(month, weekday, n):
-        d = date(year, month, 1)
-        d += timedelta(days=(weekday - d.weekday()) % 7 + 7 * (n - 1))
-        return d
-    last_may = date(year, 5, 31)
-    memorial = last_may - timedelta(days=last_may.weekday())
-    return {date(year, 1, 1), memorial, date(year, 7, 4), nth_weekday(9, 0, 1), nth_weekday(11, 3, 4), date(year, 12, 25)}
-
-
-def is_business_day(d: date) -> bool:
-    return d.weekday() < 5 and d not in holidays(d.year)
-
-
 def delivery_days(today: date) -> list[date]:
-    """The days the reminder covers. Nothing on a weekend or holiday. Mon-Thu: the next business day.
-    Friday: Saturday (unless a holiday) and the next business day."""
-    if not is_business_day(today):
+    """The days the reminder covers. Mon-Thu: tomorrow. Friday: Saturday and Monday. Nothing on a weekend.
+    Holidays don't matter (Aaron, 2026-11-05): what goes out depends only on the jobs scheduled."""
+    if today.weekday() >= 5:
         return []
-    nxt = today + timedelta(days=1)
-    while not is_business_day(nxt):
-        nxt += timedelta(days=1)
     if today.weekday() == 4:
-        sat = today + timedelta(days=1)
-        return ([sat] if sat not in holidays(sat.year) else []) + [nxt]
-    return [nxt]
+        return [today + timedelta(days=1), today + timedelta(days=3)]
+    return [today + timedelta(days=1)]
 
 
 def _day(d: date) -> str:
@@ -158,8 +139,8 @@ def run_abc_daily(db: Session, now: datetime | None = None, mode: str | None = N
     today = now.replace(tzinfo=timezone.utc).astimezone(TZ).date()
     days = delivery_days(today)
     if not days:
-        _log(db, DAILY, mode, "skipped", f"{today:%A} is a weekend or holiday")
-        return {"sent": False, "why": "weekend or holiday"}
+        _log(db, DAILY, mode, "skipped", f"{today:%A} is a weekend")
+        return {"sent": False, "why": "weekend"}
     if _sent_today(db, mode, today):
         return {"sent": False, "why": "already sent today"}
     contacts = _contacts_block(db)
@@ -200,10 +181,13 @@ def _tell_ops(db: Session, mode: str, message: str) -> None:
                                   "Send ABC today's deliveries yourself.", []), to, mode=mode)
 
 
-def send_postponed(db: Session, job: Job, reason: str, mode: str | None = None, fetch=None) -> dict:
+def send_postponed(db: Session, job: Job, reason: str, mode: str | None = None, fetch=None, trade: str | None = None) -> dict:
     """Not Built: tell ABC the delivery is postponed. Never raises into the Not Built save (the caller wraps it)."""
     from backend.emails.config import email_mode
     mode = mode or email_mode()
+    if (trade or job.primary_trade or "").lower() == "gutters":  # gutters never email ABC; siding does, if an order is on file
+        _log(db, POSTPONED, mode, "skipped", f"{job.customer_name}: gutters don't use ABC material", job.id)
+        return {"sent": False, "why": "gutters"}
     if reason == NO_POSTPONE_REASON:
         _log(db, POSTPONED, mode, "skipped", f"{job.customer_name}: {reason}, material already on site", job.id)
         return {"sent": False, "why": "mid-build"}
