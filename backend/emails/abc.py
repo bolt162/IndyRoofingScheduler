@@ -73,7 +73,9 @@ def parse_order(o: dict) -> dict | None:
     number = job.get("number") or ""
     customer = _clean(job.get("name") or "")
     customer = re.sub(r"\s+-\s+J-\d+.*$", "", customer)   # "David Boyd - J-25770 (1)" -> "David Boyd"
-    ids = [str(x["id"]) for x in sup.get("logs") or [] if x.get("id")]
+    # The ABC order number is the "orderReceived" log id (C12-...; it is the Reference on ABC's invoice). A later
+    # "fulfilled" log holds the invoice number, which is not the order number.
+    ids = [str(x["id"]) for x in sup.get("logs") or [] if x.get("id") and x.get("msg") in (None, "orderReceived")]
     a = o.get("address") or {}
     ts = o.get("date_materialorder") or 0
     return {"jn_job_id": job.get("id"), "job_number": number, "customer": customer,

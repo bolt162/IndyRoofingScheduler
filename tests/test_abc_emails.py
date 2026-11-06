@@ -69,6 +69,8 @@ def test_parse_order_skips_drafts_and_reads_abc_number():
     assert (p["job_number"], p["customer"], p["abc_order"], p["day"]) == ("J-26802", "Susan Priest", "C12-9", date(2026, 11, 9))
     dup = {**base, "related": [{"type": "job", "id": "j", "number": "J-25770", "name": "David Boyd - J-25770 (1)"}]}
     assert abc.parse_order(dup)["customer"] == "David Boyd"
+    done = {**base, "supplier": {"type": "ABC Supply", "logs": [{"id": "C12-27593888", "msg": "orderReceived"}, {"id": "2016101156", "msg": "fulfilled"}]}}
+    assert abc.parse_order(done)["abc_order"] == "C12-27593888"   # not the invoice number added when fulfilled
     assert abc.parse_order({**base, "status_name": "Draft"}) is None
     assert abc.parse_order({**base, "supplier": {"type": "Beacon"}}) is None
 
