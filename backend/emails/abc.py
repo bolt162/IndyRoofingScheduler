@@ -127,8 +127,7 @@ def _contacts_block(db: Session) -> str | None:
     if not (luke and luke.phone and greg and greg.phone):
         return None
     from backend.emails.internal import format_phone
-    return ("**Contacts**\n"
-            f"- {luke.display_name}, Lead PM: {format_phone(luke.phone)}\n"
+    return (f"- {luke.display_name}, Lead PM: {format_phone(luke.phone)}\n"
             f"- {greg.display_name}: {format_phone(greg.phone)}")
 
 
@@ -165,8 +164,8 @@ def run_abc_daily(db: Session, now: datetime | None = None, mode: str | None = N
     rows = [([_day(d["day"])] if multi else []) + [d["job_number"], d["abc_order"] or "Pending", person(d["customer"]),
                                                    d["address"]] for d in found]
     items = (cols, rows)
-    email = team_email(DAILY, f"Material deliveries for {when}", lead, contacts,
-                       [], extra=["This is a reminder of upcoming deliveries. Changes may still come from our PM or a "
+    email = team_email(DAILY, f"Material deliveries for {when}", lead, "**Contacts**",
+                       [], extra=[contacts, "This is a reminder of upcoming deliveries. Changes may still come from our PM or a "
                                   "separate postponement notice. Questions? Contact Luke or Greg above."], items=items)
     ok = send(db, None, email, recipients(), customer_name="ABC Supply", mode=mode)
     return {"sent": ok, "deliveries": len(found)}
