@@ -50,7 +50,7 @@ WELCOME_NEAR_FRONT = "**your spot is locked in and you're moving toward the fron
 SIDING_STATUS = [
     "Your siding project is in our build queue, and your spot is locked in.",
     "We're still working toward your build. Your spot in the queue is safe, and the line keeps moving every week.",
-    "Your siding is next in line for scheduling as crews and materials come together. Nothing has been forgotten.",
+    "Our crews are working through the line, and your siding is still on our list. Nothing has been forgotten.",
     "We're lining up crews, materials, and weather windows for your build, and your spot is locked in.",
 ]
 # Used only when there's no snapshot from a prior email to compare against
