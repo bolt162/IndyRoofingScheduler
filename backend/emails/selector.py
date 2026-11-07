@@ -10,7 +10,8 @@ A job that never got a Welcome gets the Welcome first, unless it has already wai
 (e.g. the email address was added late): then it skips the Welcome and picks up at its week.
 """
 from dataclasses import dataclass
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from backend.emails import compose as K
 from backend.emails.compose import EmailContext
@@ -25,10 +26,14 @@ QUEUE_BUCKET = "to_schedule"
 QUEUE_JN_STATUSES = {"Schedule Job", "Schedule Production"}
 DONE_BUCKETS = {"other_trades", "primary_completed", "completed", "archived"}
 
-# A counted email in the last 6 days means "already emailed this week"
-WEEK_WINDOW = timedelta(days=6)
-# The Welcome promises an update every Thursday, so a Welcome earlier in the week only blocks a same-day rerun
-WELCOME_ONLY_WINDOW = timedelta(hours=12)
+TZ = ZoneInfo("America/Indiana/Indianapolis")
+
+
+def thursday_week_start(now: datetime) -> datetime:
+    """Midnight (Indianapolis) of the latest Thursday, as naive UTC. On a Thursday, that is the start of today."""
+    local = now.replace(tzinfo=timezone.utc).astimezone(TZ)
+    start = (local - timedelta(days=(local.weekday() - 3) % 7)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return start.astimezone(timezone.utc).replace(tzinfo=None)
 
 
 def weeks_waiting(state: EmailState, job, now: datetime) -> int:
@@ -99,9 +104,9 @@ def weekly_decision(ctx: EmailContext, state: EmailState, job, now: datetime,
         return Decision(None, reason)
     if not in_queue(job, state, now.date()):
         return Decision(None, "not in queue")
-    only_welcome = state.welcome_sent and not (state.sequence_week or state.rotation_index or state.getting_close_sent)
-    window = WELCOME_ONLY_WINDOW if only_welcome else WEEK_WINDOW
-    if state.last_counted_email_at and now - state.last_counted_email_at < window:
+    # Everyone gets their Thursday email, period. Only an email sent since this Thursday began (a rerun, or a manual
+    # run later in the week) counts as "already emailed"; a Welcome or make-up email earlier in the week never does.
+    if state.last_counted_email_at and state.last_counted_email_at >= thursday_week_start(now):
         return Decision(None, "already emailed this week")
 
     if state.reschedule_track:  # already scheduled once: never the new-customer Welcome

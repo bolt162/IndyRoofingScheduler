@@ -203,9 +203,25 @@ def test_late_add_near_front_still_gets_getting_close():
     assert S.weekly_decision(ctx(jobs_ahead=2), st, job(), NOW).template == K.GETTING_CLOSE
 
 
-def test_one_email_per_week():
-    st = welcomed_state(sequence_week=3, last_counted_email_at=NOW - timedelta(days=1))
+def test_one_email_per_thursday():
+    # Already emailed earlier today (a rerun of the Thursday run) = nothing more
+    st = welcomed_state(sequence_week=3, last_counted_email_at=NOW - timedelta(hours=1))
     assert S.weekly_decision(ctx(), st, job(), NOW).template is None
+
+
+def test_every_customer_gets_thursday_no_matter_what_came_before():
+    # Aaron 2026-11-07: any email earlier in the week (Welcome, a Friday make-up send) never blocks Thursday.
+    # Chris Granger: make-up email Fri 10/30 9:57 PM Indy made the system skip him on Thu 11/5.
+    for days_before in (1, 2, 5, 6):
+        st = welcomed_state(sequence_week=3, last_counted_email_at=NOW - timedelta(days=days_before, hours=-2))
+        assert S.weekly_decision(ctx(), st, job(), NOW).template == "week_4"
+
+
+def test_after_thursday_the_week_is_done_until_next_thursday():
+    # A manual run on Friday must not repeat what Thursday's run just sent
+    st = welcomed_state(sequence_week=3, last_counted_email_at=NOW)
+    assert S.weekly_decision(ctx(), st, job(), NOW + timedelta(days=1)).template is None
+    assert S.weekly_decision(ctx(), st, job(), NOW + timedelta(days=7)).template == "week_4"
 
 
 def test_welcome_earlier_in_the_week_still_gets_first_thursday():
