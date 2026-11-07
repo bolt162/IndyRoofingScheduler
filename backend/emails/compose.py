@@ -445,7 +445,8 @@ def compose(key: str, ctx: EmailContext, rotation_index: int = 0,
             greeting=f"{v['pm_name']} and {v['rep_name']},")
 
     subject_t, body_t = _body_and_subject(key, ctx, v, flags)
-    v["position_block"] = position_block(ctx, rotation_index)
+    week = int(key[5:]) if key.startswith("week_") and key[5:].isdigit() else rotation_index
+    v["position_block"] = position_block(ctx, week)
 
     greeting = f"Hi {v['first_name']}," if v["first_name"] else "Hi there,"
     body = greeting + "\n\n" + body_t.strip().format_map(v)
