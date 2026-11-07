@@ -68,14 +68,21 @@ def ctx(**kw):
 
 def test_position_dropped():
     assert K.position_block(ctx(jobs_ahead=18, jobs_ahead_last_week=23, builds_completed_week=11)) == (
-        "There are 18 builds ahead of you now, 5 fewer than last week. Our crews got more done this week, and you're getting closer.")
+        "There are 18 builds ahead of you now, 5 fewer than last week.")
 
 
 def test_position_dropped_never_says_how_many_were_built():
-    """Aaron (2026-10-22): no completed-builds number; customers do the math and expect a date."""
-    text = K.position_block(replace(SAMPLES["siding"], jobs_ahead=10, jobs_ahead_last_week=12))
-    assert "Our crews got more done this week, and you're getting closer." in text
-    assert "11" not in text
+    """Aaron (2026-11-07): never say how much crews finished; only where the customer is in line."""
+    text = K.position_block(replace(SAMPLES["roof_vista"], jobs_ahead=10, jobs_ahead_last_week=12))
+    assert "got more done" not in text and "11" not in text
+
+
+def test_siding_never_shows_a_number():
+    for ahead in (0, 3, 8, 25):
+        text = K.position_block(replace(SAMPLES["siding"], jobs_ahead=ahead, jobs_ahead_last_week=ahead + 4))
+        assert "ahead" not in text and not any(ch.isdigit() for ch in text)
+    welcome = compose(K.WELCOME, replace(SAMPLES["siding"], jobs_ahead=25, jobs_ahead_last_week=None))
+    assert "builds ahead" not in welcome.text
 
 
 def test_position_same():
@@ -393,7 +400,7 @@ def test_missing_first_name_and_color():
 
 # --- Countdown floor: no number under 10 for roofing, under 7 for siding ---
 
-@pytest.mark.parametrize("track_sample,floor", [("roof_vista", 10), ("low_slope", 10), ("siding", 7), ("gutters", 7)])
+@pytest.mark.parametrize("track_sample,floor", [("roof_vista", 10), ("low_slope", 10), ("gutters", 7)])
 def test_countdown_stops_below_floor(track_sample, floor):
     base = SAMPLES[track_sample]
     at = replace(base, jobs_ahead=floor, jobs_ahead_last_week=floor + 4)

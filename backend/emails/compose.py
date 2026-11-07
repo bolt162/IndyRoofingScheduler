@@ -126,7 +126,9 @@ def _ahead_bold(n: int, track: str = "roof") -> str:
 
 # Stop counting down below these numbers (Aaron, 2026-10-03): near the front, the count
 # moves unpredictably, so show "moving toward the front" instead of a number.
-COUNT_FLOOR = {"roof": 10, "siding": 7, "gutters": 7}
+# Siding never shows a number (Greg, 2026-11-07): customers read it as a countdown and the
+# "crews got more done" line was counting roofs. Siding gets a rotating no-number status instead.
+COUNT_FLOOR = {"roof": 10, "gutters": 7}
 
 
 def shows_count(ctx: EmailContext) -> bool:
@@ -134,25 +136,21 @@ def shows_count(ctx: EmailContext) -> bool:
     return floor is not None and ctx.jobs_ahead >= floor
 
 
-def position_block(ctx: EmailContext) -> str:
+def position_block(ctx: EmailContext, rotation_index: int = 0) -> str:
     """{position_block} per the rules table. Never shows a number when the count went up,
     or once it drops below the track's floor."""
     n, last = ctx.jobs_ahead, ctx.jobs_ahead_last_week
+    if ctx.track == "siding":
+        return C.SIDING_STATUS[rotation_index % len(C.SIDING_STATUS)]
     if not shows_count(ctx):
-        text = C.POSITION_NEAR_FRONT
-        if last is not None and n < last and ctx.builds_completed_week > 0:
-            text += " " + C.POSITION_DROPPED_BUILDS
-        return text
+        return C.POSITION_NEAR_FRONT
     if last is None:
         return C.POSITION_FIRST.format(ahead_count=_ahead_count(n, ctx.track))
     if n > last:
         return C.POSITION_UP
     if n == last:
         return C.POSITION_SAME.format(ahead_count=_ahead_count(n, ctx.track))
-    text = C.POSITION_DROPPED.format(ahead_now=_ahead_now(n, ctx.track), delta=last - n)
-    if ctx.builds_completed_week > 0:
-        text += " " + C.POSITION_DROPPED_BUILDS
-    return text
+    return C.POSITION_DROPPED.format(ahead_now=_ahead_now(n, ctx.track), delta=last - n)
 
 
 def tip_for(track: str, index: int) -> str:
@@ -447,7 +445,7 @@ def compose(key: str, ctx: EmailContext, rotation_index: int = 0,
             greeting=f"{v['pm_name']} and {v['rep_name']},")
 
     subject_t, body_t = _body_and_subject(key, ctx, v, flags)
-    v["position_block"] = position_block(ctx)
+    v["position_block"] = position_block(ctx, rotation_index)
 
     greeting = f"Hi {v['first_name']}," if v["first_name"] else "Hi there,"
     body = greeting + "\n\n" + body_t.strip().format_map(v)

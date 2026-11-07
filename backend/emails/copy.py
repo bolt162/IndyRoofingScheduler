@@ -32,8 +32,7 @@ FOOTER_NO_REP = (
 # {position_block}
 # ---------------------------------------------------------------------------
 POSITION_DROPPED = "{ahead_now}, {delta} fewer than last week."
-# No number (Aaron, 2026-10-22): customers did the math ("12 ahead, 10 built a week") and expected a date.
-POSITION_DROPPED_BUILDS = "Our crews got more done this week, and you're getting closer."
+# Never say how much the crews finished (Aaron, 2026-11-07): only where the customer is in the queue.
 POSITION_SAME = (
     "You're holding strong with {ahead_count}. Our crews spent this week on some bigger, more "
     "detailed projects, and your spot is locked in."
@@ -47,6 +46,13 @@ POSITION_UP = (
 # First sentence of POSITION_UP, so it's approved wording.
 POSITION_NEAR_FRONT = "Your spot is locked in and you're moving toward the front."
 WELCOME_NEAR_FRONT = "**your spot is locked in and you're moving toward the front.**"
+# Siding: no number, ever. One line per weekly email, rotating. DRAFT wording, test-send to Aaron first.
+SIDING_STATUS = [
+    "Your siding project is in our build queue, and your spot is locked in.",
+    "We're still working toward your build. Your spot in the queue is safe, and the line keeps moving every week.",
+    "Your siding is next in line for scheduling as crews and materials come together. Nothing has been forgotten.",
+    "We're lining up crews, materials, and weather windows for your build, and your spot is locked in.",
+]
 # Used only when there's no snapshot from a prior email to compare against
 POSITION_FIRST = "You're holding strong with {ahead_count}."
 
