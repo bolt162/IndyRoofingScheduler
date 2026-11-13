@@ -37,3 +37,6 @@ frontend-react/.env
 
 # Local email preview renders
 email-previews/
+
+# Railway settings SDK install
+.railway/node_modules/
