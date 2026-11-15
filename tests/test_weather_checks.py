@@ -1,5 +1,5 @@
 """Weather checks look at JobNimbus booking dates, Indianapolis days, and flag instead of pulling."""
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from sqlalchemy import create_engine
@@ -114,3 +114,43 @@ def test_bam_check_gets_rain_chance_with_one_hourly_call(db, monkeypatch):
     calls.clear()
     assert W.check_weather_for_job(db, tpo.id, "2030-11-04")["rain_chance"] == "words for 2030-11-04"
     assert calls == [1]   # free-forecast check: only the TPO dry-stretch check calls BAM, as before
+
+
+def _alerts(monkeypatch):
+    sent = []
+    monkeypatch.setattr("backend.emails.runner.alert_owner",
+                        lambda db, subject, lead, action, details=None, items=None, mode=None: sent.append((subject, lead, details)) or True)
+    return sent
+
+
+def test_a_weather_run_that_crashes_tells_aaron_how_many_builds_were_missed(db, monkeypatch):
+    for n in ("A", "B", "C"):
+        booked(db, f"Cust {n}", TODAY + timedelta(days=1))
+    alerts = _alerts(monkeypatch)
+    count = []
+
+    def check(db, job_id, target, force_bamwx=False):
+        count.append(job_id)
+        if len(count) == 2:
+            raise RuntimeError("weather service fell over")
+        return {"status": "good", "detail": ""}
+    monkeypatch.setattr(WS, "check_weather_for_job", check)
+    out = WS.night_before_check()
+    assert out["checked"] == 1
+    [(subject, lead, details)] = alerts
+    assert subject == "Night-before weather check stopped before it finished"
+    assert ("Builds checked before it stopped", "1") in details and ("Builds that were not checked", "2") in details
+    assert "fell over" not in lead
+
+
+def test_a_weather_report_that_will_not_send_tells_aaron(db, monkeypatch):
+    booked(db, "Cust A", TODAY)
+    alerts = _alerts(monkeypatch)
+    monkeypatch.setattr(WS, "check_weather_for_job", fake_check([], status="good"))
+    monkeypatch.setattr("backend.emails.runner.run_weather_report", lambda db, checked, tomorrow: {"jobs": 1, "failed": True})
+    WS.five_am_spot_check()
+    assert [a[0] for a in alerts] == ["The weather report to Greg and Luke did not send"]
+    alerts.clear()
+    monkeypatch.setattr("backend.emails.runner.run_weather_report", lambda db, checked, tomorrow: {"jobs": 1, "failed": False})
+    WS.five_am_spot_check()
+    assert alerts == []

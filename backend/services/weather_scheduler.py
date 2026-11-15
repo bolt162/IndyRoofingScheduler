@@ -17,6 +17,7 @@ import logging
 from datetime import timedelta
 
 from backend.database import SessionLocal
+from backend.emails import copy as C
 from backend.models.job import Job, JobBucket
 from backend.models.settings import SystemSettings
 from backend.services.weather import build_date, check_weather_for_job, flag_do_not_build
@@ -38,13 +39,24 @@ def _booked_on(db, days: set) -> list[Job]:
     return [j for j in db.query(Job).filter(Job.bucket == JobBucket.SCHEDULED.value).all() if build_date(j) in days]
 
 
+def _tell_aaron(db, name: str, subject: str, lead: str, action: str, details: list[tuple[str, str]]) -> None:
+    """One plain email to Aaron that a weather run did not do its job. Never raises."""
+    try:
+        from backend.emails.runner import alert_owner
+        alert_owner(db, subject, lead, action, details)
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"{name}: could not tell Aaron: {e}")
+
+
 def run_check(name: str, days_from_today: tuple[int, ...], bamwx: bool, report: bool = False) -> dict:
     db = SessionLocal()
     checked = flagged = changed = 0
     results = []
+    booked = None
     try:
         today = _today()
-        for job in _booked_on(db, {today + timedelta(days=n) for n in days_from_today}):
+        booked = _booked_on(db, {today + timedelta(days=n) for n in days_from_today})
+        for job in booked:
             old = job.weather_status
             result = check_weather_for_job(db, job.id, str(build_date(job)), force_bamwx=bamwx)
             results.append((job, result))
@@ -62,9 +74,22 @@ def run_check(name: str, days_from_today: tuple[int, ...], bamwx: bool, report: 
         logger.info(f"{name} complete: {checked} checked, {changed} changed, {flagged} flagged")
         if report:
             from backend.emails.runner import run_weather_report
-            run_weather_report(db, results, tomorrow=min(days_from_today) > 0)
+            sent = run_weather_report(db, results, tomorrow=min(days_from_today) > 0)
+            if (sent or {}).get("failed"):
+                _tell_aaron(db, name, C.OWNER_WEATHER_REPORT_SUBJECT, C.OWNER_WEATHER_REPORT_LEAD.format(this_run=f"The {name.lower()}"),
+                            C.OWNER_WEATHER_REPORT_ACTION, [("Builds in the report", str(checked))])
     except Exception as e:
         logger.error(f"{name} failed: {e}")
+        try:
+            db.rollback()
+        except Exception:  # noqa: BLE001
+            pass
+        fill = dict(run=name, this_run=f"The {name.lower()}")
+        details = [("Builds checked before it stopped", str(checked))]
+        if booked is not None:
+            details.append(("Builds that were not checked", str(len(booked) - checked)))
+        _tell_aaron(db, name, C.OWNER_STOPPED_SUBJECT.format(**fill), C.OWNER_STOPPED_LEAD.format(**fill),
+                    C.OWNER_WEATHER_STOPPED_ACTION, details)
     finally:
         db.close()
     return {"checked": checked, "changed": changed, "flagged": flagged}

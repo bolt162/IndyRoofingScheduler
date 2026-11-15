@@ -42,3 +42,8 @@ def test_recipient() -> str:
 def office_alert_recipient() -> str:
     """Where office flags (unknown shingle product, etc.) go. Blank = log only."""
     return os.getenv("EMAIL_OFFICE_ALERTS", "").strip()
+
+
+def owner_alert_recipient() -> str:
+    """Where "something did not send" alerts go: Aaron. EMAIL_OWNER_ALERTS can point it somewhere else."""
+    return os.getenv("EMAIL_OWNER_ALERTS", "").strip() or "aaron@indyroofandrestoration.com"

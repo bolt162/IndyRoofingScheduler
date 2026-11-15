@@ -168,9 +168,12 @@ def _log(db: Session, template: str, mode: str, result: str, detail: str, job_id
 
 
 def _sent_today(db: Session, mode: str, today: date) -> bool:
+    """True once today's reminder actually went. A send the mail server refused does not count, so it can be run again.
+    (A "failed" row with no subject is _log's "gave up before sending" note, which stays one try for the day.)"""
     start = datetime.combine(today, time.min, TZ).astimezone(timezone.utc).replace(tzinfo=None)
-    return db.query(EmailLog).filter(EmailLog.template == DAILY, EmailLog.mode == mode, EmailLog.created_at >= start,
-                                     EmailLog.result.in_(("sent", "failed"))).first() is not None
+    return db.query(EmailLog).filter(
+        EmailLog.template == DAILY, EmailLog.mode == mode, EmailLog.created_at >= start,
+        (EmailLog.result == "sent") | ((EmailLog.result == "failed") & EmailLog.subject.is_(None))).first() is not None
 
 
 def _contacts_block(db: Session) -> str | None:
@@ -220,6 +223,12 @@ def run_abc_daily(db: Session, now: datetime | None = None, mode: str | None = N
                        [], extra=[contacts, "This is a reminder of upcoming deliveries. Changes may still come from our PM or a "
                                   "separate postponement notice. Questions? Contact Luke or Greg above."], items=items)
     ok = send(db, None, email, recipients(), customer_name="ABC Supply", mode=mode)
+    if not ok and mode != "off":
+        from backend.emails import copy as C
+        from backend.emails.runner import alert_owner
+        alert_owner(db, C.ABC_NOT_SENT_SUBJECT, C.ABC_NOT_SENT_LEAD, C.ABC_NOT_SENT_ACTION,
+                    [("Deliveries listed", str(len(found)))], mode=mode)
+        _tell_ops(db, mode, "The ABC delivery reminder did not go out today.")
     return {"sent": ok, "deliveries": len(found)}
 
 

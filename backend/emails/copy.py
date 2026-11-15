@@ -759,3 +759,30 @@ PREVIEW_CORRECTION_NOTE = (
     "2pm today, and I'm sorry: it was hard to read and didn't explain what it was. Here is the "
     "corrected data, and this is what the preview will look like every Wednesday moving forward."
 )
+
+
+# Alerts to Aaron when customer emails or a weather report did not go out (2026-11-14). Plain, one fact per line.
+OWNER_FAILED_SUBJECT = "{run}: {count} {customers} did not get their email"
+OWNER_FAILED_LEAD = "{count} {customers} did not get their email from {this_run}. Everyone else's email went out."
+OWNER_FAILED_ACTION = (
+    "**What to do:** nothing right now. Once the problem is fixed, ask Claude to run it again. It will send only "
+    "to the people who missed out, and nobody will get a second email."
+)
+OWNER_STOPPED_SUBJECT = "{run} stopped before it finished"
+OWNER_STOPPED_LEAD = "{this_run} stopped partway because the Scheduler ran into a problem."
+OWNER_STOPPED_ACTION = (
+    "**What to do:** ask Claude to look at the Activity Log and run it again. Anyone who already got their email "
+    "will not get a second one."
+)
+OWNER_WEATHER_STOPPED_ACTION = (
+    "**What to do:** ask Claude to look at the Activity Log. Until it is sorted out, check the Weekly Plan "
+    "for weather flags by hand."
+)
+OWNER_WEATHER_REPORT_SUBJECT = "The weather report to Greg and Luke did not send"
+OWNER_WEATHER_REPORT_LEAD = "{this_run} finished, but its weather report email to Greg and Luke did not go out."
+OWNER_WEATHER_REPORT_ACTION = (
+    "**What to do:** let Greg and Luke know to check the Weekly Plan for tomorrow's and today's weather flags."
+)
+ABC_NOT_SENT_SUBJECT = "The ABC delivery reminder did not send"
+ABC_NOT_SENT_LEAD = "The delivery reminder to ABC Supply did not go out today."
+ABC_NOT_SENT_ACTION = "**What to do:** ask Claude to run it again once the problem is fixed, or send ABC the list yourself."

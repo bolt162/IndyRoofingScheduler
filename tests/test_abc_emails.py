@@ -199,3 +199,30 @@ def test_follow_up_siding_build_counts(db, outbox):
     abc.run_abc_daily(db, now=at(outbox, date(2026, 11, 9)), mode="test", fetch=lambda days: [],
                       fetch_job=lambda j: [order("boyd", "J-25770", date(2026, 11, 10))])
     assert "J-25770" in outbox[0]["text"]
+
+
+def test_a_refused_send_is_not_recorded_as_sent_today_and_aaron_is_told(db, monkeypatch):
+    sent, mail_works = [], {"ok": False}
+
+    def send(db, job_id, email, to, customer_name="", mode=None):
+        ok = mail_works["ok"] or email.template == "internal"
+        # the real sender logs what happened: a refused ABC email is a "failed" row, a good one is "sent"
+        db.add(EmailLog(job_id=job_id, template=email.template, recipient=",".join(to), subject=email.subject, mode=mode,
+                        result="sent" if ok else "failed", detail=None if ok else "smtp down", created_at=now))
+        db.commit()
+        sent.append((email.template, tuple(to), ok))
+        return ok
+    monkeypatch.setattr(abc, "send", send)
+    monkeypatch.setattr("backend.emails.runner.send", send)
+    now = noon_utc(date(2026, 11, 9))
+    r = abc.run_abc_daily(db, now=now, mode="live", fetch=lambda days: [delivery()])
+    assert r["sent"] is False
+    aaron = [s for s in sent if s[1] == ("aaron@indyroofandrestoration.com",)]
+    assert len(aaron) == 1
+    assert any(s[0] == "internal" and set(s[1]) == {"g@x.com", "l@x.com"} for s in sent)  # Greg and Luke are told too
+    assert not abc._sent_today(db, "live", date(2026, 11, 9))       # NOT "sent today"
+    mail_works["ok"] = True
+    again = abc.run_abc_daily(db, now=now, mode="live", fetch=lambda days: [delivery()])
+    assert again == {"sent": True, "deliveries": 1}                 # the retry goes out
+    assert abc.run_abc_daily(db, now=now, mode="live", fetch=lambda days: [delivery()])["why"] == "already sent today"
+    assert len([s for s in sent if s[0] == abc.DAILY and s[2]]) == 1

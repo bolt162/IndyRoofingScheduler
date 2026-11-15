@@ -221,3 +221,25 @@ def test_status_shows_what_railway_sent(env, monkeypatch):
     monkeypatch.setenv("EMAIL_MODE", "tset")
     s = client.get("/api/emails/status").json()
     assert s["mode"] == "off" and s["mode_setting"] == "tset"
+
+
+def test_restart_catch_up_runs_the_thursday_emails_once_when_they_never_ran(env, monkeypatch):
+    ran, scheduled = [], []
+    monkeypatch.setattr(main, "_email_job", lambda name: lambda: ran.append(name))
+
+    class Sched:
+        def add_job(self, fn, trigger, **kw):
+            scheduled.append((trigger, kw["run_date"]))
+    states = iter(["not_due", "due", "running"])
+    monkeypatch.setattr(R, "weekly_catch_up_state", lambda db: next(states))
+    main._weekly_catch_up(Sched())
+    assert ran == [] and scheduled == []
+    main._weekly_catch_up(Sched())
+    assert ran == ["run_weekly"]
+    main._weekly_catch_up(Sched())          # another run is mid-way: look again in 5 minutes, do not run on top of it
+    assert ran == ["run_weekly"] and scheduled[0][0] == "date"
+
+
+def test_catch_up_is_scheduled_a_few_minutes_after_every_start():
+    src = open(main.__file__, encoding="utf-8").read()
+    assert "_weekly_catch_up, \"date\"" in src and "CATCH_UP_DELAY" in src

@@ -565,3 +565,151 @@ def test_send_one_catches_up_one_customer_and_counts_it(db, jn, outbox):
     assert send_one(db, "26001", now=fri, mode="live")["sent"] == 0  # no double send
     assert send_one(db, "99999", now=fri, mode="live") == {"sent": 0, "why": "job not in the build queue"}
     assert st(db, jane, "live").last_counted_email_at == fri
+
+
+# --- Failed sends: nothing silent, and a rerun the same day never doubles up ---
+
+AARON = ["aaron@indyroofandrestoration.com"]
+
+
+def _flaky_send(monkeypatch, outbox, bad_to=(), explode_to=()):
+    """Like the real send, but mail to bad_to is refused (returns False) and mail to explode_to raises."""
+    def send(db, job_id, email, to, customer_name="", mode=None):
+        if mode == "off":
+            return False
+        if any(t in bad_to for t in to):
+            return False
+        if any(t in explode_to for t in to):
+            raise RuntimeError("database hiccup")
+        outbox.append({"job_id": job_id, "template": email.template, "to": list(to), "subject": email.subject,
+                       "mode": mode, "customer": email.is_customer, "text": email.text, "html": email.html})
+        return True
+    monkeypatch.setattr(R, "send", send)
+
+
+def _three_queued(db, jn):
+    return [add_job(db, jn, f"{n} Owner", entered=THU - timedelta(days=30 + i)) for i, n in enumerate(("Amy", "Bob", "Cal"))]
+
+
+def test_failed_customer_email_tells_aaron_once_and_a_rerun_sends_only_that_customer(db, jn, outbox, monkeypatch):
+    _three_queued(db, jn)
+    _flaky_send(monkeypatch, outbox, bad_to=["bob@example.com"])
+    res = R.run_weekly(db, THU, mode="live")
+    assert (res["sent"], res["failed"], res["failed_customers"]) == (2, 1, ["Bob Owner"])
+    alerts = [m for m in outbox if m["to"] == AARON]
+    assert len(alerts) == 1 and not alerts[0]["customer"]
+    assert alerts[0]["subject"] == "Thursday customer emails: 1 customer did not get their email"
+    assert "Customers who missed out: 1" in alerts[0]["text"] and "Bob Owner" in alerts[0]["text"]
+    assert "Amy" not in alerts[0]["text"] and "Cal" not in alerts[0]["text"]
+    assert "nobody will get a second email" in alerts[0]["text"]
+    customers_before = [m["to"] for m in outbox if m["customer"]]
+    assert sorted(customers_before) == [["amy@example.com"], ["cal@example.com"]]
+
+    _flaky_send(monkeypatch, outbox)  # the mail problem is fixed; run it again the same Thursday
+    later = THU + timedelta(hours=2)
+    again = R.run_weekly(db, later, mode="live")
+    assert (again["sent"], again["failed"]) == (1, 0)
+    assert [m["to"] for m in outbox if m["customer"]][2:] == [["bob@example.com"]]   # Amy and Cal were not emailed twice
+    assert len([m for m in outbox if m["to"] == AARON]) == 1                          # and no second alert
+    third = R.run_weekly(db, later + timedelta(hours=1), mode="live")
+    assert third["sent"] == 0
+
+
+def test_no_alert_when_everything_sends_and_none_in_off_mode(db, jn, outbox, monkeypatch):
+    _three_queued(db, jn)
+    _flaky_send(monkeypatch, outbox)
+    R.run_weekly(db, THU, mode="live")
+    assert not [m for m in outbox if m["to"] == AARON]
+    _flaky_send(monkeypatch, outbox, bad_to=["amy@example.com"])
+    assert R.alert_owner(db, "x", "y", "z", mode="off") is False
+
+
+def test_one_customer_blowing_up_does_not_stop_the_rest_and_is_counted(db, jn, outbox, monkeypatch):
+    _three_queued(db, jn)
+    _flaky_send(monkeypatch, outbox, explode_to=["amy@example.com"])
+    res = R.run_weekly(db, THU, mode="live")
+    assert (res["sent"], res["failed"], res["failed_customers"]) == (2, 1, ["Amy Owner"])
+    assert len([m for m in outbox if m["to"] == AARON]) == 1
+
+
+def test_a_run_that_crashes_tells_aaron_and_still_raises(db, jn, outbox, monkeypatch):
+    _three_queued(db, jn)
+    _flaky_send(monkeypatch, outbox)
+    monkeypatch.setattr(R, "plan_weekly", lambda rc: (_ for _ in ()).throw(RuntimeError("boom")))
+    with pytest.raises(RuntimeError):
+        R.run_weekly(db, THU, mode="live")
+    [mail] = [m for m in outbox if m["to"] == AARON]
+    assert mail["subject"] == "Thursday customer emails stopped before it finished"
+    assert "boom" not in mail["text"] and "Traceback" not in mail["text"]
+
+
+def test_welcome_failures_tell_aaron_too(db, jn, outbox, monkeypatch):
+    add_job(db, jn, "Jane Smith", entered=THU - timedelta(days=1))
+    _flaky_send(monkeypatch, outbox, bad_to=["jane@example.com"])
+    res = R.run_welcomes(db, THU, mode="live")
+    assert res["failed"] == 1
+    assert outbox[0]["to"] == AARON and "Welcome emails" in outbox[0]["subject"]
+
+
+# --- Thursday catch-up after a restart ---
+
+def _local(y, m, d, h, mi=0):
+    """Indianapolis wall time (EST in November) as naive UTC."""
+    return datetime(y, m, d, h + 5, mi)
+
+
+def test_catch_up_is_due_only_on_thursday_10_to_2_with_no_finished_run(db, jn, outbox):
+    thu = (2026, 11, 12)
+    assert R.weekly_catch_up_state(db, _local(*thu, 9, 55), "live") == "not_due"       # the 10:00 timer will do it
+    assert R.weekly_catch_up_state(db, _local(*thu, 10, 3), "live") == "due"
+    assert R.weekly_catch_up_state(db, _local(*thu, 13, 59), "live") == "due"
+    assert R.weekly_catch_up_state(db, _local(*thu, 14, 0), "live") == "not_due"       # after 2 PM: wait for next week
+    assert R.weekly_catch_up_state(db, _local(2026, 11, 13, 11), "live") == "not_due"  # Friday
+    assert R.weekly_catch_up_state(db, _local(*thu, 10, 3), "off") == "not_due"
+
+
+def test_a_finished_thursday_run_is_never_repeated_by_catch_up(db, jn, outbox):
+    add_job(db, jn, "Jane Smith", entered=datetime(2026, 11, 1))
+    now = _local(2026, 11, 12, 10, 0)
+    assert R.weekly_catch_up_state(db, now + timedelta(minutes=3), "live") == "due"
+    R.run_weekly(db, now, mode="live")
+    assert R.weekly_catch_up_state(db, now + timedelta(minutes=30), "live") == "not_due"
+    assert R.weekly_catch_up_state(db, _local(2026, 11, 19, 10, 30), "live") == "due"  # next week starts fresh
+    # test-mode runs are tracked apart from live ones
+    assert R.weekly_catch_up_state(db, now + timedelta(minutes=30), "test") == "due"
+
+
+def test_catch_up_waits_for_a_run_in_progress_then_takes_over_a_dead_one(db, jn, outbox):
+    thu = _local(2026, 11, 12, 10, 0)
+    R._put_setting(db, "email_weekly_started_live", thu.isoformat(), "x")   # began, never finished
+    assert R.weekly_catch_up_state(db, thu + timedelta(minutes=3), "live") == "running"
+    assert R.weekly_catch_up_state(db, thu + timedelta(minutes=16), "live") == "due"
+
+
+def test_a_run_that_crashed_midway_is_caught_up_without_double_sending(db, jn, outbox, monkeypatch):
+    _three_queued(db, jn)
+    now = _local(2026, 11, 12, 10, 0)
+    _flaky_send(monkeypatch, outbox, explode_to=["cal@example.com"])
+    monkeypatch.setattr(R, "_alert_failed_sends", lambda *a, **k: None)
+    real_send_planned = R._send_planned
+    def dies_at_the_end(rc, plans):
+        real_send_planned(rc, plans)
+        raise RuntimeError("deploy killed the process")
+    monkeypatch.setattr(R, "_send_planned", dies_at_the_end)
+    with pytest.raises(RuntimeError):
+        R.run_weekly(db, now, mode="live")
+    assert R.weekly_catch_up_state(db, now + timedelta(minutes=20), "live") == "due"
+    monkeypatch.setattr(R, "_send_planned", real_send_planned)
+    _flaky_send(monkeypatch, outbox)
+    R.run_weekly(db, now + timedelta(minutes=20), mode="live")
+    sent_to = [m["to"][0] for m in outbox if m["customer"]]
+    assert sorted(sent_to) == ["amy@example.com", "bob@example.com", "cal@example.com"]   # each exactly once
+
+
+def test_weather_report_that_cannot_send_is_flagged(db, jn, outbox, monkeypatch):
+    job = add_job(db, jn, "Amy Good", bucket="scheduled")
+    _flaky_send(monkeypatch, outbox, bad_to=["greg.russell@indyroofandrestoration.com", "luke.mroz@indyroofandrestoration.com"])
+    res = R.run_weather_report(db, [(job, _bam("clear"))], datetime(2026, 10, 30, 10, 0), mode="live")
+    assert res["failed"] is True
+    _flaky_send(monkeypatch, outbox)
+    assert R.run_weather_report(db, [(job, _bam("clear"))], datetime(2026, 10, 30, 10, 0), mode="live")["failed"] is False

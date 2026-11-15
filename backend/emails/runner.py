@@ -30,7 +30,7 @@ from backend.emails import compose as K
 from backend.emails import copy as C
 from backend.emails import markup, research, selector as S, team
 from backend.emails.compose import ComposedEmail, EmailContext, compose
-from backend.emails.config import email_mode, office_alert_recipient
+from backend.emails.config import email_mode, office_alert_recipient, owner_alert_recipient
 from backend.emails.internal import person, team_email
 from backend.emails.events import DONE_BUCKETS, states_for
 from backend.emails.jn_data import JobDetails, fetch_job_details, jn_schedule_email_sent
@@ -262,7 +262,10 @@ def plan_weekly(rc: RunContext) -> list[Planned]:
 
 
 def _send_planned(rc: RunContext, plans: list[Planned]) -> dict:
+    """Send each planned email. One customer's problem never stops the rest. Progress is saved only for emails
+    that really went, so running this again the same day sends only to the ones that missed out."""
     sent = skipped = failed = 0
+    failed_customers: list[str] = []
     cap = test_cap() if rc.mode == "test" else None
     for p in plans:
         if not p.email:
@@ -271,21 +274,143 @@ def _send_planned(rc: RunContext, plans: list[Planned]) -> dict:
         if cap is not None and sent >= cap:
             skipped += 1
             continue
-        ok = deliver(rc, p.job, p.email, [p.ctx.customer_email], customer_name=p.job.customer_name)
-        if ok:
-            S.apply_sent(rc.state(p.job), p.decision, p.ctx, rc.now)
-            sent += 1
-        elif rc.mode != "off":
+        try:
+            ok = deliver(rc, p.job, p.email, [p.ctx.customer_email], customer_name=p.job.customer_name)
+            if ok:
+                S.apply_sent(rc.state(p.job), p.decision, p.ctx, rc.now)
+                sent += 1
+            elif rc.mode != "off":
+                failed += 1
+                failed_customers.append(p.job.customer_name or "A customer")
+            else:
+                skipped += 1
+            rc.db.commit()
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Email run problem for job {p.job.id}: {e}")
+            rc.db.rollback()
             failed += 1
-        else:
-            skipped += 1
-        rc.db.commit()
-    return {"sent": sent, "skipped": skipped, "failed": failed}
+            failed_customers.append(p.job.customer_name or "A customer")
+    return {"sent": sent, "skipped": skipped, "failed": failed, "failed_customers": failed_customers}
+
+
+# ---------------------------------------------------------------------------
+# Telling Aaron when something did not go out
+# ---------------------------------------------------------------------------
+
+def alert_owner(db: Session | None, subject: str, lead: str, action: str,
+                details: list[tuple[str, str]] | None = None, items=None, mode: str | None = None) -> bool:
+    """One plain email to Aaron. Never raises: an alert that fails must not hide the real problem."""
+    mode = mode or email_mode()
+    if mode == "off":
+        return False
+    try:
+        email = team_email("internal", subject, lead, action, details or [], greeting="Aaron,", items=items)
+        return bool(send(db, None, email, [owner_alert_recipient()], mode=mode))
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Could not email Aaron about '{subject}': {e}")
+        return False
+
+
+def _plural(n: int, one: str, many: str) -> str:
+    return one if n == 1 else many
+
+
+def _alert_failed_sends(rc: RunContext, run: str, this_run: str, result: dict) -> None:
+    """Some customers did not get their email: say how many and who."""
+    n = result.get("failed", 0)
+    if not n or rc.mode == "off":
+        return
+    names = [person(c) for c in result.get("failed_customers", [])]
+    shown = names[:15] + ([f"and {len(names) - 15} more"] if len(names) > 15 else [])
+    fill = dict(run=run, this_run=this_run, count=n, customers=_plural(n, "customer", "customers"))
+    alert_owner(rc.db, C.OWNER_FAILED_SUBJECT.format(**fill), C.OWNER_FAILED_LEAD.format(**fill), C.OWNER_FAILED_ACTION,
+                [("Customers who missed out", str(n)), ("Emails sent", str(result.get("sent", 0)))],
+                items=(["Customer"], [[x] for x in shown]), mode=rc.mode)
+
+
+def _alert_run_stopped(db: Session, mode: str, run: str, this_run: str, affected: int | None) -> None:
+    """A run died partway. affected is how many customers might not have been emailed, when we know."""
+    try:
+        db.rollback()
+    except Exception:  # noqa: BLE001
+        pass
+    fill = dict(run=run, this_run=this_run)
+    details = [("Customers who may have missed out", str(affected))] if affected else []
+    alert_owner(db, C.OWNER_STOPPED_SUBJECT.format(**fill), C.OWNER_STOPPED_LEAD.format(**fill),
+                C.OWNER_STOPPED_ACTION, details, mode=mode)
+
+
+# ---------------------------------------------------------------------------
+# Thursday run record (so a restart can catch up a run that never happened)
+# ---------------------------------------------------------------------------
+
+CATCH_UP_FROM_HOUR = 10   # the timer's own time
+CATCH_UP_UNTIL_HOUR = 14  # Thursday 2 PM Indianapolis: later than this, wait for next week
+RUN_IN_PROGRESS = timedelta(minutes=15)
+
+
+def _get_setting(db: Session, key: str) -> str | None:
+    from backend.models.settings import SystemSettings
+    row = db.query(SystemSettings).filter(SystemSettings.key == key).first()
+    return row.value if row else None
+
+
+def _put_setting(db: Session, key: str, value: str, description: str) -> None:
+    from backend.models.settings import SystemSettings
+    row = db.query(SystemSettings).filter(SystemSettings.key == key).first()
+    if row:
+        row.value = value
+    else:
+        db.add(SystemSettings(key=key, value=value, description=description))
+    db.commit()
+
+
+def _weekly_keys(smode: str) -> tuple[str, str]:
+    return f"email_weekly_started_{smode}", f"email_weekly_done_{smode}"
+
+
+def weekly_catch_up_state(db: Session, now: datetime | None = None, mode: str | None = None) -> str:
+    """'not_due', 'running' (another run began in the last 15 minutes) or 'due' (Thursday 10 AM to 2 PM
+    Indianapolis and no finished Thursday run on record today)."""
+    from datetime import timezone
+    from zoneinfo import ZoneInfo
+    mode = mode or email_mode()
+    if mode == "off":
+        return "not_due"
+    now = now or datetime.utcnow()
+    local = now.replace(tzinfo=timezone.utc).astimezone(ZoneInfo("America/Indiana/Indianapolis"))
+    if local.weekday() != 3 or not CATCH_UP_FROM_HOUR <= local.hour < CATCH_UP_UNTIL_HOUR:
+        return "not_due"
+    started_key, done_key = _weekly_keys(state_mode(mode))
+    if _get_setting(db, done_key) == local.date().isoformat():
+        return "not_due"
+    started = _get_setting(db, started_key)
+    try:
+        if started and now - datetime.fromisoformat(started) < RUN_IN_PROGRESS:
+            return "running"
+    except ValueError:
+        pass
+    return "due"
 
 
 def run_weekly(db: Session, now: datetime | None = None, mode: str | None = None) -> dict:
-    rc = RunContext(db, now or datetime.utcnow(), mode)
-    return _send_planned(rc, plan_weekly(rc))
+    mode_name = mode or email_mode()
+    plans: list[Planned] = []
+    try:
+        rc = RunContext(db, now or datetime.utcnow(), mode)
+        started_key, done_key = _weekly_keys(rc.smode)
+        if rc.mode != "off":
+            _put_setting(db, started_key, rc.now.isoformat(), "When the last Thursday email run began")
+        plans = plan_weekly(rc)
+        result = _send_planned(rc, plans)
+    except Exception:
+        _alert_run_stopped(db, mode_name, "Thursday customer emails", "The Thursday customer email run",
+                           sum(1 for p in plans if p.email) or None)
+        raise
+    if rc.mode != "off":
+        _put_setting(db, done_key, _indy_today(rc.now).isoformat(), "Indianapolis day the Thursday email run last finished")
+    _alert_failed_sends(rc, "Thursday customer emails", "the Thursday customer email run", result)
+    return result
 
 
 def run_welcomes(db: Session, now: datetime | None = None, mode: str | None = None) -> dict:
@@ -304,7 +429,9 @@ def run_welcomes(db: Session, now: datetime | None = None, mode: str | None = No
         if d.template:
             p.email = _compose(d.template, ctx, st, job)
         plans.append(p)
-    return _send_planned(rc, plans)
+    result = _send_planned(rc, plans)
+    _alert_failed_sends(rc, "Welcome emails", "today's Welcome emails", result)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -576,14 +703,15 @@ def run_weather_report(db: Session, checked: list[tuple[Job, dict]], now: dateti
                 checked="tonight's" if tomorrow else "this morning's",
                 day=K._format_date(_indy_today(rc.now) + timedelta(days=1 if tomorrow else 0)))
     to = _ops_and_pms(db)
+    delivered = True
     if to:
-        deliver(rc, None, team_email(
+        delivered = deliver(rc, None, team_email(
             "internal", (C.WEATHER_REPORT_SUBJECT if flagged else C.WEATHER_REPORT_SUBJECT_CLEAR).format(**fill),
             C.WEATHER_REPORT_LEAD.format(**fill),
             (C.WEATHER_REPORT_ACTION if flagged else C.WEATHER_REPORT_CLEAR_ACTION).format(**fill),
             [("Forecast from", source), ("Scheduler", f"{base_url()}/plan")],
             items=table), to)
-    return {"jobs": n, "flagged": flagged, "to": to}
+    return {"jobs": n, "flagged": flagged, "to": to, "failed": rc.mode != "off" and not delivered}
 
 
 def run_abc_daily(db: Session, **kw) -> dict:

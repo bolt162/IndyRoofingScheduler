@@ -179,6 +179,7 @@ def review_product(row_id: int, body: ProductReview, db: Session = Depends(get_d
 
 TASKS = {
     "weekly": runner.run_weekly,
+    "abc-daily": runner.run_abc_daily,
     "welcomes": runner.run_welcomes,
     "reschedules": runner.run_reschedule_checks,
     "scheduled": runner.run_scheduled_emails,

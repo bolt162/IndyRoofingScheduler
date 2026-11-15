@@ -2,6 +2,7 @@ import logging
 import re
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -543,6 +544,34 @@ def _add_email_jobs(scheduler, CronTrigger):
         scheduler.add_job(_email_job(name), trigger, id=f"email_{name}", name=label, misfire_grace_time=3600)
 
 
+CATCH_UP_DELAY = timedelta(minutes=3)
+
+
+def _weekly_catch_up(scheduler=None):
+    """Timers live in memory, so a deploy or restart at Thursday 10:00 loses that day's run. A few minutes after every
+    start, if it is Thursday between 10 AM and 2 PM Indianapolis and no Thursday run finished today, run it now.
+    Safe to run twice: a customer who already got their email since Thursday began is skipped. If another run began
+    in the last 15 minutes, look again in 5 minutes instead of running on top of it."""
+    from backend.emails import runner
+    db = SessionLocal()
+    try:
+        state = runner.weekly_catch_up_state(db)
+    except Exception as e:
+        logger.error(f"Thursday catch-up check failed: {e}")
+        return
+    finally:
+        db.close()
+    if state == "running" and scheduler is not None:
+        scheduler.add_job(_weekly_catch_up, "date", args=[scheduler], id="email_weekly_catch_up", replace_existing=True,
+                          run_date=datetime.now(timezone.utc) + timedelta(minutes=5), name="Email: Thursday catch-up")
+    elif state == "due":
+        logger.warning("Thursday weekly emails have no record for today: running them now")
+        try:
+            _email_job("run_weekly")()
+        except Exception:
+            pass  # _email_job logged it and run_weekly already told Aaron
+
+
 def _start_scheduler():
     """Start APScheduler for weather checks (spec §6.2, §6.4) and JN sync polling."""
     try:
@@ -622,6 +651,8 @@ def _start_scheduler():
         )
 
         scheduler.start()
+        scheduler.add_job(_weekly_catch_up, "date", args=[scheduler], id="email_weekly_catch_up", replace_existing=True,
+                          run_date=datetime.now(timezone.utc) + CATCH_UP_DELAY, name="Email: Thursday catch-up")
         logger.info(
             f"Scheduler started: JN sync every {sync_interval}min, "
             f"weather morning={morning_time}, night-before={night_time}, 5am spot check, "
