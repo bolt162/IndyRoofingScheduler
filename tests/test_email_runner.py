@@ -252,6 +252,45 @@ def test_new_date_same_day_sends_nothing(db, jn, outbox):
     assert outbox == [] and st(db, job).reschedule_pending_since is None
 
 
+@pytest.mark.parametrize("bucket", ["archived", "completed"])
+def test_reschedule_check_skips_and_clears_a_cancelled_or_finished_job(db, jn, outbox, bucket):
+    job = resched_setup(db, jn, 1)
+    job.bucket = bucket   # cancelled / marked Lost between the build moving and the 5 PM check
+    db.commit()
+    R.run_reschedule_checks(db, THU + timedelta(hours=8), mode="live")
+    assert outbox == []
+    assert st(db, job, "live").reschedule_pending_since is None
+
+
+def test_second_reschedule_alert_also_skipped_for_an_archived_job(db, jn, outbox):
+    job = resched_setup(db, jn, 2)
+    job.bucket = "archived"
+    db.commit()
+    R.run_reschedule_checks(db, THU + timedelta(hours=8), mode="live")
+    assert outbox == []
+
+
+def test_unsubscribed_customer_still_gets_the_reschedule_notice(db, jn, outbox):
+    job = resched_setup(db, jn, 1)
+    for mode in ("test", "live"):
+        s = st(db, job, mode)
+        s.suppressed, s.suppressed_reason = True, "unsubscribed"
+    db.commit()
+    R.run_reschedule_checks(db, THU + timedelta(hours=8), mode="live")
+    assert [s["template"] for s in outbox] == ["reschedule"]
+
+
+def test_unsubscribed_customer_still_gets_the_on_the_calendar_email(db, jn, outbox):
+    jn["jn_email"] = False
+    job = sched_job(db, jn)
+    for mode in ("test", "live"):
+        s = st(db, job, mode)
+        s.suppressed, s.suppressed_reason = True, "unsubscribed"
+    db.commit()
+    R.run_scheduled_emails(db, THU + timedelta(hours=2), mode="live")
+    assert [s["template"] for s in outbox if s["customer"]] == ["scheduled"]
+
+
 # --- You're on the calendar ---
 
 def sched_job(db, jn):

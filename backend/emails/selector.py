@@ -79,9 +79,18 @@ def in_queue(job, state: EmailState, today: date) -> bool:
     return bool(state.reschedule_track) and not has_new_date(job, state, today)
 
 
-def _gate(ctx: EmailContext, state: EmailState) -> str | None:
+UNSUBSCRIBED = "unsubscribed"
+
+
+def is_blocked(state: EmailState, one_off: bool = False) -> bool:
+    """Paused by the office, or unsubscribed. The unsubscribe link promises only the weekly updates stop,
+    so a one-off notice about the customer's own build date (one_off=True) still goes to those customers."""
+    return bool(state.suppressed) and not (one_off and state.suppressed_reason == UNSUBSCRIBED)
+
+
+def _gate(ctx: EmailContext, state: EmailState, one_off: bool = False) -> str | None:
     """Reasons a customer can never be emailed. Returns a skip reason or None."""
-    if state.suppressed:
+    if is_blocked(state, one_off):
         return f"suppressed ({state.suppressed_reason or 'manual'})"
     if ctx.is_commercial is None:
         return "commercial/residential unknown"
@@ -172,7 +181,7 @@ def reschedule_decision(ctx: EmailContext, state: EmailState, job, now: datetime
         return Decision(None, "new date set", internal_alert=second)
     if state.reschedule_customer_told:
         return Decision(None, "JobNimbus already told the customer", internal_alert=second)
-    reason = _gate(ctx, state)
+    reason = _gate(ctx, state, one_off=True)
     if reason:
         return Decision(None, reason, internal_alert=second)
     if second:

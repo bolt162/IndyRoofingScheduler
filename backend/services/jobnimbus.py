@@ -664,6 +664,7 @@ def sync_jobs_from_jn(db: Session) -> dict:
         Job.bucket != JobBucket.ARCHIVED.value,  # already archived → skip
     ).all()
 
+    newly_archived_ids = []
     for job in orphans:
         try:
             jn_data = fetch_job_by_id(job.jn_job_id)
@@ -681,18 +682,23 @@ def sync_jobs_from_jn(db: Session) -> dict:
                 job.bucket = JobBucket.ARCHIVED.value
                 job.jn_status = current_status or "(unknown)"
                 archived += 1
+                newly_archived_ids.append(job.id)
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 404:
                 # Job deleted in JN — archive locally (preserves audit trail)
                 job.bucket = JobBucket.ARCHIVED.value
                 job.jn_status = "(deleted in JN)"
                 archived += 1
+                newly_archived_ids.append(job.id)
             else:
                 errors.append({"jn_id": job.jn_job_id, "error": f"orphan check failed: {e}"})
         except Exception as e:
             errors.append({"jn_id": job.jn_job_id, "error": f"orphan check failed: {e}"})
 
     db.commit()
+    # A cancelled or lost job must not get a pending "your build date moved" email at the 5 PM check
+    if newly_archived_ids:
+        email_events.safely(email_events.clear_pending_reschedules, db, newly_archived_ids)
 
     # Run AI note scanner — picks up jobs whose ai_note_scan_result is NULL.
     # Includes:

@@ -103,7 +103,15 @@ def test_unsubscribe_link_works_only_with_valid_token(env, monkeypatch):
     assert link.startswith("https://indyscheduler.top/api/email/unsubscribe?job=")
     bad = client.get(f"/api/email/unsubscribe?job={job_id}&t=wrong")
     assert bad.status_code == 400
-    ok = client.get(link.replace("https://indyscheduler.top", ""))
+    path = link.replace("https://indyscheduler.top", "")
+    # Opening the link (what an email security scanner does) only shows a button; nobody is unsubscribed
+    page = client.get(path)
+    assert page.status_code == 200 and "<button" in page.text and 'method="post"' in page.text
+    db = Session()
+    assert not any(s.suppressed for s in db.query(EmailState).filter_by(job_id=job_id))
+    db.close()
+    assert client.post(f"/api/email/unsubscribe?job={job_id}&t=wrong").status_code == 400
+    ok = client.post(path)
     assert ok.status_code == 200 and "unsubscribed" in ok.text
     db = Session()
     assert all(s.suppressed_reason == "unsubscribed" for s in db.query(EmailState).filter_by(job_id=job_id))
@@ -128,6 +136,7 @@ def test_opt_out_link_works_with_no_setup(env, monkeypatch):
     assert "Stop these weekly updates" in html and "https://indyscheduler.top/api/email/unsubscribe?job=" in html
     link = unsubscribe.link_for(job_id)
     assert client.get(link.replace("https://indyscheduler.top", "")).status_code == 200
+    assert client.post(link.replace("https://indyscheduler.top", "")).status_code == 200
     from backend.models.settings import SystemSettings
     db = Session()
     assert len(db.query(SystemSettings).filter_by(key="email_unsubscribe_secret").one().value) == 64

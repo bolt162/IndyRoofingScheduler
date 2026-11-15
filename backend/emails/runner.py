@@ -317,7 +317,12 @@ def run_reschedule_checks(db: Session, now: datetime | None = None, mode: str | 
     rows = db.query(EmailState).filter(EmailState.mode == rc.smode, EmailState.reschedule_pending_since.isnot(None)).all()
     for st in rows:
         job = db.query(Job).filter(Job.id == st.job_id).first()
-        if not job or not S.track_for(job.primary_trade):
+        if not job or job.bucket in S.DONE_BUCKETS:
+            # Cancelled, lost, deleted or finished since the build moved: no "build date" email
+            st.reschedule_pending_since = None
+            db.commit()
+            continue
+        if not S.track_for(job.primary_trade):
             continue
         ctx, _ = build_context(rc, job, st)
         d = S.reschedule_decision(ctx, st, job, rc.now)
@@ -355,7 +360,7 @@ def run_scheduled_emails(db: Session, now: datetime | None = None, mode: str | N
             db.commit()
             continue
         ctx, _ = build_context(rc, job, st)
-        if st.suppressed or ctx.is_commercial is not False or not ctx.customer_email:
+        if S.is_blocked(st, one_off=True) or ctx.is_commercial is not False or not ctx.customer_email:
             st.scheduled_email_sent = True  # never eligible; don't keep retrying
             db.commit()
             continue

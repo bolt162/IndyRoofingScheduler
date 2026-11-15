@@ -117,3 +117,19 @@ def test_real_sync_records_queue_entry(db, monkeypatch):
     job = db.query(Job).one()
     st = states(db, job)
     assert st["live"].entered_queue_at == datetime.utcfromtimestamp(1790000000)
+
+
+def test_sync_clears_pending_reschedule_when_it_archives_a_lost_job(db, monkeypatch):
+    from backend.services import jobnimbus as jn
+    job = make_job(db, bucket="scheduled", jn_status="Pending Start Date", jn_job_id="gone1")
+    for state in E.states_for(db, job.id).values():
+        state.reschedule_pending_since = NOW
+    db.commit()
+    monkeypatch.setattr(jn, "fetch_jobs_at_tracked_statuses", lambda: [])
+    monkeypatch.setattr(jn, "fetch_job_by_id", lambda jid: {"jnid": jid, "status_name": "Lost"})
+    import backend.services.note_scanner as ns
+    monkeypatch.setattr(ns, "scan_all_unscanned_jobs", lambda db_: {"scanned": 0})
+    jn.sync_jobs_from_jn(db)
+    db.expire_all()
+    assert db.query(Job).one().bucket == "archived"
+    assert all(s.reschedule_pending_since is None for s in db.query(EmailState).filter_by(job_id=job.id))

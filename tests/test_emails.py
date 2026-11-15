@@ -449,3 +449,54 @@ def test_scheduled_email_for_repairs_and_siding():
     assert "one less thing on your list" in rep.text and "brand new" not in rep.text
     sid = compose(K.SCHEDULED, replace(SAMPLES["siding"], scheduled_date=date(2026, 10, 21)))
     assert "Your new siding is scheduled for" in sid.text and "brand new siding" in sid.text
+
+
+# --- Weather slowdown is worded for the customer's own trade ---
+
+@pytest.mark.parametrize("track,word,others", [
+    ("roof", "roofs", ("siding", "gutter")),
+    ("roof_repair", "roofs", ("siding", "gutter")),
+    ("siding", "siding", ("roof", "gutter")),
+    ("siding_repair", "siding", ("roof", "gutter")),
+    ("gutters", "gutter", ("roof", "siding")),
+])
+def test_weather_slowdown_only_talks_about_the_customers_own_trade(track, word, others):
+    e = compose(K.WEATHER, ctx(track=track))
+    body = e.text.lower().split("the indy roof and restoration team")[0]
+    assert word in body
+    assert not any(o in body for o in others)
+    assert "{" not in e.text and "compromise" not in body
+
+
+def test_every_track_has_weather_wording():
+    assert set(K.C.WEATHER_BY_TRACK) == set(K.TRACKS)
+
+
+# --- Reschedule wording ---
+
+def test_reschedule_without_a_remembered_date_reads_naturally():
+    text = compose(K.RESCHEDULE, ctx(original_date=None)).text
+    assert "Your build had to be rescheduled." in text and "your scheduled date" not in text
+    repair = compose(K.RESCHEDULE, replace(SAMPLES["roof_repair"], original_date=None)).text
+    assert "Your repair had to be rescheduled." in repair
+
+
+def test_second_reschedule_has_no_apology_or_frustration():
+    e = compose(K.SECOND_RESCHEDULE, ctx())
+    assert "frustrat" not in e.text and "sorry" not in (e.subject + e.text).lower()
+
+
+# --- Unsubscribe only stops the weekly updates ---
+
+def test_unsubscribed_customer_still_gets_a_one_off_reschedule_notice():
+    j = scheduled_job(1)
+    st = welcomed_state(suppressed=True, suppressed_reason="unsubscribed", reschedule_pending_since=NOW)
+    assert S.weekly_decision(ctx(), welcomed_state(suppressed=True, suppressed_reason="unsubscribed"),
+                             job(), NOW).template is None
+    assert S.reschedule_decision(ctx(rescheduled_count=1), st, j, NOW).template == K.RESCHEDULE
+
+
+def test_paused_by_the_office_still_blocks_the_reschedule_notice():
+    j = scheduled_job(1)
+    st = welcomed_state(suppressed=True, suppressed_reason="paused by office", reschedule_pending_since=NOW)
+    assert S.reschedule_decision(ctx(rescheduled_count=1), st, j, NOW).template is None

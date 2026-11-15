@@ -112,16 +112,40 @@ async def activity_middleware(request: Request, call_next):
 
 # Customer opt-out link from build queue emails. Public on purpose: customers aren't
 # logged in. The signed token means only the link we emailed works.
+# GET only shows a confirm button: email security scanners open every link in a message,
+# and must not be able to unsubscribe anyone. The unsubscribe itself is the POST.
+_UNSUB_PAGE = ('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head>'
+               '<body style="font-family:Arial,sans-serif;max-width:520px;margin:60px auto;'
+               'padding:0 16px;color:#111827"><h2>{title}</h2><p>{msg}</p>{extra}</body></html>')
+
+
 @app.get("/api/email/unsubscribe")
+def email_unsubscribe_page(job: int, t: str):
+    from html import escape
+    from starlette.responses import HTMLResponse
+    from backend.emails import unsubscribe
+    if not unsubscribe.valid(job, t):
+        return HTMLResponse(_UNSUB_PAGE.format(
+            title="Link not recognized", extra="",
+            msg="Please call us at (317) 886-7436 and we'll update your preferences."), 400)
+    form = (f'<form method="post" action="/api/email/unsubscribe?job={job}&amp;t={escape(t)}">'
+            '<button type="submit" style="font-size:16px;padding:12px 20px;border:0;border-radius:6px;'
+            'background:#111827;color:#fff;cursor:pointer">Stop the weekly updates</button></form>')
+    return HTMLResponse(_UNSUB_PAGE.format(
+        title="Stop the weekly updates?",
+        msg="Tap the button and we'll stop the weekly build updates. Your spot in our schedule doesn't change, "
+            "and we'll still contact you about your project itself.", extra=form))
+
+
+@app.post("/api/email/unsubscribe")
 def email_unsubscribe(job: int, t: str):
     from starlette.responses import HTMLResponse
     from backend.emails import unsubscribe
     from backend.emails.events import states_for
-    page = ('<!doctype html><html><body style="font-family:Arial,sans-serif;max-width:520px;margin:60px auto;'
-            'padding:0 16px;color:#111827"><h2>{title}</h2><p>{msg}</p></body></html>')
     if not unsubscribe.valid(job, t):
-        return HTMLResponse(page.format(title="Link not recognized",
-                                        msg="Please call us at (317) 886-7436 and we'll update your preferences."), 400)
+        return HTMLResponse(_UNSUB_PAGE.format(
+            title="Link not recognized", extra="",
+            msg="Please call us at (317) 886-7436 and we'll update your preferences."), 400)
     db = SessionLocal()
     try:
         for st in states_for(db, job).values():
@@ -130,8 +154,8 @@ def email_unsubscribe(job: int, t: str):
         db.commit()
     finally:
         db.close()
-    return HTMLResponse(page.format(
-        title="You're unsubscribed",
+    return HTMLResponse(_UNSUB_PAGE.format(
+        title="You're unsubscribed", extra="",
         msg="You won't get any more weekly build updates from us. Your spot in our schedule doesn't change. "
             "Questions? Call us at (317) 886-7436."))
 

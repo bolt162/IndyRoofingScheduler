@@ -542,23 +542,37 @@ ALMOST_HERE_GUTTERS = "Your new gutters are almost here."
 
 WEATHER_SUBJECT = "A quick weather update from our crews"
 WEATHER_BODY = """
-If you looked outside this week, you already know. Mother Nature kept our crews off the roofs for several days, so the schedule moved a little slower than usual.
+If you looked outside this week, you already know. {weather_lead}
 
 Here's what that means for you: **your spot hasn't changed.** As soon as the weather clears, our crews get right back to work, and good weeks after a rainy stretch tend to move quickly.
 
-We'll never put a roof on in conditions that could compromise it. Your home deserves better than that.
+{weather_promise}
 
-Thanks for sticking with us,
+Thanks for being part of it,
 
 The Indy Roof and Restoration Team
 """
+# Worded per track so a siding, gutter or repair customer never reads about someone else's trade
+WEATHER_LEAD_ROOF = "Mother Nature kept our crews off the roofs for several days, so the schedule moved a little slower than usual."
+WEATHER_LEAD_SIDING = "Mother Nature kept our siding crews waiting on better days this week, so the schedule moved a little slower than usual."
+WEATHER_LEAD_GUTTERS = "Mother Nature kept our gutter crews waiting on better days this week, so the schedule moved a little slower than usual."
+WEATHER_PROMISE_ROOF = "We only put a roof on when conditions are right, because your home deserves a roof that lasts."
+WEATHER_PROMISE_SIDING = "Siding goes up best on dry, calm days, so we wait for them and every board and seam sits just right."
+WEATHER_PROMISE_GUTTERS = "Gutters go up best on dry days, so we wait for them and every seam and fastener is done right."
+WEATHER_BY_TRACK = {
+    "roof": (WEATHER_LEAD_ROOF, WEATHER_PROMISE_ROOF),
+    "roof_repair": (WEATHER_LEAD_ROOF, WEATHER_PROMISE_ROOF),
+    "siding": (WEATHER_LEAD_SIDING, WEATHER_PROMISE_SIDING),
+    "siding_repair": (WEATHER_LEAD_SIDING, WEATHER_PROMISE_SIDING),
+    "gutters": (WEATHER_LEAD_GUTTERS, WEATHER_PROMISE_GUTTERS),
+}
 
 # ---------------------------------------------------------------------------
 # RESCHEDULES
 # ---------------------------------------------------------------------------
 RESCHEDULE_SUBJECT = "A quick update on your build date"
 RESCHEDULE_BODY = """
-Your build that was set for {original_date} had to be rescheduled. We're already working to get you a new date as soon as possible.
+Your build{set_for} had to be rescheduled. We're already working to get you a new date as soon as possible.
 
 We know you were looking forward to it, and so were we. Here's what matters most: **you are not going back to the end of the line.** Your project stays at the front of our schedule, and our team will reach out as soon as your new date is set, if we haven't already. If you've already heard from us with your new date, you're all set.
 
@@ -578,9 +592,9 @@ Just a quick note to let you know your project is still at the top of our schedu
 The Indy Roof and Restoration Team
 """
 
-SECOND_RESCHEDULE_SUBJECT = "We're sorry to move your build again"
+SECOND_RESCHEDULE_SUBJECT = "Another quick update on your build date"
 SECOND_RESCHEDULE_BODY = """
-Your build date had to be rescheduled again, and we know that's frustrating.
+Your build date had to be rescheduled again.
 
 You're still at the very front of our schedule, and we're working to get you a new date as soon as possible.
 

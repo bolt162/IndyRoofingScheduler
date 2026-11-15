@@ -97,6 +97,13 @@ def on_reschedule(db: Session, job, now: datetime | None = None, customer_told: 
     db.commit()
 
 
+def clear_pending_reschedules(db: Session, job_ids: list[int]) -> None:
+    """Jobs the sync archived (cancelled, lost, deleted): drop any same-day reschedule email still waiting."""
+    db.query(EmailState).filter(EmailState.job_id.in_(job_ids)).update(
+        {EmailState.reschedule_pending_since: None}, synchronize_session=False)
+    db.commit()
+
+
 def safely(fn, *args, **kwargs):
     """Run an email hook without ever letting it break the caller."""
     try:

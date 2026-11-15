@@ -359,6 +359,7 @@ def _body_and_subject(key: str, ctx: EmailContext, v: dict, flags: list[str]) ->
         return C.SCHEDULED_SUBJECT, C.SCHEDULED_BODY
 
     if key == WEATHER:
+        v["weather_lead"], v["weather_promise"] = C.WEATHER_BY_TRACK[t]
         return C.WEATHER_SUBJECT, C.WEATHER_BODY
 
     if key == RESCHEDULE:
@@ -415,6 +416,7 @@ def _base_values(ctx: EmailContext) -> dict:
         "project_word": project_word(ctx.track),
         "shingle_color": _clean(ctx.shingle_color),
         "original_date": _format_date(ctx.original_date),
+        "set_for": f" that was set for {_format_date(ctx.original_date)}" if ctx.original_date else "",
         "jobs_ahead": ctx.jobs_ahead,
         "ahead_bold": _ahead_bold(ctx.jobs_ahead, ctx.track) if shows_count(ctx) else C.WELCOME_NEAR_FRONT,
         "repair_word": project_word(ctx.track),
