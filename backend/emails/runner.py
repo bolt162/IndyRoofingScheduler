@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session
 
 from backend.emails import compose as K
 from backend.emails import copy as C
-from backend.emails import markup, research, selector as S, team
+from backend.emails import markup, research, retry, selector as S, team
 from backend.emails.compose import ComposedEmail, EmailContext, compose
 from backend.emails.config import email_mode, office_alert_recipient, owner_alert_recipient
 from backend.emails.internal import person, team_email
@@ -315,29 +315,52 @@ def _plural(n: int, one: str, many: str) -> str:
     return one if n == 1 else many
 
 
-def _alert_failed_sends(rc: RunContext, run: str, this_run: str, result: dict) -> None:
-    """Some customers did not get their email: say how many and who."""
+def _plan_retry(db: Session, key: str, now: datetime, mode: str, auto: bool) -> retry.Plan:
+    """A run ended with customers missed: set up the automatic retry (if one is left) and say what to tell Aaron."""
+    return retry.after_failure(db, key, now, mode, auto=auto)
+
+
+def _alert_failed_sends(rc: RunContext, run: str, this_run: str, result: dict, plan: retry.Plan | None = None) -> None:
+    """Some customers did not get their email: say how many and who, and when the Scheduler tries again."""
     n = result.get("failed", 0)
     if not n or rc.mode == "off":
         return
+    plan = plan or retry.Plan()
+    if not plan.alert:
+        return   # the quiet middle retry: the next attempt (or the last one) speaks for it
     names = [person(c) for c in result.get("failed_customers", [])]
     shown = names[:15] + ([f"and {len(names) - 15} more"] if len(names) > 15 else [])
     fill = dict(run=run, this_run=this_run, count=n, customers=_plural(n, "customer", "customers"))
-    alert_owner(rc.db, C.OWNER_FAILED_SUBJECT.format(**fill), C.OWNER_FAILED_LEAD.format(**fill), C.OWNER_FAILED_ACTION,
-                [("Customers who missed out", str(n)), ("Emails sent", str(result.get("sent", 0)))],
+    if plan.final:
+        subject, lead, action = C.OWNER_FINAL_SUBJECT, C.OWNER_FINAL_LEAD, C.OWNER_FINAL_ACTION
+        label = "Customers still without their email"
+    else:
+        subject, lead = C.OWNER_FAILED_SUBJECT, C.OWNER_FAILED_LEAD
+        action = C.OWNER_RETRY_ACTION.format(time=plan.retry_time) if plan.retry_at else C.OWNER_FAILED_ACTION
+        label = "Customers who missed out"
+    alert_owner(rc.db, subject.format(**fill), lead.format(**fill), action,
+                [(label, str(n)), ("Emails sent on this try", str(result.get("sent", 0)))],
                 items=(["Customer"], [[x] for x in shown]), mode=rc.mode)
 
 
-def _alert_run_stopped(db: Session, mode: str, run: str, this_run: str, affected: int | None) -> None:
+def _alert_run_stopped(db: Session, mode: str, run: str, this_run: str, affected: int | None,
+                       plan: retry.Plan | None = None) -> None:
     """A run died partway. affected is how many customers might not have been emailed, when we know."""
     try:
         db.rollback()
     except Exception:  # noqa: BLE001
         pass
+    plan = plan or retry.Plan()
+    if not plan.alert:
+        return
     fill = dict(run=run, this_run=this_run)
     details = [("Customers who may have missed out", str(affected))] if affected else []
-    alert_owner(db, C.OWNER_STOPPED_SUBJECT.format(**fill), C.OWNER_STOPPED_LEAD.format(**fill),
-                C.OWNER_STOPPED_ACTION, details, mode=mode)
+    if plan.final:
+        subject, lead, action = C.OWNER_STOPPED_FINAL_SUBJECT, C.OWNER_STOPPED_FINAL_LEAD, C.OWNER_STOPPED_ACTION
+    else:
+        subject, lead = C.OWNER_STOPPED_SUBJECT, C.OWNER_STOPPED_LEAD
+        action = C.OWNER_STOPPED_RETRY_ACTION.format(time=plan.retry_time) if plan.retry_at else C.OWNER_STOPPED_ACTION
+    alert_owner(db, subject.format(**fill), lead.format(**fill), action, details, mode=mode)
 
 
 # ---------------------------------------------------------------------------
@@ -393,44 +416,61 @@ def weekly_catch_up_state(db: Session, now: datetime | None = None, mode: str | 
     return "due"
 
 
-def run_weekly(db: Session, now: datetime | None = None, mode: str | None = None) -> dict:
+def run_weekly(db: Session, now: datetime | None = None, mode: str | None = None, auto_retry: bool = False) -> dict:
     mode_name = mode or email_mode()
+    now = now or datetime.utcnow()
     plans: list[Planned] = []
     try:
-        rc = RunContext(db, now or datetime.utcnow(), mode)
+        rc = RunContext(db, now, mode)
         started_key, done_key = _weekly_keys(rc.smode)
         if rc.mode != "off":
             _put_setting(db, started_key, rc.now.isoformat(), "When the last Thursday email run began")
         plans = plan_weekly(rc)
         result = _send_planned(rc, plans)
     except Exception:
+        plan = _plan_retry(db, "weekly", now, mode_name, auto_retry)
         _alert_run_stopped(db, mode_name, "Thursday customer emails", "The Thursday customer email run",
-                           sum(1 for p in plans if p.email) or None)
+                           sum(1 for p in plans if p.email) or None, plan)
         raise
     if rc.mode != "off":
         _put_setting(db, done_key, _indy_today(rc.now).isoformat(), "Indianapolis day the Thursday email run last finished")
-    _alert_failed_sends(rc, "Thursday customer emails", "the Thursday customer email run", result)
+    _finish(rc, "weekly", "Thursday customer emails", "the Thursday customer email run", result, auto_retry)
     return result
 
 
-def run_welcomes(db: Session, now: datetime | None = None, mode: str | None = None) -> dict:
+def _finish(rc: RunContext, key: str, run: str, this_run: str, result: dict, auto_retry: bool) -> None:
+    """End of a send run: tell Aaron about anyone missed and line up the automatic retry, or clear it."""
+    if result.get("failed"):
+        _alert_failed_sends(rc, run, this_run, result, _plan_retry(rc.db, key, rc.now, rc.mode, auto_retry))
+    else:
+        retry.after_success(rc.db, key, rc.now, rc.mode)
+
+
+def run_welcomes(db: Session, now: datetime | None = None, mode: str | None = None, auto_retry: bool = False) -> dict:
     """Same-day Welcome for jobs that just entered the queue (the Thursday run covers Thursdays)."""
-    rc = RunContext(db, now or datetime.utcnow(), mode)
-    jobs = tracked_jobs(db)
-    ahead = jobs_ahead_map(rc, jobs)
-    plans = []
-    for job in jobs:
-        st = rc.state(job)
-        if st.welcome_sent or not S.in_queue(job, st, rc.now.date()):
-            continue
-        ctx, notes = build_context(rc, job, st, ahead.get(job.id))
-        d = S.welcome_decision(ctx, st, job, rc.now)
-        p = Planned(job, ctx, d, notes=notes)
-        if d.template:
-            p.email = _compose(d.template, ctx, st, job)
-        plans.append(p)
-    result = _send_planned(rc, plans)
-    _alert_failed_sends(rc, "Welcome emails", "today's Welcome emails", result)
+    mode_name = mode or email_mode()
+    now = now or datetime.utcnow()
+    try:
+        rc = RunContext(db, now, mode)
+        jobs = tracked_jobs(db)
+        ahead = jobs_ahead_map(rc, jobs)
+        plans = []
+        for job in jobs:
+            st = rc.state(job)
+            if st.welcome_sent or not S.in_queue(job, st, rc.now.date()):
+                continue
+            ctx, notes = build_context(rc, job, st, ahead.get(job.id))
+            d = S.welcome_decision(ctx, st, job, rc.now)
+            p = Planned(job, ctx, d, notes=notes)
+            if d.template:
+                p.email = _compose(d.template, ctx, st, job)
+            plans.append(p)
+        result = _send_planned(rc, plans)
+    except Exception:
+        plan = _plan_retry(db, "welcomes", now, mode_name, auto_retry)
+        _alert_run_stopped(db, mode_name, "Welcome emails", "Today's Welcome email run", None, plan)
+        raise
+    _finish(rc, "welcomes", "Welcome emails", "today's Welcome emails", result, auto_retry)
     return result
 
 
@@ -716,7 +756,7 @@ def run_weather_report(db: Session, checked: list[tuple[Job, dict]], now: dateti
 
 def run_abc_daily(db: Session, **kw) -> dict:
     from backend.emails import abc
-    return abc.run_abc_daily(db, **kw)
+    return abc.run_abc_daily(db, **kw)  # auto_retry=True when the Scheduler is trying again by itself
 
 
 def run_research(db: Session, now: datetime | None = None, mode: str | None = None, client=None) -> dict:

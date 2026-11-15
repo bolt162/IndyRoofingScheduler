@@ -572,6 +572,21 @@ def _weekly_catch_up(scheduler=None):
             pass  # _email_job logged it and run_weekly already told Aaron
 
 
+def _resume_email_retries(scheduler):
+    """A failed email run's automatic retry is saved in the settings table. After a restart or deploy, set the timers
+    up again; one that came due while the app was down runs a few minutes after start."""
+    from backend.emails import retry
+    retry.set_scheduler(scheduler)
+    db = SessionLocal()
+    try:
+        for run, run_at in retry.resume(db):
+            logger.warning(f"Email retry for {run} is waiting: runs at {run_at.isoformat()} UTC")
+    except Exception as e:
+        logger.error(f"Could not look for waiting email retries: {e}")
+    finally:
+        db.close()
+
+
 def _start_scheduler():
     """Start APScheduler for weather checks (spec §6.2, §6.4) and JN sync polling."""
     try:
@@ -653,6 +668,7 @@ def _start_scheduler():
         scheduler.start()
         scheduler.add_job(_weekly_catch_up, "date", args=[scheduler], id="email_weekly_catch_up", replace_existing=True,
                           run_date=datetime.now(timezone.utc) + CATCH_UP_DELAY, name="Email: Thursday catch-up")
+        _resume_email_retries(scheduler)
         logger.info(
             f"Scheduler started: JN sync every {sync_interval}min, "
             f"weather morning={morning_time}, night-before={night_time}, 5am spot check, "

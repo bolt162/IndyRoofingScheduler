@@ -14,7 +14,7 @@ app alone; the scheduler moves it with Move or Not Built, which update JobNimbus
 Days are Indianapolis days (the server clock is UTC: at 8 PM here it's already tomorrow there).
 """
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from backend.database import SessionLocal
 from backend.emails import copy as C
@@ -48,7 +48,36 @@ def _tell_aaron(db, name: str, subject: str, lead: str, action: str, details: li
         logger.error(f"{name}: could not tell Aaron: {e}")
 
 
-def run_check(name: str, days_from_today: tuple[int, ...], bamwx: bool, report: bool = False) -> dict:
+def _retry_key(name: str) -> str:
+    return "weather_" + "".join(c if c.isalnum() else "_" for c in name.lower()).strip("_")
+
+
+def _report_not_sent(db, name: str, checked: int, days_from_today: tuple[int, ...], bamwx: bool,
+                     retry_key: str, auto_retry: bool) -> None:
+    """The weather report email did not go out: try once more in about 30 minutes, and tell Aaron on each try."""
+    from backend.emails import retry
+    from backend.emails.config import email_mode
+    plan = retry.after_failure(db, retry_key, datetime.utcnow(), email_mode(), auto=auto_retry,
+                               payload={"name": name, "days": list(days_from_today), "bamwx": bamwx},
+                               max_retries=retry.WEATHER_MAX_RETRIES)
+    if not plan.alert:
+        return
+    this_run = f"The {name.lower()}"
+    details = [("Builds in the report", str(checked))]
+    if plan.final:
+        _tell_aaron(db, name, C.OWNER_WEATHER_REPORT_FINAL_SUBJECT, C.OWNER_WEATHER_REPORT_FINAL_LEAD.format(this_run=this_run),
+                    C.OWNER_WEATHER_REPORT_ACTION, details)
+    else:
+        action = (C.OWNER_WEATHER_REPORT_RETRY_ACTION.format(time=plan.retry_time) if plan.retry_at
+                  else C.OWNER_WEATHER_REPORT_ACTION)
+        _tell_aaron(db, name, C.OWNER_WEATHER_REPORT_SUBJECT, C.OWNER_WEATHER_REPORT_LEAD.format(this_run=this_run),
+                    action, details)
+
+
+def run_check(name: str, days_from_today: tuple[int, ...], bamwx: bool, report: bool = False,
+              retry_key: str | None = None, auto_retry: bool = False) -> dict:
+    """auto_retry=True when the Scheduler is sending a failed report again by itself (see emails/retry.py)."""
+    retry_key = retry_key or _retry_key(name)
     db = SessionLocal()
     checked = flagged = changed = 0
     results = []
@@ -76,8 +105,11 @@ def run_check(name: str, days_from_today: tuple[int, ...], bamwx: bool, report: 
             from backend.emails.runner import run_weather_report
             sent = run_weather_report(db, results, tomorrow=min(days_from_today) > 0)
             if (sent or {}).get("failed"):
-                _tell_aaron(db, name, C.OWNER_WEATHER_REPORT_SUBJECT, C.OWNER_WEATHER_REPORT_LEAD.format(this_run=f"The {name.lower()}"),
-                            C.OWNER_WEATHER_REPORT_ACTION, [("Builds in the report", str(checked))])
+                _report_not_sent(db, name, checked, days_from_today, bamwx, retry_key, auto_retry)
+            else:
+                from backend.emails import retry
+                from backend.emails.config import email_mode
+                retry.after_success(db, retry_key, datetime.utcnow(), email_mode())
     except Exception as e:
         logger.error(f"{name} failed: {e}")
         try:

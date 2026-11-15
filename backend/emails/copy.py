@@ -768,11 +768,34 @@ OWNER_FAILED_ACTION = (
     "**What to do:** nothing right now. Once the problem is fixed, ask Claude to run it again. It will send only "
     "to the people who missed out, and nobody will get a second email."
 )
+# The Scheduler now tries again by itself (2026-11-14): about 30 minutes later, and once more after that if needed
+OWNER_RETRY_ACTION = (
+    "**What to do:** nothing. The Scheduler will try again by itself at {time}, and once more about 30 minutes "
+    "after that if it needs to. It sends only to the people who missed out, so nobody will get a second email."
+)
+OWNER_FINAL_SUBJECT = "{run}: {count} {customers} still did not get their email"
+OWNER_FINAL_LEAD = (
+    "{this_run} did not reach everyone, and the Scheduler tried twice more over the next hour. "
+    "{count} {customers} still did not get their email."
+)
+OWNER_FINAL_ACTION = (
+    "**What to do:** ask Claude to run it again once the problem is fixed. It will send only to the people who "
+    "missed out, and nobody will get a second email."
+)
 OWNER_STOPPED_SUBJECT = "{run} stopped before it finished"
 OWNER_STOPPED_LEAD = "{this_run} stopped partway because the Scheduler ran into a problem."
 OWNER_STOPPED_ACTION = (
     "**What to do:** ask Claude to look at the Activity Log and run it again. Anyone who already got their email "
     "will not get a second one."
+)
+OWNER_STOPPED_RETRY_ACTION = (
+    "**What to do:** nothing yet. The Scheduler will try again by itself at {time}, and once more about 30 minutes "
+    "after that if it needs to. Anyone who already got their email will not get a second one."
+)
+OWNER_STOPPED_FINAL_SUBJECT = "{run} still did not finish"
+OWNER_STOPPED_FINAL_LEAD = (
+    "{this_run} stopped partway because the Scheduler ran into a problem, and it did not finish on the two "
+    "tries after that either."
 )
 OWNER_WEATHER_STOPPED_ACTION = (
     "**What to do:** ask Claude to look at the Activity Log. Until it is sorted out, check the Weekly Plan "
@@ -783,6 +806,24 @@ OWNER_WEATHER_REPORT_LEAD = "{this_run} finished, but its weather report email t
 OWNER_WEATHER_REPORT_ACTION = (
     "**What to do:** let Greg and Luke know to check the Weekly Plan for tomorrow's and today's weather flags."
 )
+OWNER_WEATHER_REPORT_RETRY_ACTION = (
+    "**What to do:** nothing yet. The Scheduler will send the report again by itself at {time}. You will get "
+    "another email only if that fails too."
+)
+OWNER_WEATHER_REPORT_FINAL_SUBJECT = "The weather report to Greg and Luke still did not send"
+OWNER_WEATHER_REPORT_FINAL_LEAD = (
+    "{this_run} finished, but its weather report email to Greg and Luke did not go out, even after the "
+    "Scheduler tried again."
+)
 ABC_NOT_SENT_SUBJECT = "The ABC delivery reminder did not send"
 ABC_NOT_SENT_LEAD = "The delivery reminder to ABC Supply did not go out today."
 ABC_NOT_SENT_ACTION = "**What to do:** ask Claude to run it again once the problem is fixed, or send ABC the list yourself."
+ABC_RETRY_ACTION = (
+    "**What to do:** nothing yet. The Scheduler will try again by itself at {time}, and once more about 30 minutes "
+    "after that if it needs to."
+)
+ABC_FINAL_LEAD = "The delivery reminder to ABC Supply did not go out today, even after the Scheduler tried twice more."
+# What Greg and Luke are told about the ABC reminder (they send it by hand only when the Scheduler gives up)
+ABC_OPS_LATE_SUBJECT = "The ABC delivery reminder is running late"
+ABC_OPS_LATE_LEAD = "The delivery reminder to ABC did not go out on the first try. The Scheduler will try again by itself at {time}."
+ABC_OPS_LATE_ACTION = "**What to do:** nothing yet, and please don't send it yourself. You will get another email only if it still does not go out."

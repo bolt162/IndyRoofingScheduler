@@ -167,13 +167,15 @@ def _log(db: Session, template: str, mode: str, result: str, detail: str, job_id
         db.commit()
 
 
-def _sent_today(db: Session, mode: str, today: date) -> bool:
+def _sent_today(db: Session, mode: str, today: date, gave_up_counts: bool = True) -> bool:
     """True once today's reminder actually went. A send the mail server refused does not count, so it can be run again.
-    (A "failed" row with no subject is _log's "gave up before sending" note, which stays one try for the day.)"""
+    (A "failed" row with no subject is _log's "gave up before sending" note, which stays one try for the day, except
+    when the Scheduler is trying again by itself: gave_up_counts=False.)"""
     start = datetime.combine(today, time.min, TZ).astimezone(timezone.utc).replace(tzinfo=None)
+    went = EmailLog.result == "sent"
     return db.query(EmailLog).filter(
         EmailLog.template == DAILY, EmailLog.mode == mode, EmailLog.created_at >= start,
-        (EmailLog.result == "sent") | ((EmailLog.result == "failed") & EmailLog.subject.is_(None))).first() is not None
+        (went | ((EmailLog.result == "failed") & EmailLog.subject.is_(None))) if gave_up_counts else went).first() is not None
 
 
 def _contacts_block(db: Session) -> str | None:
@@ -186,16 +188,27 @@ def _contacts_block(db: Session) -> str | None:
 
 
 def run_abc_daily(db: Session, now: datetime | None = None, mode: str | None = None, fetch=None,
-                  fetch_job=None) -> dict:
+                  fetch_job=None, auto_retry: bool = False) -> dict:
+    """auto_retry=True when the Scheduler is trying again by itself after a failed try (see retry.py)."""
+    from backend.emails import retry
     from backend.emails.config import email_mode
     mode = mode or email_mode()
     now = now or datetime.utcnow()
+    result = _run_abc_daily(db, now, mode, fetch, fetch_job, auto_retry)
+    today = now.replace(tzinfo=timezone.utc).astimezone(TZ).date()
+    gave_up_only = result.get("why") == "already sent today" and not _sent_today(db, mode, today, gave_up_counts=False)
+    if not result.get("failed") and not gave_up_only:
+        retry.after_success(db, "abc_daily", now, mode)   # it went, or there is nothing to send: no retry needed
+    return result
+
+
+def _run_abc_daily(db: Session, now: datetime, mode: str, fetch, fetch_job, auto_retry: bool) -> dict:
     today = now.replace(tzinfo=timezone.utc).astimezone(TZ).date()
     days = delivery_days(today)
     if not days:
         _log(db, DAILY, mode, "skipped", f"{today:%A} is a weekend")
         return {"sent": False, "why": "weekend"}
-    if _sent_today(db, mode, today):
+    if _sent_today(db, mode, today, gave_up_counts=not auto_retry):
         return {"sent": False, "why": "already sent today"}
     contacts = _contacts_block(db)
     if not contacts:
@@ -205,8 +218,8 @@ def run_abc_daily(db: Session, now: datetime | None = None, mode: str | None = N
         found = deliveries(db, days, (fetch or fetch_deliveries)(days), fetch_job or fetch_job_orders)
     except Exception as e:  # noqa: BLE001
         _log(db, DAILY, mode, "failed", f"JobNimbus didn't answer ({type(e).__name__}); no reminder sent", at=now)
-        _tell_ops(db, mode, "JobNimbus didn't answer, so the ABC delivery reminder did not go out today.")
-        return {"sent": False, "why": "jobnimbus"}
+        _not_sent(db, mode, now, auto_retry, None, "JobNimbus didn't answer, so the ABC delivery reminder did not go out today.")
+        return {"sent": False, "why": "jobnimbus", "failed": True}
     when = " and ".join(_day(d) for d in days)
     if not found:  # no deliveries, no email (Aaron, 2026-11-05)
         _log(db, DAILY, mode, "skipped", f"no deliveries for {when}")
@@ -224,20 +237,42 @@ def run_abc_daily(db: Session, now: datetime | None = None, mode: str | None = N
                                   "separate postponement notice. Questions? Contact Luke or Greg above."], items=items)
     ok = send(db, None, email, recipients(), customer_name="ABC Supply", mode=mode)
     if not ok and mode != "off":
-        from backend.emails import copy as C
-        from backend.emails.runner import alert_owner
-        alert_owner(db, C.ABC_NOT_SENT_SUBJECT, C.ABC_NOT_SENT_LEAD, C.ABC_NOT_SENT_ACTION,
-                    [("Deliveries listed", str(len(found)))], mode=mode)
-        _tell_ops(db, mode, "The ABC delivery reminder did not go out today.")
+        _not_sent(db, mode, now, auto_retry, len(found), "The ABC delivery reminder did not go out today.")
+        return {"sent": False, "deliveries": len(found), "failed": True}
     return {"sent": ok, "deliveries": len(found)}
 
 
-def _tell_ops(db: Session, mode: str, message: str) -> None:
+def _not_sent(db: Session, mode: str, now: datetime, auto_retry: bool, listed: int | None, ops_message: str) -> None:
+    """The reminder did not go out: line up the automatic retry and tell Aaron (send refused, or the last try failed)
+    and Greg and Luke. Greg and Luke are asked to wait while a retry is coming, and to send it by hand only if it fails
+    for good."""
+    from backend.emails import copy as C
+    from backend.emails import retry
+    from backend.emails.runner import alert_owner
+    plan = retry.after_failure(db, "abc_daily", now, mode, auto=auto_retry)
+    if not plan.alert:
+        return   # the quiet middle retry
+    if plan.retry_at:
+        if listed is not None:   # a refused send has always told Aaron
+            alert_owner(db, C.ABC_NOT_SENT_SUBJECT, C.ABC_NOT_SENT_LEAD, C.ABC_RETRY_ACTION.format(time=plan.retry_time),
+                        [("Deliveries listed", str(listed))], mode=mode)
+        _tell_ops(db, mode, C.ABC_OPS_LATE_LEAD.format(time=plan.retry_time), C.ABC_OPS_LATE_ACTION, C.ABC_OPS_LATE_SUBJECT)
+        return
+    if plan.final:
+        alert_owner(db, C.ABC_NOT_SENT_SUBJECT, C.ABC_FINAL_LEAD, C.ABC_NOT_SENT_ACTION,
+                    [("Deliveries listed", str(listed))] if listed is not None else [], mode=mode)
+    elif listed is not None:
+        alert_owner(db, C.ABC_NOT_SENT_SUBJECT, C.ABC_NOT_SENT_LEAD, C.ABC_NOT_SENT_ACTION,
+                    [("Deliveries listed", str(listed))], mode=mode)
+    _tell_ops(db, mode, ops_message)
+
+
+def _tell_ops(db: Session, mode: str, message: str, action: str = "Send ABC today's deliveries yourself.",
+              subject: str = "The ABC delivery reminder did not go out") -> None:
     from backend.emails.runner import _ops_and_pms
     to = _ops_and_pms(db)
     if to:
-        send(db, None, team_email("internal", "The ABC delivery reminder did not go out", message,
-                                  "Send ABC today's deliveries yourself.", []), to, mode=mode)
+        send(db, None, team_email("internal", subject, message, action, []), to, mode=mode)
 
 
 def send_postponed(db: Session, job: Job, reason: str, mode: str | None = None, fetch=None, trade: str | None = None) -> dict:
