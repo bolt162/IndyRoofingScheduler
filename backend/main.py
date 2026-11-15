@@ -1,6 +1,7 @@
 import logging
 import re
 import os
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -8,7 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 
 from backend.database import engine, Base, SessionLocal
 from backend.routers import jobs, scoring, schedule, settings, weather, emails, admin, auth as auth_router
@@ -47,6 +48,7 @@ async def lifespan(app: FastAPI):
 
     # Start APScheduler for weather checks + JN sync polling
     scheduler = _start_scheduler()
+    app.state.scheduler = scheduler  # /api/health reads it: None means the timers never started
     yield
     # Shutdown scheduler gracefully
     if scheduler:
@@ -162,9 +164,29 @@ def email_unsubscribe(job: int, t: str):
 
 
 # Health check — must be defined before any catch-all
+# What /api/health checks. An outside watcher reads it; a stopped timer must show as 503, not "ok".
+_health = {"started": time.time(), "jn_sync_ok": None, "sync_minutes": 30}
+
+
+def _iso(ts):
+    return datetime.fromtimestamp(ts, timezone.utc).isoformat(timespec="seconds") if ts else None
+
+
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "service": "indy-roof-scheduler"}
+    sched = getattr(app.state, "scheduler", None)
+    running = bool(sched and sched.running)
+    problems = [] if running else ["The background jobs are not running (JobNimbus sync, weather checks, customer emails)."]
+    # Measured from the last good sync, or from boot, so a deploy's first health check never fails
+    last_good = _health["jn_sync_ok"] or _health["started"]
+    minutes = (time.time() - last_good) / 60
+    if running and minutes > 3 * _health["sync_minutes"] + 5:
+        problems.append(f"No good JobNimbus sync for {int(minutes)} minutes.")
+    body = {"status": "down" if problems else "ok", "service": "indy-roof-scheduler",
+            "scheduler_running": running, "last_jn_sync_ok": _iso(_health["jn_sync_ok"])}
+    if problems:
+        return JSONResponse({**body, "problems": problems}, status_code=503)
+    return body
 
 
 # Serve React frontend static files in production
@@ -494,6 +516,7 @@ def _jn_sync_job():
             f"JN auto-sync: {result['created']} new, {result['updated']} updated, "
             f"{len(result['errors'])} errors"
         )
+        _health["jn_sync_ok"] = time.time()
     except Exception as e:
         logger.error(f"JN auto-sync failed: {e}")
     finally:
@@ -613,6 +636,7 @@ def _start_scheduler():
             morning_time = morning_s.value if morning_s else "06:00"
             night_time = night_s.value if night_s else "20:00"
             sync_interval = int(sync_s.value) if sync_s and sync_s.value else 30
+            _health["sync_minutes"] = sync_interval
         finally:
             db.close()
 
@@ -676,8 +700,9 @@ def _start_scheduler():
         )
         return scheduler
     except ImportError:
-        logger.warning("APScheduler not installed — automated checks disabled")
+        logger.error("APScheduler not installed: automated checks are OFF (/api/health now answers 503)")
         return None
-    except Exception as e:
-        logger.error(f"Failed to start scheduler: {e}")
+    except Exception:
+        # Site stays up for the office, but /api/health answers 503 so a deploy is held back and the watcher sees it
+        logger.exception("Failed to start scheduler: automated checks are OFF (/api/health now answers 503)")
         return None

@@ -1,0 +1,6 @@
+[
+  {"name": "Example app", "url": "https://example.com/health",
+   "checks": [{"field": "worker.alive", "equals": true},
+              {"field": "worker.seconds_since_last_pass", "max": 900},
+              {"field": "last_ok", "max_age_s": 6000}]}
+]
