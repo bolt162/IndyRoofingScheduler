@@ -1,7 +1,7 @@
 """
 What JobNimbus has on the calendar, read during every sync (READ-ONLY).
 
-How Greg books a build in JobNimbus (checked on J-26819 and J-26845, 2026-10-19): on the trade's
+How Greg books a build in JobNimbus (checked on two real jobs, 2026-10-19): on the trade's
 work order he enters the start date, adds the crew and Luke Mroz as subcontractors, sends it to the
 crew, then moves the work order to Pending Start and the job to Pending Start Date. So the work
 orders in Pending Start are the real calendar; the job's own start date is the fallback.

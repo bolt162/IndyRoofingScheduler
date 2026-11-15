@@ -12,7 +12,7 @@ from backend.services.jobnimbus import map_jn_job_to_model
 
 
 def test_sync_keeps_the_job_number():
-    assert map_jn_job_to_model({"name": "Jenn Golding - J-26426", "number": "26426"})["jn_number"] == "26426"
+    assert map_jn_job_to_model({"name": "Jamie Green - J-90005", "number": "90005"})["jn_number"] == "90005"
     assert map_jn_job_to_model({"name": "No number"})["jn_number"] is None
 
 

@@ -147,7 +147,7 @@ def test_team_list_seeds_and_updates(env):
     client, _ = env
     team = client.get("/api/emails/team").json()
     nick = next(t for t in team if t["jn_name"] == "Nick Smith")
-    assert nick["phone"] == "(317) 435-7468"
+    assert nick["phone"] is None  # phones are entered in Settings, never kept in the repo
     nick.update(phone="3175550000")
     r = client.put(f"/api/emails/team/{nick['id']}", json={k: v for k, v in nick.items() if k != "id"}).json()
     assert r["phone"] == "(317) 555-0000"

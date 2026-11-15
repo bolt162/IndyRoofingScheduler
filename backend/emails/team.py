@@ -14,18 +14,20 @@ from sqlalchemy.orm import Session
 from backend.models.email import TeamContact
 
 # Seeded once into an empty team_contacts table (Aaron, 2026-10-03). Luke Vollenweider left 2026-10-12.
+# Phone numbers are not kept in this public repo: they live in the database and are edited under Settings, Team.
+# On a brand-new database, reps show the office number in customer emails until their phone is filled in there.
 # (JobNimbus name, name customers see, role, email, phone)
 DEFAULT_TEAM = [
-    ("AJ Gratz", "AJ Gratz", "rep", "aj.gratz@indyroofandrestoration.com", "(317) 964-1728"),
-    ("Bryan Brown", "Bryan Brown", "rep", "bryan.brown@indyroofandrestoration.com", "(317) 767-1723"),
-    ("Daniel Ralston", "Daniel Ralston", "rep", "daniel.ralston@indyroofandrestoration.com", "(317) 847-2670"),
-    ("James Clinger", "Jimmy Clinger", "rep", "jimmy.clinger@indyroofandrestoration.com", "(463) 867-2451"),
-    ("Mark Sopke", "Mark Sopke", "rep", "mark.sopke@indyroofandrestoration.com", "(317) 945-3689"),
-    ("Nick Smith", "Nick Smith", "rep", "nick.smith@indyroofandrestoration.com", "(317) 435-7468"),
-    ("Paul Sopke", "Paul Sopke", "rep", "paul.sopke@indyroofandrestoration.com", "(317) 752-1773"),
-    ("Joe Venn", "Joe Venn", "rep", "joe.venn@indyroofandrestoration.com", "(317) 667-7119"),
-    ("Sherilyn Nowak", "Sherilyn Nowak", "rep", "sherilyn.nowak@indyroofandrestoration.com", "(317) 457-9596"),
-    ("Lavell Chestnut", "Lavell Chestnut", "rep", "lavell.chestnut@indyroofandrestoration.com", "(317) 752-7003"),
+    ("AJ Gratz", "AJ Gratz", "rep", "aj.gratz@indyroofandrestoration.com", None),
+    ("Bryan Brown", "Bryan Brown", "rep", "bryan.brown@indyroofandrestoration.com", None),
+    ("Daniel Ralston", "Daniel Ralston", "rep", "daniel.ralston@indyroofandrestoration.com", None),
+    ("James Clinger", "Jimmy Clinger", "rep", "jimmy.clinger@indyroofandrestoration.com", None),
+    ("Mark Sopke", "Mark Sopke", "rep", "mark.sopke@indyroofandrestoration.com", None),
+    ("Nick Smith", "Nick Smith", "rep", "nick.smith@indyroofandrestoration.com", None),
+    ("Paul Sopke", "Paul Sopke", "rep", "paul.sopke@indyroofandrestoration.com", None),
+    ("Joe Venn", "Joe Venn", "rep", "joe.venn@indyroofandrestoration.com", None),
+    ("Sherilyn Nowak", "Sherilyn Nowak", "rep", "sherilyn.nowak@indyroofandrestoration.com", None),
+    ("Lavell Chestnut", "Lavell Chestnut", "rep", "lavell.chestnut@indyroofandrestoration.com", None),
     ("Luke Mroz", "Luke Mroz", "pm", "luke.mroz@indyroofandrestoration.com", None),
     # Not customer-facing: they get the full Wednesday preview of Thursday's send
     ("Greg Russell", "Greg Russell", "ops", "greg.russell@indyroofandrestoration.com", None),

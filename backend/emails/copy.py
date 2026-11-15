@@ -663,7 +663,7 @@ LONG_WAIT_REP_ACTION = (
     "Don't promise a date unless Greg gives you one."
 )
 
-# Daily check (Aaron, 2026-10-19, after Jenn Golding J-26426 got a "still on for 10/14" reminder on 10/18)
+# Daily check (Aaron, 2026-10-19, after a customer got a "still on for 10/14" reminder on 10/18)
 PAST_DATE_SUBJECT = "{count} {jobs} still {say} Pending Start with a date that has passed"
 PAST_DATE_LEAD = "{count} {jobs} still {say} Pending Start in JobNimbus, but the start date has already passed."
 PAST_DATE_ACTION = (

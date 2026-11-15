@@ -24,7 +24,7 @@ _LINK_LABELS = {"JobNimbus": "Open the job in JobNimbus", "Scheduler": "Open the
 
 
 def format_phone(value: str) -> str:
-    """3174406606 or +1 317-440-6606 -> (317) 440-6606. Anything else is left alone."""
+    """3175550142 or +1 317-555-0142 -> (317) 555-0142. Anything else is left alone."""
     digits = re.sub(r"\D", "", value or "")
     if len(digits) == 11 and digits[0] == "1":
         digits = digits[1:]

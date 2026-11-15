@@ -76,7 +76,7 @@ def test_ready_input_has_work_order_notes_and_dated_notes_newest_first():
 # --- the sync: JobNimbus wins, plans survive ---
 
 def _sync(db, monkeypatch, status, wos=(), acts=(), **fields):
-    job = {"jnid": "j1", "name": "Mike Bray - J-26819", "status_name": status, "Trade #1": "Roofing",
+    job = {"jnid": "j1", "name": "Morgan Bell - J-90007", "status_name": status, "Trade #1": "Roofing",
            "record_type_name": "Retail", "date_status_change": 1790000000, "date_start": TS_OCT_27, **fields}
     monkeypatch.setattr(jn, "fetch_jobs_at_tracked_statuses", lambda: [job])
     monkeypatch.setattr(jn, "fetch_activities_for_job", lambda jid: list(acts))
@@ -110,7 +110,7 @@ def test_jobnimbus_booking_replaces_the_plan(db, monkeypatch):
 
 
 def test_a_trade_changed_in_jobnimbus_reaches_the_scheduler(db, monkeypatch):
-    # J-25770: queued as Roofing + Siding, then Greg changed it to Siding Repair; it kept getting roof emails
+    # J-90001: queued as Roofing + Siding, then Greg changed it to Siding Repair; it kept getting roof emails
     _sync(db, monkeypatch, "Schedule Job", **{"Trade #2": "Siding"})
     job = db.query(Job).one()
     assert job.primary_trade == "roofing" and job.secondary_trades == ["siding"]

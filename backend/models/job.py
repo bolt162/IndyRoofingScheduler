@@ -138,7 +138,7 @@ class Job(Base):
 
     # JN data
     jn_status: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    jn_number: Mapped[str | None] = mapped_column(String(50), nullable=True)  # JobNimbus job number (26426)
+    jn_number: Mapped[str | None] = mapped_column(String(50), nullable=True)  # JobNimbus job number (90005)
     # Siding goes on before the gutters on this job (the house's layout); normally gutters first
     siding_before_gutters: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     jn_notes_raw: Mapped[str | None] = mapped_column(Text, nullable=True)  # raw notes from JN

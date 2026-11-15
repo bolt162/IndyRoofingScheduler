@@ -395,11 +395,11 @@ def test_preview_works_when_no_progress_records_exist_yet(db, jn, outbox):
 
 def test_main_contact_gets_the_email_even_when_not_the_customer(db, jn, outbox):
     """Realtors, kids, property managers: the job's main contact is who we email (Aaron)."""
-    job = add_job(db, jn, "David Huebner", entered=THU - timedelta(days=30), email="desi@example.com")
-    jn["details"][job.jn_job_id].first_name = "Desi"
-    jn["details"][job.jn_job_id].contact_name = "Desi Tunny"
+    job = add_job(db, jn, "Dale Hunter", entered=THU - timedelta(days=30), email="dee@example.com")
+    jn["details"][job.jn_job_id].first_name = "Dee"
+    jn["details"][job.jn_job_id].contact_name = "Dee Turner"
     R.run_weekly(db, THU, mode="live")
-    assert outbox[0]["to"] == ["desi@example.com"] and "Hi Desi," in outbox[0]["text"]
+    assert outbox[0]["to"] == ["dee@example.com"] and "Hi Dee," in outbox[0]["text"]
 
 
 def test_preview_email_is_one_customer_per_row(db, jn, outbox):
@@ -468,14 +468,14 @@ def test_second_reschedule_and_jn_missing_explain_themselves(db, jn, outbox):
     assert "already got our apology email" in outbox[1]["text"]
 
 
-# --- Build date passed but still Pending Start (Jenn Golding J-26426, 2026-10-19) ---
+# --- Build date passed but still Pending Start (2026-10-19) ---
 
 def test_past_date_alert_lists_jobs_whose_date_passed(db, jn, outbox):
     from backend.emails.jn_data import BuildDates
-    add_job(db, jn, "Jenn Golding", bucket="scheduled", jn_status="Pending Start Date")
+    add_job(db, jn, "Jamie Green", bucket="scheduled", jn_status="Pending Start Date")
     add_job(db, jn, "Future Fred", bucket="scheduled", jn_status="Pending Start Date")
     dates = {
-        "jn-Jenn Golding": BuildDates("J-26426", date(2026, 10, 14), [("WO-11791", "Roofing", date(2026, 10, 14)),
+        "jn-Jamie Green": BuildDates("J-90005", date(2026, 10, 14), [("WO-11791", "Roofing", date(2026, 10, 14)),
                                                                      ("WO-11792", "Roofing", date(2026, 10, 14))]),
         "jn-Future Fred": BuildDates("J-1", date(2026, 10, 14), [("WO-1", "Roofing", date(2026, 10, 30))]),
     }
@@ -484,7 +484,7 @@ def test_past_date_alert_lists_jobs_whose_date_passed(db, jn, outbox):
     mail = outbox[0]
     assert sorted(mail["to"]) == ["greg.russell@indyroofandrestoration.com", "luke.mroz@indyroofandrestoration.com"]
     assert mail["subject"] == "1 job still says Pending Start with a date that has passed"
-    assert "Jenn Golding (J-26426)\n   Start date that passed: Wednesday, October 14" in mail["text"]
+    assert "Jamie Green (J-90005)\n   Start date that passed: Wednesday, October 14" in mail["text"]
     assert "   Work order: WO-11791, WO-11792" in mail["text"] and "   Trade: Roofing" in mail["text"]
     assert "Future Fred" not in mail["text"]
     assert "What to do:" in mail["text"]

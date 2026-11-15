@@ -171,7 +171,7 @@ def _date(ts) -> date | None:
 
 @dataclass
 class BuildDates:
-    number: str = ""                       # J-26426
+    number: str = ""                       # J-90005
     job_start: date | None = None
     pending: list = field(default_factory=list)   # [(work order number, trade, start date)] still Pending Start
 

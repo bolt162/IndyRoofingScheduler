@@ -63,12 +63,12 @@ def test_days_covered():
 
 def test_parse_order_skips_drafts_and_reads_abc_number():
     base = {"supplier": {"type": "ABC Supply", "logs": [{"id": "C12-9"}]}, "status_name": "Order Received",
-            "related": [{"type": "job", "id": "j", "number": "J-26802", "name": "‪Susan Priest - J-26802"}],
+            "related": [{"type": "job", "id": "j", "number": "J-90002", "name": "‪Sam Parker - J-90002"}],
             "address": {"address_line1": "3 Rd", "city": "Roachdale"}, "date_materialorder": 1794243600}
     p = abc.parse_order(base)
-    assert (p["job_number"], p["customer"], p["abc_order"], p["day"]) == ("J-26802", "Susan Priest", "C12-9", date(2026, 11, 9))
-    dup = {**base, "related": [{"type": "job", "id": "j", "number": "J-25770", "name": "David Boyd - J-25770 (1)"}]}
-    assert abc.parse_order(dup)["customer"] == "David Boyd"
+    assert (p["job_number"], p["customer"], p["abc_order"], p["day"]) == ("J-90002", "Sam Parker", "C12-9", date(2026, 11, 9))
+    dup = {**base, "related": [{"type": "job", "id": "j", "number": "J-90001", "name": "Dana Brooks - J-90001 (1)"}]}
+    assert abc.parse_order(dup)["customer"] == "Dana Brooks"
     done = {**base, "supplier": {"type": "ABC Supply", "logs": [{"id": "C12-27593888", "msg": "orderReceived"}, {"id": "2016101156", "msg": "fulfilled"}]}}
     assert abc.parse_order(done)["abc_order"] == "C12-27593888"   # not the invoice number added when fulfilled
     assert abc.parse_order({**base, "status_name": "Draft"}) is None
@@ -155,15 +155,15 @@ def order(jn_job_id, number, day, abc="C12-9", open_=True):
 
 
 def test_rescheduled_build_follows_the_labor_order(db, outbox):
-    """Andrew Bolton, 11/6: material order said Mon Nov 2 (rained out), labor order moved to Mon Nov 9."""
-    db.add(booked_job("bolton", "J-26114", "Andrew Bolton", "2026-11-09"))
+    """Alex Baker, 11/6: material order said Mon Nov 2 (rained out), labor order moved to Mon Nov 9."""
+    db.add(booked_job("baker", "J-90003", "Alex Baker", "2026-11-09"))
     db.commit()
-    jobs = {"bolton": [order("bolton", "J-26114", date(2026, 11, 2), "C12-27633323")]}
+    jobs = {"baker": [order("baker", "J-90003", date(2026, 11, 2), "C12-90000003")]}
     r = abc.run_abc_daily(db, now=at(outbox, date(2026, 11, 6)), mode="test", fetch=lambda days: [],
                           fetch_job=lambda j: jobs.get(j, []))
     assert r == {"sent": True, "deliveries": 1}
     text = outbox[0]["text"]
-    assert "J-26114" in text and "C12-27633323" in text and "Rescheduled from Monday, Nov 2" in text
+    assert "J-90003" in text and "C12-90000003" in text and "Rescheduled from Monday, Nov 2" in text
 
 
 def test_order_on_the_day_is_dropped_when_the_build_moved_away(db, outbox):
@@ -177,28 +177,28 @@ def test_order_on_the_day_is_dropped_when_the_build_moved_away(db, outbox):
 
 
 def test_picks_the_order_for_that_day_and_skips_gutters_and_unordered_builds(db, outbox):
-    """Chris Watkins has an old open order (Oct 16) and the real one (Nov 10): the one dated the build day wins."""
-    db.add_all([booked_job("watkins", "J-23781", "Chris Watkins", "2026-11-10"),
+    """Casey Walker has an old open order (Oct 16) and the real one (Nov 10): the one dated the build day wins."""
+    db.add_all([booked_job("walker", "J-90004", "Casey Walker", "2026-11-10"),
                 booked_job("gutter", "J-5", "Gutter Only", "2026-11-10", trade="Gutters"),
                 booked_job("beacon", "J-6", "Other Supplier", "2026-11-10")])
     db.commit()
-    jobs = {"watkins": [order("watkins", "J-23781", date(2026, 11, 10), "C12-NEW"), order("watkins", "J-23781", date(2026, 10, 16), "C12-OLD"),
-                        order("watkins", "J-23781", date(2026, 9, 1), "C12-DONE", open_=False)],
+    jobs = {"walker": [order("walker", "J-90004", date(2026, 11, 10), "C12-NEW"), order("walker", "J-90004", date(2026, 10, 16), "C12-OLD"),
+                        order("walker", "J-90004", date(2026, 9, 1), "C12-DONE", open_=False)],
             "gutter": [order("gutter", "J-5", date(2026, 11, 10))]}
     # the same order also comes back by date: listed once
     abc.run_abc_daily(db, now=at(outbox, date(2026, 11, 9)), mode="test",
-                      fetch=lambda days: [order("watkins", "J-23781", date(2026, 11, 10), "C12-NEW")], fetch_job=lambda j: jobs.get(j, []))
+                      fetch=lambda days: [order("walker", "J-90004", date(2026, 11, 10), "C12-NEW")], fetch_job=lambda j: jobs.get(j, []))
     text = outbox[0]["text"]
-    assert text.count("J-23781") == 1 and "C12-NEW" in text and "C12-OLD" not in text and "Rescheduled" not in text
+    assert text.count("J-90004") == 1 and "C12-NEW" in text and "C12-OLD" not in text and "Rescheduled" not in text
     assert "J-5" not in text and "J-6" not in text
 
 
 def test_follow_up_siding_build_counts(db, outbox):
-    db.add(booked_job("boyd", "J-25770", "David Boyd", "2026-11-10", trade="Siding", bucket="other_trades"))
+    db.add(booked_job("brooks", "J-90001", "Dana Brooks", "2026-11-10", trade="Siding", bucket="other_trades"))
     db.commit()
     abc.run_abc_daily(db, now=at(outbox, date(2026, 11, 9)), mode="test", fetch=lambda days: [],
-                      fetch_job=lambda j: [order("boyd", "J-25770", date(2026, 11, 10))])
-    assert "J-25770" in outbox[0]["text"]
+                      fetch_job=lambda j: [order("brooks", "J-90001", date(2026, 11, 10))])
+    assert "J-90001" in outbox[0]["text"]
 
 
 def test_a_refused_send_is_not_recorded_as_sent_today_and_aaron_is_told(db, monkeypatch):

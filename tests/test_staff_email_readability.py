@@ -25,10 +25,10 @@ def assert_readable(email) -> None:
 
 
 def test_phone_and_name_helpers():
-    assert format_phone("3174406606") == "(317) 440-6606"
-    assert format_phone("+1 317-440-6606") == "(317) 440-6606"
+    assert format_phone("3175550142") == "(317) 555-0142"
+    assert format_phone("+1 317-555-0142") == "(317) 555-0142"
     assert format_phone("(not on file)") == "(not on file)"
-    assert person("Anna Mcclellan") == "Anna McClellan" and person("Mcdonald Roofing") == "McDonald Roofing"
+    assert person("Anna Mcbride") == "Anna McBride" and person("Mcdonald Roofing") == "McDonald Roofing"
     assert person("Mc Neil") == "Mc Neil"
 
 
@@ -42,15 +42,15 @@ def test_team_email_layout_puts_links_last_with_labels():
 
 def test_jobnimbus_email_missing_alert_reads_clearly(db, jn, outbox):
     job = sched_job(db, jn)
-    job.customer_name = "Anna Mcclellan"
-    jn["details"][job.jn_job_id].customer_phone = "3174406606"
+    job.customer_name = "Anna Mcbride"
+    jn["details"][job.jn_job_id].customer_phone = "3175550142"
     db.commit()
     jn["jn_email"] = False
     R.run_scheduled_emails(db, THU + timedelta(hours=2), mode="live")
     mail = outbox[1]
-    assert mail["subject"] == "No scheduling email from JobNimbus: Anna McClellan"
-    assert mail["text"].startswith("Anna McClellan hasn't gotten JobNimbus's Project Update email with their build date (")
-    assert "Customer phone: (317) 440-6606" in mail["text"] and "3174406606" not in mail["text"]
+    assert mail["subject"] == "No scheduling email from JobNimbus: Anna McBride"
+    assert mail["text"].startswith("Anna McBride hasn't gotten JobNimbus's Project Update email with their build date (")
+    assert "Customer phone: (317) 555-0142" in mail["text"] and "3175550142" not in mail["text"]
     assert "Build date: " in mail["text"]
     assert "1. Check the work order's start date and save.\n2. Move the work order off Pending Start" in mail["text"]
     assert "Open the job in JobNimbus\nhttps://app.jobnimbus.com/job/" in mail["text"]
@@ -96,9 +96,9 @@ def test_preview_emails_use_blocks_and_headed_tables(db, jn, outbox):
 
 def test_past_date_and_ready_digest_have_headed_tables(db, jn, outbox):
     from backend.emails.jn_data import BuildDates
-    add_job(db, jn, "Jenn Golding", bucket="scheduled", jn_status="Pending Start Date")
+    add_job(db, jn, "Jamie Green", bucket="scheduled", jn_status="Pending Start Date")
     R.run_past_date_alerts(db, datetime(2026, 10, 19, 12, 0), mode="live",
-                           fetch=lambda jnid: BuildDates("J-26426", date(2026, 10, 14), [("WO-1", "Roofing", date(2026, 10, 14))]))
+                           fetch=lambda jnid: BuildDates("J-90005", date(2026, 10, 14), [("WO-1", "Roofing", date(2026, 10, 14))]))
     assert_readable(outbox[0])
     assert ">Start date that passed</th>" in outbox[0]["html"] and "<td" in outbox[0]["html"]
 

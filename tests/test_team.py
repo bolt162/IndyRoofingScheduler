@@ -12,12 +12,20 @@ from backend.emails.preview import SAMPLES
 from backend.models.email import TeamContact
 
 
+FAKE_PHONES = {"Nick Smith": "(317) 555-0101", "Joe Venn": "(317) 555-0102", "Lavell Chestnut": "(317) 555-0103",
+               "James Clinger": "(463) 555-0104"}
+
+
 @pytest.fixture
 def db():
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine, tables=[TeamContact.__table__])
     session = sessionmaker(bind=engine, autocommit=False, autoflush=False)()
     T.seed_team(session)
+    # The seed has no phone numbers (they stay out of the public repo); give the reps these tests use fake ones
+    for jn_name, phone in FAKE_PHONES.items():
+        session.query(TeamContact).filter_by(jn_name=jn_name).one().phone = phone
+    session.commit()
     yield session
     session.close()
 
@@ -28,6 +36,7 @@ def with_rep(db, jn_name, sample="roof_vista"):
 
 def test_seed_runs_once_and_keeps_edits(db):
     assert db.query(TeamContact).count() == len(T.DEFAULT_TEAM) + len(T.ADDED_LATER)
+    assert all(row[4] is None for row in T.DEFAULT_TEAM + T.ADDED_LATER)  # no phone numbers in the public repo
     row = db.query(TeamContact).filter_by(jn_name="Nick Smith").one()
     row.phone = "(317) 000-0000"
     db.commit()
@@ -50,12 +59,12 @@ def test_office_added_once_to_an_existing_team(db):
 
 def test_active_rep_appears_in_footer_and_referral(db):
     c = with_rep(db, "Nick Smith")
-    assert "reach out to Nick Smith directly at (317) 435-7468" in compose("week_1", c).text
+    assert "reach out to Nick Smith directly at (317) 555-0101" in compose("week_1", c).text
     assert "Send their name and number to Nick Smith" in compose("week_7", c).text
 
 
 def test_name_matching_ignores_case_and_spacing(db):
-    assert T.rep_contact(db, "  joe   VENN ")["rep_phone"] == "(317) 667-7119"
+    assert T.rep_contact(db, "  joe   VENN ")["rep_phone"] == "(317) 555-0102"
 
 
 @pytest.mark.parametrize("former", ["Quincy Barrett", "Tim Russell", "Brandon Campbell", "Cody Osborne", "Someone New"])
@@ -77,7 +86,7 @@ def test_rep_marked_inactive_drops_out(db):
 
 def test_rep_without_phone_falls_back_to_office(db):
     row = db.query(TeamContact).filter_by(jn_name="Lavell Chestnut").one()
-    assert row.phone == "(317) 752-7003"
+    assert row.phone == "(317) 555-0103"
     row.phone = None
     db.commit()
     c = with_rep(db, "Lavell Chestnut", sample="roof_repair")
@@ -95,15 +104,15 @@ def test_pm_is_luke_mroz_and_not_a_rep(db):
 
 
 def test_normalize_phone():
-    assert T.normalize_phone("3176677119") == "(317) 667-7119"
-    assert T.normalize_phone("317-435-7468") == "(317) 435-7468"
+    assert T.normalize_phone("3175550102") == "(317) 555-0102"
+    assert T.normalize_phone("317-555-0101") == "(317) 555-0101"
     assert T.normalize_phone("12") is None
 
 
 def test_customers_see_jimmy_and_sherilyn(db):
     assert T.rep_contact(db, "James Clinger")["rep_name"] == "Jimmy Clinger"
     assert T.rep_contact(db, "Sherilyn Nowak")["rep_name"] == "Sherilyn Nowak"
-    assert "reach out to Jimmy Clinger directly at (463) 867-2451" in compose("week_1", with_rep(db, "James Clinger")).text
+    assert "reach out to Jimmy Clinger directly at (463) 555-0104" in compose("week_1", with_rep(db, "James Clinger")).text
 
 
 
