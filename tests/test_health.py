@@ -69,7 +69,7 @@ def test_sync_never_succeeding_since_boot_goes_stale(client, monkeypatch):
 def test_a_good_sync_stamps_the_clock(monkeypatch):
     monkeypatch.setitem(main._health, "jn_sync_ok", None)
     import backend.services.jobnimbus as jn
-    monkeypatch.setattr(jn, "sync_jobs_from_jn", lambda db: {"created": 0, "updated": 0, "errors": []})
+    monkeypatch.setattr(jn, "sync_jobs_from_jn", lambda db: {"created": 0, "updated": 0, "errors": [], "total_from_jn": 412})
     main._jn_sync_job()
     assert main._health["jn_sync_ok"]
 

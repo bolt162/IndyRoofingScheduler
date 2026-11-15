@@ -516,11 +516,48 @@ def _jn_sync_job():
             f"JN auto-sync: {result['created']} new, {result['updated']} updated, "
             f"{len(result['errors'])} errors"
         )
-        _health["jn_sync_ok"] = time.time()
+        # The fetch swallows JobNimbus errors per status, so an expired or revoked key looks like "0 jobs".
+        # There are always jobs at the tracked statuses, so 0 means the sync did not really work.
+        if result.get("total_from_jn"):
+            _health["jn_sync_ok"] = time.time()
+        else:
+            logger.error("JN auto-sync got no jobs back from JobNimbus: counting it as a failed sync")
     except Exception as e:
         logger.error(f"JN auto-sync failed: {e}")
     finally:
         db.close()
+
+
+# SCH-05: one email to Aaron when the sync stops, and one more only after it has worked again and stopped again.
+_sync_watch = {"alerted": False}
+SYNC_STALE_MINUTES = 120
+
+
+def _jn_sync_watch():
+    """Hourly. Never raises."""
+    last_good = _health["jn_sync_ok"] or _health["started"]
+    minutes = (time.time() - last_good) / 60
+    if minutes <= max(SYNC_STALE_MINUTES, 3 * _health["sync_minutes"] + 5):
+        _sync_watch["alerted"] = False
+        return
+    if _sync_watch["alerted"]:
+        return
+    try:
+        from zoneinfo import ZoneInfo
+        from backend.emails import copy as C, runner
+        when = datetime.fromtimestamp(last_good, ZoneInfo(SCHEDULER_TZ))
+        stamp = f"{when:%A, %b} {when.day} at {when:%I:%M %p}".replace(" at 0", " at ")
+        label = "Last good sync" if _health["jn_sync_ok"] else "No good sync since the Scheduler restarted"
+        db = SessionLocal()
+        try:
+            sent = runner.alert_owner(db, C.JN_SYNC_STOPPED_SUBJECT,
+                                      C.JN_SYNC_STOPPED_LEAD.format(hours=int(minutes // 60)),
+                                      C.JN_SYNC_STOPPED_ACTION, [(label, stamp)])
+        finally:
+            db.close()
+        _sync_watch["alerted"] = bool(sent)
+    except Exception:  # noqa: BLE001
+        logger.exception("JobNimbus sync watch could not email Aaron")
 
 
 def _email_job(name):
@@ -610,6 +647,29 @@ def _resume_email_retries(scheduler):
         db.close()
 
 
+def _timer_settings(db):
+    """(morning h, m), (night-before h, m), sync minutes from the settings table. Each bad or missing value falls back
+    to its own default, so one typo can't stop every timer."""
+    from backend.models.settings import SystemSettings
+    from backend import timer_settings as T
+    saved = {r.key: r.value for r in db.query(SystemSettings).filter(
+        SystemSettings.key.in_([*T.HHMM_KEYS, *T.MINUTES_KEYS])).all()}
+    out = []
+    for key, default in T.HHMM_KEYS.items():
+        hm = T.parse_hhmm(saved[key]) if key in saved else None
+        if hm is None:
+            if key in saved:
+                logger.warning(f"Setting {key} is not a valid time; using {default}")
+            hm = T.parse_hhmm(default)
+        out.append(hm)
+    key, default = next(iter(T.MINUTES_KEYS.items()))
+    minutes = T.parse_minutes(saved[key]) if key in saved else None
+    if minutes is None and key in saved:
+        logger.warning(f"Setting {key} is not a valid number of minutes; using {default}")
+    out.append(minutes or default)
+    return tuple(out)
+
+
 def _start_scheduler():
     """Start APScheduler for weather checks (spec §6.2, §6.4) and JN sync polling."""
     try:
@@ -620,28 +680,14 @@ def _start_scheduler():
             morning_weather_check, night_before_check, five_am_spot_check,
         )
 
-        # Read configurable times from DB
+        # Read configurable times from DB (a bad value falls back to its default; it never stops the timers)
         db = SessionLocal()
         try:
-            from backend.models.settings import SystemSettings
-            morning_s = db.query(SystemSettings).filter(
-                SystemSettings.key == "weather_morning_check_time"
-            ).first()
-            night_s = db.query(SystemSettings).filter(
-                SystemSettings.key == "bamwx_check_time"
-            ).first()
-            sync_s = db.query(SystemSettings).filter(
-                SystemSettings.key == "jn_sync_interval_minutes"
-            ).first()
-            morning_time = morning_s.value if morning_s else "06:00"
-            night_time = night_s.value if night_s else "20:00"
-            sync_interval = int(sync_s.value) if sync_s and sync_s.value else 30
+            (morning_h, morning_m), (night_h, night_m), sync_interval = _timer_settings(db)
             _health["sync_minutes"] = sync_interval
         finally:
             db.close()
-
-        morning_h, morning_m = morning_time.split(":")
-        night_h, night_m = night_time.split(":")
+        morning_time, night_time = f"{morning_h:02d}:{morning_m:02d}", f"{night_h:02d}:{night_m:02d}"
 
         scheduler = AsyncIOScheduler(timezone=SCHEDULER_TZ)
 
@@ -651,6 +697,11 @@ def _start_scheduler():
             IntervalTrigger(minutes=sync_interval),
             id="jn_sync", name="JN Auto-Sync",
             misfire_grace_time=300,  # Run if missed within 5 minutes
+        )
+
+        scheduler.add_job(
+            _jn_sync_watch, IntervalTrigger(minutes=60),
+            id="jn_sync_watch", name="JobNimbus sync watch", misfire_grace_time=600,
         )
 
         # --- Weather checks (cron-based) ---

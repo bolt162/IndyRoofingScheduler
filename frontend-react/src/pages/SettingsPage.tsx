@@ -140,8 +140,8 @@ export function SettingsPage() {
     try {
       await updateSetting.mutateAsync({ key, value });
       toast.success(`Updated ${key}`);
-    } catch {
-      toast.error(`Failed to update ${key}`);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail ?? `Failed to update ${key}`);
     }
   };
 
@@ -1049,7 +1049,7 @@ export function SettingsPage() {
                     onBlur={(e) => handleUpdateSetting('jn_sync_interval_minutes', e.target.value)}
                   />
                   <p className="text-xs text-muted-foreground">
-                    How often to auto-sync jobs from JobNimbus. Takes effect on next cycle.
+                    How often to auto-sync jobs from JobNimbus. Takes effect the next time the Scheduler restarts.
                   </p>
                 </div>
               </div>

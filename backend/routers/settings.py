@@ -1,8 +1,10 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
+from backend import timer_settings
 from backend.database import get_db, engine, Base
+from backend.emails.unsubscribe import SECRET_KEY as UNSUBSCRIBE_SECRET_KEY
 from backend.services.auth import get_owner_or_admin
 from backend.models.settings import SystemSettings, DEFAULT_SETTINGS
 from backend.models.pm import PM, Crew
@@ -17,20 +19,29 @@ class SettingUpdate(BaseModel):
     value: str
 
 
+# Kept in the settings table but never sent to the browser or changed from it (the opt-out link signing secret)
+HIDDEN_KEYS = {UNSUBSCRIBE_SECRET_KEY}
+
+
 @router.get("/")
 def get_all_settings(db: Session = Depends(get_db)):
-    settings = db.query(SystemSettings).all()
+    settings = db.query(SystemSettings).filter(SystemSettings.key.notin_(HIDDEN_KEYS)).all()
     return {s.key: {"value": s.value, "description": s.description} for s in settings}
 
 
 @router.put("/{key}")
 def update_setting(key: str, update: SettingUpdate, db: Session = Depends(get_db)):
+    if key in HIDDEN_KEYS:
+        raise HTTPException(status_code=403, detail="This setting can't be changed here.")
+    value = timer_settings.clean(key, update.value)
+    if value is None:
+        raise HTTPException(status_code=400, detail=timer_settings.PROBLEM[key])
     setting = db.query(SystemSettings).filter(SystemSettings.key == key).first()
     if not setting:
         return {"error": f"Setting '{key}' not found"}
-    setting.value = update.value
+    setting.value = value
     db.commit()
-    return {"key": key, "value": update.value}
+    return {"key": key, "value": value}
 
 
 # PM management
