@@ -827,8 +827,8 @@ JN_SYNC_STOPPED_SUBJECT = "The Scheduler has stopped getting jobs from JobNimbus
 JN_SYNC_STOPPED_LEAD = "The Scheduler has not pulled jobs from JobNimbus for about {hours} hours."
 JN_SYNC_STOPPED_ACTION = (
     "**What to do:** check that JobNimbus is up, then ask Claude to check the Scheduler's JobNimbus key in Railway. "
-    "That key stops working on October 20, 2027. Until the sync works again, customer emails use the job details "
-    "from before it stopped."
+    "That key stops working on the evening of October 19, 2027. Until the sync works again, customer emails use "
+    "the job details from before it stopped."
 )
 # What Greg and Luke are told about the ABC reminder (they send it by hand only when the Scheduler gives up)
 ABC_OPS_LATE_SUBJECT = "The ABC delivery reminder is running late"
