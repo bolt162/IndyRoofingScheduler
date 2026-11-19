@@ -364,7 +364,7 @@ export function WeeklyPlanPage() {
         {/* Main area */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Header */}
-          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 p-3 md:p-4 border-b">
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 md:p-4 border-b">
             <div className="flex items-center gap-2 md:gap-3">
               <Button variant="outline" size="icon" onClick={prevWeek}>
                 <ChevronLeft className="h-4 w-4" />
@@ -385,7 +385,7 @@ export function WeeklyPlanPage() {
               </Button>
             </div>
 
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {/* PM toggles — select one to assign jobs */}
               <div className="flex items-center gap-1 flex-wrap">
                 <span className="text-[10px] text-muted-foreground mr-1">Assign to:</span>
@@ -407,7 +407,7 @@ export function WeeklyPlanPage() {
 
               <Separator orientation="vertical" className="h-6 hidden sm:block" />
 
-              <div className="flex items-center gap-1">
+              <div className="flex flex-wrap items-center gap-1">
                 <Button
                   variant="outline"
                   size="sm"
