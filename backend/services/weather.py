@@ -287,12 +287,14 @@ def check_weather_for_job(
     # Update job weather status
     job.weather_status = result["status"]
     job.weather_detail = result["detail"]
+    day = date.fromisoformat(target_date) if target_date else date.today()
+    result["rain_chance"] = rain_chance_words(hourly, job.latitude, job.longitude, day)
+    if result["rain_chance"]:  # only a BAM pull has hours; a free-forecast check never wipes the last BAM blocks
+        job.weather_rain_chance, job.weather_rain_for = result["rain_chance"], day
     db.commit()
 
     result["job_id"] = job.id
     result["customer_name"] = job.customer_name
-    day = date.fromisoformat(target_date) if target_date else date.today()
-    result["rain_chance"] = rain_chance_words(hourly, job.latitude, job.longitude, day)
     return result
 
 

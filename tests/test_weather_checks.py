@@ -154,3 +154,21 @@ def test_a_weather_report_that_will_not_send_tells_aaron(db, monkeypatch):
     monkeypatch.setattr("backend.emails.runner.run_weather_report", lambda db, checked, tomorrow: {"jobs": 1, "failed": False})
     WS.five_am_spot_check()
     assert alerts == []
+
+
+def test_bam_rain_chance_blocks_are_kept_on_the_job_and_a_free_check_never_wipes_them(db, monkeypatch):
+    monkeypatch.setattr(W.claritywx, "is_configured", lambda: True)
+    monkeypatch.setattr(W, "get_forecast", lambda *a, **k: {"temp_min": 50, "temp_max": 60, "precipitation": 0,
+                                                            "wind_max": 5, "source": "claritywx"})
+    monkeypatch.setattr(W.claritywx, "get_hourly_forecast", lambda lat, lon: [])
+    words = {"now": "7 AM to 10 AM: 0%\n10 AM to Noon: 10%"}
+    monkeypatch.setattr(W, "rain_chance_words", lambda hourly, lat, lon, day: words["now"])
+    job = booked(db, "Shingle Roof", TODAY)
+    db.commit()
+    W.check_weather_for_job(db, job.id, "2030-11-04", force_bamwx=True)
+    db.refresh(job)
+    assert job.weather_rain_chance == "7 AM to 10 AM: 0%\n10 AM to Noon: 10%" and str(job.weather_rain_for) == "2030-11-04"
+    words["now"] = ""   # a free-forecast check has no hours
+    W.check_weather_for_job(db, job.id, "2030-11-05")
+    db.refresh(job)
+    assert job.weather_rain_chance.startswith("7 AM to 10 AM") and str(job.weather_rain_for) == "2030-11-04"

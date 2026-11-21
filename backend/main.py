@@ -347,6 +347,9 @@ def _migrate_job_columns():
             "geocoded_address": "VARCHAR(500)",
             # Siding before gutters switch (2026-10-22)
             "siding_before_gutters": "BOOLEAN NOT NULL DEFAULT FALSE",
+            # BAM rain-chance blocks kept for the staff app (2026-11-21)
+            "weather_rain_chance": "TEXT",
+            "weather_rain_for": "DATE",
         }
         for name, col_type in columns.items():
             if name in existing:

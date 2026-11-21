@@ -147,6 +147,9 @@ class Job(Base):
     # Weather
     weather_status: Mapped[str | None] = mapped_column(String(50), nullable=True)  # clear / do_not_build / scheduler_decision
     weather_detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The BAM rain-chance blocks the weather email shows ("7 AM to 10 AM: 0%"), kept so the staff app shows the same words.
+    weather_rain_chance: Mapped[str | None] = mapped_column(Text, nullable=True)
+    weather_rain_for: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     # Secondary trades tracking
     primary_complete_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
